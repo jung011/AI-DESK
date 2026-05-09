@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -159,10 +160,14 @@ public class AgentService {
         }
 
         String dirEsc = dir.replace("\\", "\\\\").replace("\"", "\\\"");
+        // 워크스페이스에 옛 Claude Code JSONL 이 있으면 그 대화를 이어간다 (`claude -c`).
+        // 이러면 재부팅·세션 종료 후에도 컨텍스트·작업 규칙·말투가 그대로 회복.
+        boolean hasPastSession = workspaceHasPastSession(dir);
+        String claudeCmd = hasPastSession ? "claude -c" : "claude";
         String script = ""
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
-                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude'\"\n"
+                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" '" + claudeCmd + "'\"\n"
                 // Terminal.app 이 이미 떠있는지 셸로 먼저 확인. tell application "Terminal" 안에서 count windows
                 // 류를 호출하면 그 자체로 Terminal 이 launch 되며 기본 윈도우 1개가 생기기 때문.
                 + "set termRunning to false\n"
@@ -213,15 +218,22 @@ public class AgentService {
                 + "  end tell\n"
                 + "end if\n";
 
-        // 신규 tmux 세션을 만들 케이스인지 미리 판단 — 기존 세션이면 그냥 attach 해서
-        // 부트스트랩 프롬프트를 다시 주입하지 않는다 (작업 중인 세션을 침범하지 않기 위함).
+        // 신규 tmux 세션을 만들 케이스인지 미리 판단. 부트스트랩은 다음 두 조건이 모두 참일 때만:
+        //   1) tmux 세션이 살아있지 않다 — 살아있으면 그냥 attach 라 작업 중인 세션을 침범하면 안 됨
+        //   2) 워크스페이스에 옛 Claude Code 대화 JSONL 도 없다 — 있으면 claude -c 로 이어가므로
+        //      이미 옛 부트스트랩 학습 결과가 컨텍스트에 살아있다
         boolean freshSession = !tmuxHasSession(session);
+        boolean injectBootstrap =
+                freshSession
+                        && !hasPastSession
+                        && bootstrapPrompt != null
+                        && !bootstrapPrompt.isBlank();
 
         try {
             new ProcessBuilder("osascript", "-e", script).start();
-            log.info("openTerminal: agent={} dir={} session={} fresh={}",
-                    v.getAgentName(), dir, session, freshSession);
-            if (freshSession && bootstrapPrompt != null && !bootstrapPrompt.isBlank()) {
+            log.info("openTerminal: agent={} dir={} session={} fresh={} resume={} bootstrap={}",
+                    v.getAgentName(), dir, session, freshSession, hasPastSession, injectBootstrap);
+            if (injectBootstrap) {
                 final String tgt = session;
                 Thread.startVirtualThread(() -> sendBootstrapPrompt(tgt));
             }
@@ -229,6 +241,26 @@ public class AgentService {
         } catch (IOException e) {
             log.warn("openTerminal failed: {}", e.getMessage());
             return 4;
+        }
+    }
+
+    /**
+     * 워크스페이스 dir 에 매칭되는 ~/.claude/projects/{escaped}/ 안에 .jsonl 이 하나라도
+     * 있으면 옛 Claude Code 대화가 존재한다고 본다. AgentStatusWatcher 와 같은 escape 규칙
+     * (영숫자/언더스코어 외 모두 '-') 을 사용한다.
+     */
+    private boolean workspaceHasPastSession(String workspaceDir) {
+        if (workspaceDir == null || workspaceDir.isBlank()) return false;
+        String escaped = workspaceDir.replaceAll("[^A-Za-z0-9_]", "-");
+        Path projDir = Paths.get(System.getProperty("user.home"), ".claude", "projects", escaped);
+        if (!Files.isDirectory(projDir)) return false;
+        try (Stream<Path> stream = Files.walk(projDir, 5)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .anyMatch(p -> p.getFileName().toString().endsWith(".jsonl"));
+        } catch (IOException e) {
+            log.warn("workspaceHasPastSession walk {} failed: {}", projDir, e.getMessage());
+            return false;
         }
     }
 
