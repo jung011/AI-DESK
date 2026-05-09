@@ -144,6 +144,13 @@ public class AgentService {
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
                 + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude'\"\n"
+                // Terminal.app 이 이미 떠있는지 셸로 먼저 확인. tell application "Terminal" 안에서 count windows
+                // 류를 호출하면 그 자체로 Terminal 이 launch 되며 기본 윈도우 1개가 생기기 때문.
+                + "set termRunning to false\n"
+                + "try\n"
+                + "  do shell script \"pgrep -x Terminal > /dev/null\"\n"
+                + "  set termRunning to true\n"
+                + "end try\n"
                 + "set clientTty to \"\"\n"
                 + "try\n"
                 + "  set clientTty to do shell script \"tmux list-clients -t \" & sessionName & \" -F '#{client_tty}' 2>/dev/null | head -n 1\"\n"
@@ -164,10 +171,15 @@ public class AgentService {
                 + "    end repeat\n"
                 + "  end tell\n"
                 + "end if\n"
-                // Terminal 이 꺼져 있으면 launch 가 기본 윈도우 1개를 자동 생성한다.
-                // 그 윈도우를 do script 의 in 절로 재사용해서 새 윈도우 추가 생성을 막는다.
-                + "tell application \"Terminal\"\n"
-                + "  if (count windows) is 0 then\n"
+                + "if termRunning then\n"
+                // Terminal 이미 가동 중 — 새 윈도우를 만들어 사용자의 다른 작업 윈도우를 침범하지 않음.
+                + "  tell application \"Terminal\"\n"
+                + "    activate\n"
+                + "    do script shellCmd\n"
+                + "  end tell\n"
+                + "else\n"
+                // Terminal 꺼져 있음 — launch 가 자동 생성하는 기본 윈도우를 재사용.
+                + "  tell application \"Terminal\"\n"
                 + "    launch\n"
                 + "    repeat 30 times\n"
                 + "      if (count windows) > 0 then exit repeat\n"
@@ -179,11 +191,8 @@ public class AgentService {
                 + "    else\n"
                 + "      do script shellCmd\n"
                 + "    end if\n"
-                + "  else\n"
-                + "    activate\n"
-                + "    do script shellCmd\n"
-                + "  end if\n"
-                + "end tell\n";
+                + "  end tell\n"
+                + "end if\n";
 
         try {
             new ProcessBuilder("osascript", "-e", script).start();
