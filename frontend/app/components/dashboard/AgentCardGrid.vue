@@ -3,7 +3,11 @@
     표시할 AI가 없습니다.
   </div>
   <div v-else class="ai-grid">
-    <AgentCard v-for="agent in agents" :key="agent.agentId" :agent="agent" />
+    <AgentCard
+      v-for="agent in agents"
+      :key="agent.agentId"
+      :agent="agent"
+      @delete="emit('delete', $event)" />
   </div>
 </template>
 
@@ -12,6 +16,9 @@ import type { AgentItem } from '~/vo/agents/AgentVo';
 import AgentCard from '~/components/dashboard/AgentCard.vue';
 
 defineProps<{ agents: AgentItem[] }>();
+const emit = defineEmits<{
+  (e: 'delete', agent: AgentItem): void;
+}>();
 </script>
 
 <style scoped>

@@ -31,9 +31,34 @@
     <div class="ai-card-footer">
       <span class="ai-model-tag">{{ agent.model }}</span>
       <div class="ai-meta">{{ metaLabel }}: <strong>{{ metaValue }}</strong></div>
-      <button class="btn-card-menu" type="button" aria-label="더보기" disabled>
-        <span /><span /><span />
-      </button>
+      <div ref="menuRoot" class="card-menu-wrap">
+        <button class="btn-card-menu" type="button" aria-label="더보기" @click.stop="menuOpen = !menuOpen">
+          <span /><span /><span />
+        </button>
+        <div v-if="menuOpen" class="card-menu-dropdown" @click.stop>
+          <button type="button" class="card-menu-item" disabled title="Phase 3에 활성화됩니다">
+            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+            메시지 보내기
+          </button>
+          <button type="button" class="card-menu-item" @click="onPlaceholder('VSCode 열기')">
+            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
+            VSCode 열기
+          </button>
+          <button type="button" class="card-menu-item" @click="onPlaceholder('터미널 열기')">
+            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10z"/></svg>
+            터미널 열기
+          </button>
+          <button type="button" class="card-menu-item" @click="onPlaceholder('브라우저 검증')">
+            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/></svg>
+            브라우저 검증
+          </button>
+          <div class="card-menu-divider" />
+          <button type="button" class="card-menu-item danger" @click="onDelete">
+            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            삭제
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -42,6 +67,38 @@
 import type { AgentItem } from '~/vo/agents/AgentVo';
 
 const props = defineProps<{ agent: AgentItem }>();
+const emit = defineEmits<{
+  (e: 'delete', agent: AgentItem): void;
+}>();
+
+const menuOpen = ref(false);
+const menuRoot = ref<HTMLElement | null>(null);
+
+function handleClickOutside(e: MouseEvent): void {
+  if (!menuOpen.value) return;
+  const root = menuRoot.value;
+  if (root && !root.contains(e.target as Node)) {
+    menuOpen.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside);
+});
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
+});
+
+function onPlaceholder(label: string): void {
+  menuOpen.value = false;
+  // eslint-disable-next-line no-alert
+  alert(`${label}는 후속 단계에 구현됩니다.`);
+}
+
+function onDelete(): void {
+  menuOpen.value = false;
+  emit('delete', props.agent);
+}
 
 const statusClass = computed(() => ({
   active: 'working',
@@ -67,7 +124,6 @@ const avatarEmoji = computed(() => ({
   done: '✅'
 }[props.agent.status] ?? '🤖'));
 
-// 컨텍스트 % 임계값 — low 0~70 / mid 71~89 / high 90~100
 const contextLevel = computed(() => {
   const v = props.agent.contextPct ?? 0;
   if (v >= 90) return 'high';
@@ -81,7 +137,6 @@ const contextColor = computed(() => {
   return '#2E7D32';
 });
 
-// 상태별 메타 라벨
 const metaLabel = computed(() => ({
   active: '시작',
   idle: '대기 시간',
@@ -99,7 +154,6 @@ function formatTime(iso: string, status: string): string {
     if (minutes < 60 * 24) return `${Math.round(minutes / 60)}시간`;
     return `${Math.round(minutes / 60 / 24)}일`;
   }
-  // active / done — HH:mm
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
@@ -157,17 +211,38 @@ function formatTime(iso: string, status: string): string {
 .context-bar-fill.mid  { background: #FFB300; }
 .context-bar-fill.high { background: #E53935; }
 
+.card-menu-wrap { position: relative; }
 .btn-card-menu {
   width: 30px; height: 30px; border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 3.5px; background: none; border: none; cursor: pointer;
-  position: relative;
 }
-.btn-card-menu:disabled { cursor: not-allowed; opacity: .5; }
+.btn-card-menu:hover { background: #F1F5F9; }
 .btn-card-menu span {
   display: block; width: 14px; height: 1.5px;
   background: #AAB4BE; border-radius: 2px;
 }
+.card-menu-dropdown {
+  position: absolute; top: 36px; right: 0;
+  width: 180px;
+  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
+  box-shadow: 0 6px 18px 0 rgba(67, 87, 103, .18);
+  padding: 4px 0; z-index: 50;
+  display: flex; flex-direction: column;
+}
+.card-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px; color: #333;
+  text-align: left; background: none; border: none; cursor: pointer;
+}
+.card-menu-item:hover:not(:disabled) { background: #F8FAFC; }
+.card-menu-item:disabled { color: #94A3B8; cursor: not-allowed; }
+.card-menu-item.danger { color: #E83667; }
+.card-menu-item .menu-ico {
+  width: 14px; height: 14px; flex-shrink: 0; opacity: .7;
+}
+.card-menu-divider { height: 1px; background: #F0F2F5; margin: 4px 0; }
 
 .ico_badge.small {
   display: inline-flex; align-items: center; gap: 5px;

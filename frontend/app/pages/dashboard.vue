@@ -30,7 +30,7 @@
     </div>
 
     <!-- AI 카드 그리드 -->
-    <AgentCardGrid :agents="filteredList" />
+    <AgentCardGrid :agents="filteredList" @delete="onDeleteRequest" />
 
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
@@ -39,6 +39,17 @@
       :error-message="createError"
       @close="dialogOpen = false"
       @submit="onCreateSubmit" />
+
+    <!-- 삭제 확인 팝업 -->
+    <ConfirmDialog
+      :open="confirmDelete.open"
+      title="AI 삭제"
+      :message="confirmDelete.message"
+      confirm-label="삭제"
+      :destructive="true"
+      :busy="deleting"
+      @cancel="closeDeleteDialog"
+      @confirm="onDeleteConfirm" />
   </div>
 </template>
 
@@ -48,8 +59,9 @@ import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
+import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 
-import type { AgentCreateRequest } from '~/vo/agents/AgentVo';
+import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
 
 const {
   summary,
@@ -59,12 +71,20 @@ const {
   error,
   startPolling,
   stopPolling,
-  createAgent
+  createAgent,
+  deleteAgent
 } = useAgents();
 
 const dialogOpen = ref(false);
 const creating = ref(false);
 const createError = ref<string | null>(null);
+
+const confirmDelete = reactive<{ open: boolean; agent: AgentItem | null; message: string }>({
+  open: false,
+  agent: null,
+  message: ''
+});
+const deleting = ref(false);
 
 async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
   creating.value = true;
@@ -76,6 +96,30 @@ async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
   } else {
     createError.value = error.value ?? '생성에 실패했습니다.';
   }
+}
+
+function onDeleteRequest(agent: AgentItem): void {
+  confirmDelete.agent = agent;
+  confirmDelete.message = `${agent.agentName}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`;
+  confirmDelete.open = true;
+}
+
+function closeDeleteDialog(): void {
+  if (deleting.value) return;
+  confirmDelete.open = false;
+  confirmDelete.agent = null;
+}
+
+async function onDeleteConfirm(): Promise<void> {
+  if (!confirmDelete.agent || deleting.value) return;
+  deleting.value = true;
+  const ok = await deleteAgent(confirmDelete.agent.agentId);
+  deleting.value = false;
+  if (ok) {
+    confirmDelete.open = false;
+    confirmDelete.agent = null;
+  }
+  // 실패 시는 error 메시지가 useAgents.error 에 채워지고, 페이지 상단에 표시됨.
 }
 
 onMounted(() => startPolling(10_000));
