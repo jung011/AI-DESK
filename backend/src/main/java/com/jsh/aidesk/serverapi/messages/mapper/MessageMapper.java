@@ -43,4 +43,29 @@ public interface MessageMapper {
      */
     int countRecentByFrom(@Param("agentId") String agentId,
                           @Param("seconds") int seconds);
+
+    /**
+     * 단건 읽음 처리 — 본인 (to_agent_id == agentId) 메시지에만 적용.
+     * 0건 반환 = 매치 없음 또는 이미 읽음.
+     */
+    int updateRead(@Param("messageId") String messageId,
+                   @Param("agentId") String agentId);
+
+    /**
+     * 부모 메시지의 status 를 replied 로 갱신 (replied_at = NOW()).
+     * POST /api/messages with replyToMessageId 의 last mile delivered 콜백에서 호출.
+     */
+    int updateParentReplied(@Param("messageId") String messageId);
+
+    /**
+     * 대화 목록 — 지정 AI 가 참여한 대화별로 마지막 메시지 + unread count.
+     */
+    List<com.jsh.aidesk.serverapi.messages.vo.ConversationItemRsVo>
+        selectConversations(@Param("agentId") String agentId);
+
+    /**
+     * AI 별 미확인 수신 메시지 수.
+     * status IN (delivered, replied) AND read_at IS NULL 만 카운트.
+     */
+    List<com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo> selectUnreadCounts();
 }

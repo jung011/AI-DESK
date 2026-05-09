@@ -95,4 +95,76 @@
            AND created_at >= NOW() - (#{seconds} || ' seconds')::INTERVAL
     </select>
 
+    <update id="updateRead">
+        UPDATE t_ai_message
+           SET read_at = NOW()
+         WHERE message_id = #{messageId}
+           AND to_agent_id = #{agentId}
+           AND read_at IS NULL
+    </update>
+
+    <update id="updateParentReplied">
+        UPDATE t_ai_message
+           SET status = 'replied',
+               replied_at = NOW()
+         WHERE message_id = #{messageId}
+           AND status IN ('sent', 'delivered')
+    </update>
+
+    <select id="selectConversations"
+            resultType="com.jsh.aidesk.serverapi.messages.vo.ConversationItemRsVo">
+        WITH last_msg AS (
+            SELECT
+                CASE WHEN m.from_agent_id = #{agentId} THEN m.to_agent_id ELSE m.from_agent_id END AS partner_id,
+                m.message_id,
+                m.content,
+                m.created_at,
+                m.from_agent_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY CASE WHEN m.from_agent_id = #{agentId} THEN m.to_agent_id ELSE m.from_agent_id END
+                    ORDER BY m.created_at DESC
+                ) AS rn
+              FROM t_ai_message m
+             WHERE m.from_agent_id = #{agentId}
+                OR m.to_agent_id = #{agentId}
+        )
+        SELECT
+            lm.partner_id                                                  AS partner_agent_id,
+            a.agent_name                                                   AS partner_agent_name,
+            a.status                                                       AS partner_status,
+            a.workspace_dir                                                AS partner_workspace_dir,
+            lm.message_id                                                  AS last_message_id,
+            lm.content                                                     AS last_message_content,
+            lm.created_at                                                  AS last_activity_at,
+            CASE WHEN lm.from_agent_id = #{agentId} THEN 'outbox' ELSE 'inbox' END AS last_direction,
+            COALESCE((
+                SELECT COUNT(*)
+                  FROM t_ai_message u
+                 WHERE u.to_agent_id = #{agentId}
+                   AND u.from_agent_id = lm.partner_id
+                   AND u.read_at IS NULL
+                   AND u.status IN ('delivered', 'replied')
+            ), 0)                                                          AS unread_count
+          FROM last_msg lm
+          JOIN t_ai_agent a ON a.agent_id = lm.partner_id
+                           AND a.deleted_at IS NULL
+         WHERE lm.rn = 1
+         ORDER BY lm.created_at DESC
+    </select>
+
+    <select id="selectUnreadCounts"
+            resultType="com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo">
+        SELECT
+            m.to_agent_id     AS agent_id,
+            a.agent_name      AS agent_name,
+            COUNT(*)          AS unread
+          FROM t_ai_message m
+          JOIN t_ai_agent a ON a.agent_id = m.to_agent_id
+                           AND a.deleted_at IS NULL
+         WHERE m.read_at IS NULL
+           AND m.status IN ('delivered', 'replied')
+         GROUP BY m.to_agent_id, a.agent_name
+         ORDER BY unread DESC
+    </select>
+
 </mapper>

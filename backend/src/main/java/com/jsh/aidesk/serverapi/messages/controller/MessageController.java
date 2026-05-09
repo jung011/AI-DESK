@@ -1,17 +1,24 @@
 package com.jsh.aidesk.serverapi.messages.controller;
 
+import java.util.List;
+
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.jsh.aidesk.serverapi.common.response.ResponseCode;
 import com.jsh.aidesk.serverapi.common.response.ResponseJson;
 import com.jsh.aidesk.serverapi.messages.service.MessageService;
+import com.jsh.aidesk.serverapi.messages.vo.ConversationItemRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageCreateRqVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageListRsVo;
+import com.jsh.aidesk.serverapi.messages.vo.UnreadCountRsVo;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -36,5 +43,25 @@ public class MessageController {
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "limit", defaultValue = "100") int limit) {
         return ResponseJson.ok(messageService.getList(agentId, direction, withId, status, limit));
+    }
+
+    @GetMapping("/conversations")
+    public ResponseJson<List<ConversationItemRsVo>> conversations(
+            @RequestParam("agentId") String agentId) {
+        return ResponseJson.ok(messageService.getConversations(agentId));
+    }
+
+    @GetMapping("/unread-count")
+    public ResponseJson<UnreadCountRsVo> unreadCount(
+            @RequestParam(value = "agentId", required = false) String agentId) {
+        return ResponseJson.ok(messageService.getUnreadCount(agentId));
+    }
+
+    @PatchMapping("/{messageId}/read")
+    public ResponseJson<Void> markRead(
+            @PathVariable("messageId") String messageId,
+            @RequestParam("agentId") String agentId) {
+        boolean ok = messageService.markRead(messageId, agentId);
+        return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
     }
 }

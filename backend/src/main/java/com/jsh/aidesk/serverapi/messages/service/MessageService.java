@@ -13,10 +13,15 @@ import com.jsh.aidesk.serverapi.messages.lastmile.LastMileAdapter;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 import com.jsh.aidesk.serverapi.messages.policy.MessagePolicyChecker;
 import com.jsh.aidesk.serverapi.messages.policy.PolicyResult;
+import java.util.List;
+
+import com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo;
+import com.jsh.aidesk.serverapi.messages.vo.ConversationItemRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageCreateRqVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageListRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageVo;
+import com.jsh.aidesk.serverapi.messages.vo.UnreadCountRsVo;
 
 import lombok.RequiredArgsConstructor;
 
@@ -87,10 +92,14 @@ public class MessageService {
         messageMapper.insert(entity);
 
         final String messageId = entity.getMessageId();
+        final String parentId = parent != null ? parent.getMessageId() : null;
         lastMile.deliver(entity, to, new LastMileAdapter.DeliveryCallback() {
             @Override
             public void onDelivered() {
                 messageMapper.updateStatus(messageId, "delivered", null);
+                if (parentId != null) {
+                    messageMapper.updateParentReplied(parentId);
+                }
             }
             @Override
             public void onFailed(String reason) {
@@ -99,6 +108,43 @@ public class MessageService {
         });
 
         return messageMapper.selectItemById(messageId);
+    }
+
+    /**
+     * 메시지 읽음 처리. 본인 수신 메시지가 아니면 변경 없음.
+     */
+    @Transactional
+    public boolean markRead(String messageId, String agentId) {
+        return messageMapper.updateRead(messageId, agentId) > 0;
+    }
+
+    /**
+     * 대화 목록 (좌측 패널) — 지정 AI 가 참여한 대화별로 마지막 메시지 + unreadCount.
+     */
+    @Transactional(readOnly = true)
+    public List<ConversationItemRsVo> getConversations(String agentId) {
+        return messageMapper.selectConversations(agentId);
+    }
+
+    /**
+     * 미확인 수신 메시지 수 — 전체 합 + 에이전트별 분해.
+     * agentId 가 주어지면 그 에이전트의 수만 반환.
+     */
+    @Transactional(readOnly = true)
+    public UnreadCountRsVo getUnreadCount(String agentId) {
+        List<AgentUnreadRsVo> all = messageMapper.selectUnreadCounts();
+        UnreadCountRsVo rs = new UnreadCountRsVo();
+        if (agentId != null && !agentId.isBlank()) {
+            List<AgentUnreadRsVo> filtered = all.stream()
+                    .filter(a -> agentId.equals(a.getAgentId()))
+                    .toList();
+            rs.setByAgent(filtered);
+            rs.setTotalUnread(filtered.stream().mapToInt(AgentUnreadRsVo::getUnread).sum());
+        } else {
+            rs.setByAgent(all);
+            rs.setTotalUnread(all.stream().mapToInt(AgentUnreadRsVo::getUnread).sum());
+        }
+        return rs;
     }
 
     /**
