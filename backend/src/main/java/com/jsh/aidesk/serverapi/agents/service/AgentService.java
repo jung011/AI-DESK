@@ -199,7 +199,10 @@ public class AgentService {
                 // Terminal 이미 가동 중 — 새 윈도우를 만들어 사용자의 다른 작업 윈도우를 침범하지 않음.
                 + "  tell application \"Terminal\"\n"
                 + "    activate\n"
-                + "    do script shellCmd\n"
+                + "    set newTab to do script shellCmd\n"
+                + "    try\n"
+                + "      set font size of newTab to 16\n"
+                + "    end try\n"
                 + "  end tell\n"
                 + "else\n"
                 // Terminal 꺼져 있음 — launch 가 자동 생성하는 기본 윈도우를 재사용.
@@ -211,10 +214,13 @@ public class AgentService {
                 + "    end repeat\n"
                 + "    activate\n"
                 + "    if (count windows) > 0 then\n"
-                + "      do script shellCmd in selected tab of front window\n"
+                + "      set newTab to do script shellCmd in selected tab of front window\n"
                 + "    else\n"
-                + "      do script shellCmd\n"
+                + "      set newTab to do script shellCmd\n"
                 + "    end if\n"
+                + "    try\n"
+                + "      set font size of newTab to 16\n"
+                + "    end try\n"
                 + "  end tell\n"
                 + "end if\n";
 
