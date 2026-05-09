@@ -8,7 +8,7 @@
         <a href="#"><em>대시보드</em></a>
       </div>
       <div style="margin-left: auto;">
-        <button type="button" class="btn normal type_v1" disabled title="Phase 2 후속 단계">
+        <button type="button" class="btn normal type_v1" @click="dialogOpen = true">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:6px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
           AI 생성
         </button>
@@ -31,6 +31,14 @@
 
     <!-- AI 카드 그리드 -->
     <AgentCardGrid :agents="filteredList" />
+
+    <!-- AI 생성 팝업 -->
+    <AgentCreateDialog
+      :open="dialogOpen"
+      :submitting="creating"
+      :error-message="createError"
+      @close="dialogOpen = false"
+      @submit="onCreateSubmit" />
   </div>
 </template>
 
@@ -39,6 +47,9 @@ import { useAgents } from '~/composables/useAgents';
 import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
+import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
+
+import type { AgentCreateRequest } from '~/vo/agents/AgentVo';
 
 const {
   summary,
@@ -47,8 +58,25 @@ const {
   filteredList,
   error,
   startPolling,
-  stopPolling
+  stopPolling,
+  createAgent
 } = useAgents();
+
+const dialogOpen = ref(false);
+const creating = ref(false);
+const createError = ref<string | null>(null);
+
+async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
+  creating.value = true;
+  createError.value = null;
+  const created = await createAgent(req);
+  creating.value = false;
+  if (created) {
+    dialogOpen.value = false;
+  } else {
+    createError.value = error.value ?? '생성에 실패했습니다.';
+  }
+}
 
 onMounted(() => startPolling(10_000));
 onUnmounted(() => stopPolling());

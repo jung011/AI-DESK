@@ -1,4 +1,5 @@
 import type {
+  AgentCreateRequest,
   AgentItem,
   AgentListResponse,
   AgentSummary,
@@ -63,6 +64,50 @@ export function useAgents(initialStatus: string = 'all') {
     }
   }
 
+  /**
+   * 새 에이전트 생성. 성공 시 즉시 목록 재조회.
+   * 정책 거절(envelope.result !== 0)은 error 에 사유를 담아 전달한다.
+   */
+  async function createAgent(req: AgentCreateRequest): Promise<AgentItem | null> {
+    try {
+      const env = await $api<ApiEnvelope<AgentItem>>('/api/agents', {
+        method: 'POST',
+        body: req
+      });
+      if (env.result === 0) {
+        await fetchAgents();
+        error.value = null;
+        return env.data;
+      }
+      error.value = env.message ?? '생성에 실패했습니다.';
+      return null;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
+  /**
+   * 단건 소프트 딜리트. 성공 시 즉시 목록 재조회.
+   */
+  async function deleteAgent(agentId: string): Promise<boolean> {
+    try {
+      const env = await $api<ApiEnvelope<null>>(`/api/agents/${encodeURIComponent(agentId)}`, {
+        method: 'DELETE'
+      });
+      if (env.result === 0) {
+        await fetchAgents();
+        error.value = null;
+        return true;
+      }
+      error.value = env.message ?? '삭제에 실패했습니다.';
+      return false;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+      return false;
+    }
+  }
+
   // status 가 변하면 즉시 재조회
   watch(status, () => { void fetchAgents(); });
 
@@ -79,6 +124,8 @@ export function useAgents(initialStatus: string = 'all') {
     // actions
     fetchAgents,
     startPolling,
-    stopPolling
+    stopPolling,
+    createAgent,
+    deleteAgent
   };
 }
