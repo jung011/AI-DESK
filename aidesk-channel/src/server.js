@@ -1,7 +1,8 @@
 // AI Desk MCP server.
 //
 // 환경변수:
-//   AIDESK_AGENT_ID    필수. 이 MCP 서버 인스턴스가 어느 t_ai_agent 에 해당하는지.
+//   AIDESK_AGENT_ID    선택. 이 MCP 인스턴스가 어느 t_ai_agent 에 해당하는지를 명시.
+//                      비어있거나 DB 에 없는 ID 면 process.cwd() 로 자동 매칭.
 //   AIDESK_API_URL     선택 (기본 http://localhost:8081).
 //   AIDESK_POLL_MS     선택 (기본 5000). inbox 폴링 주기.
 //
@@ -26,14 +27,13 @@ import {
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
 
-const AGENT_ID = process.env.AIDESK_AGENT_ID;
+const ENV_AGENT_ID = process.env.AIDESK_AGENT_ID;
 const API_URL  = process.env.AIDESK_API_URL || 'http://localhost:8081';
 const POLL_MS  = Number(process.env.AIDESK_POLL_MS || 5000);
 
-if (!AGENT_ID) {
-  process.stderr.write('aidesk-channel: AIDESK_AGENT_ID is not set\n');
-  process.exit(3);
-}
+// 부팅 시 한 번 결정되며, 결정 실패해도 종료하지 않는다 (백엔드 미기동 시점에 claude 가
+// MCP 를 띄우는 경우 대비). 도구 호출 시점에 다시 시도한다.
+let AGENT_ID = null;
 
 // ---------------------------------------------------------------------
 // 도구 정의
@@ -105,10 +105,49 @@ async function api(path, init = {}) {
 
 const isUuid = (s) => typeof s === 'string' && /^[0-9a-f-]{36}$/i.test(s);
 
+/**
+ * 우리(이 MCP 인스턴스) 가 어느 t_ai_agent 인지 결정.
+ *
+ *   1) AIDESK_AGENT_ID env 가 DB 에 살아있는 ID 면 그걸 사용
+ *   2) env 가 없거나 DB 에 없으면 process.cwd() 와 t_ai_agent.workspace_dir 매칭
+ *   3) 둘 다 실패하면 throw — claude 도구 호출이 명확한 에러 메시지로 떨어짐
+ *
+ * 결과는 한 번만 캐시. listAgents/sendTo/checkInbox 모두 이 값을 쓴다.
+ */
+async function ensureAgentId() {
+  if (AGENT_ID) return AGENT_ID;
+  const env = await api('/api/agents');
+  const list = env.data?.list || [];
+
+  if (ENV_AGENT_ID) {
+    const byEnv = list.find((a) => a.agentId === ENV_AGENT_ID);
+    if (byEnv) {
+      AGENT_ID = byEnv.agentId;
+      return AGENT_ID;
+    }
+    process.stderr.write(
+      `aidesk-channel: AIDESK_AGENT_ID=${ENV_AGENT_ID} not in DB; falling back to cwd match\n`
+    );
+  }
+
+  const cwd = process.cwd();
+  // 정확 일치 우선, 부족하면 prefix 일치 (예: cwd 가 워크스페이스의 하위 폴더에서 떴을 때).
+  const exact = list.find((a) => a.workspaceDir === cwd);
+  const prefix = exact || list.find((a) => cwd.startsWith(a.workspaceDir + '/'));
+  if (!prefix) {
+    throw new Error(
+      `aidesk-channel: no agent matches cwd "${cwd}". 대시보드에서 AI 를 먼저 생성하세요.`
+    );
+  }
+  AGENT_ID = prefix.agentId;
+  return AGENT_ID;
+}
+
 async function listAgents() {
+  const me = await ensureAgentId();
   const env = await api('/api/agents');
   return (env.data?.list || []).filter(
-    (a) => a.agentId !== AGENT_ID && a.status !== 'done'
+    (a) => a.agentId !== me && a.status !== 'done'
   );
 }
 
@@ -124,8 +163,9 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   if (!target_agent || !content) {
     throw new Error('target_agent and content are required');
   }
+  const me = await ensureAgentId();
   const toAgentId = await resolveAgentId(target_agent);
-  const body = { fromAgentId: AGENT_ID, toAgentId, content };
+  const body = { fromAgentId: me, toAgentId, content };
   if (reply_to_message_id) body.replyToMessageId = reply_to_message_id;
   const env = await api('/api/messages', { method: 'POST', body: JSON.stringify(body) });
   return env.data;
@@ -133,10 +173,11 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
 
 async function replyToMessage({ message_id, content }) {
   if (!message_id || !content) throw new Error('message_id and content are required');
+  const me = await ensureAgentId();
   const env = await api(`/api/messages/${encodeURIComponent(message_id)}`);
   const orig = env.data;
   if (!orig) throw new Error(`Original message not found: ${message_id}`);
-  if (orig.toAgentId !== AGENT_ID) {
+  if (orig.toAgentId !== me) {
     throw new Error('You are not the receiver of this message.');
   }
   return await sendTo({
@@ -147,7 +188,8 @@ async function replyToMessage({ message_id, content }) {
 }
 
 async function checkInbox({ unread_only = true, limit = 10 } = {}) {
-  const url = `/api/messages?agentId=${encodeURIComponent(AGENT_ID)}&direction=inbox&limit=${encodeURIComponent(
+  const me = await ensureAgentId();
+  const url = `/api/messages?agentId=${encodeURIComponent(me)}&direction=inbox&limit=${encodeURIComponent(
     limit
   )}`;
   const env = await api(url);
@@ -244,7 +286,12 @@ async function pollInbox() {
 const transport = new StdioServerTransport();
 await server.connect(transport);
 process.stderr.write(
-  `aidesk-channel ready. agent=${AGENT_ID} api=${API_URL} poll=${POLL_MS}ms\n`
+  `aidesk-channel ready. cwd=${process.cwd()} api=${API_URL} poll=${POLL_MS}ms\n`
+);
+
+// 부팅 직후 백엔드와 통신 시도해 AGENT_ID 결정 — 실패해도 도구 호출 시 재시도된다.
+ensureAgentId().catch((e) =>
+  process.stderr.write(`aidesk-channel: initial agent resolve failed: ${e?.message ?? e}\n`)
 );
 
 setInterval(pollInbox, POLL_MS);
