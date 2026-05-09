@@ -20,11 +20,20 @@
 
           <div class="form_field">
             <label class="form_label">워크스페이스 경로 <span class="required">*</span></label>
-            <input
-              v-model="form.workspaceDir"
-              type="text"
-              placeholder="예: /Users/username/workspace/my-project" />
-            <span class="form_help">AI가 작업할 로컬 폴더의 절대 경로(/ 로 시작)를 입력하세요.</span>
+            <div class="workspace-input-row">
+              <input
+                v-model="form.workspaceDir"
+                type="text"
+                placeholder="예: /Users/username/workspace/my-project" />
+              <button
+                type="button"
+                class="btn-browse"
+                :disabled="browsing"
+                @click="onBrowse">
+                {{ browsing ? '선택 중…' : '찾아보기' }}
+              </button>
+            </div>
+            <span class="form_help">AI가 작업할 로컬 폴더의 절대 경로(/ 로 시작)를 입력하거나 “찾아보기”로 선택하세요. (macOS 한정)</span>
           </div>
 
           <div class="form_field">
@@ -73,6 +82,8 @@ const form = reactive<AgentCreateRequest>({
   model: 'claude'
 });
 
+const browsing = ref(false);
+
 const canSubmit = computed(() =>
   form.agentName.trim().length > 0 &&
   /^\/.+/.test(form.workspaceDir.trim()) &&
@@ -85,8 +96,33 @@ watch(() => props.open, (next) => {
     form.agentName = '';
     form.workspaceDir = '';
     form.model = 'claude';
+    browsing.value = false;
   }
 });
+
+async function onBrowse(): Promise<void> {
+  if (browsing.value) return;
+  browsing.value = true;
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<{ result: number; message: string; data: string | null }>(
+      '/api/agents/_browse-workspace',
+      { method: 'POST' }
+    );
+    if (env.result !== 0) {
+      // eslint-disable-next-line no-alert
+      alert(env.message || '폴더 선택을 사용할 수 없습니다.');
+      return;
+    }
+    // 빈 문자열 = 사용자 취소. 그대로 두고 무시한다.
+    if (env.data) form.workspaceDir = env.data;
+  } catch (e) {
+    // eslint-disable-next-line no-alert
+    alert(`폴더 선택 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    browsing.value = false;
+  }
+}
 
 function onSubmit(): void {
   if (!canSubmit.value || props.submitting) return;
@@ -142,6 +178,18 @@ function onSubmit(): void {
   font-size: 13px; color: #333; background: #fff;
 }
 .form_field input[type="text"]:focus { outline: none; border-color: #0062ff; }
+
+.workspace-input-row { display: flex; gap: 8px; align-items: center; }
+.workspace-input-row input { flex: 1; }
+.btn-browse {
+  flex-shrink: 0;
+  height: 36px; padding: 0 14px;
+  border: 1px solid #D4DCE4; border-radius: 6px;
+  background: #fff; color: #475569;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.btn-browse:hover:not(:disabled) { background: #F8FAFC; border-color: #0062ff; color: #0062ff; }
+.btn-browse:disabled { color: #94A3B8; cursor: not-allowed; }
 
 .model-select-wrap { position: relative; }
 .model-select-wrap select {
