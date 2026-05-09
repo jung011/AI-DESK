@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jsh.aidesk.serverapi.usage.vo.LocalUsageRsVo;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -32,11 +33,37 @@ public class UsageService {
 
     private static final Path USAGE_DIR =
             Paths.get(System.getProperty("user.home"), ".claude", "aidesk-usage");
+    private static final Path SETTINGS_PATH =
+            Paths.get(System.getProperty("user.home"), ".claude", "settings.json");
+    private static final String SCRIPT_FILENAME = "aidesk-statusline.js";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** 백엔드 부팅 시 statusLine 자동 등록 — 다른 명령이 이미 설정돼 있으면 보호. */
+    @PostConstruct
+    void autoInstallOnStartup() {
+        HookState s = inspectHook();
+        if (s == HookState.OURS) {
+            log.info("usage: statusLine already pointing to our script");
+            return;
+        }
+        if (s == HookState.OTHER) {
+            log.info("usage: statusLine occupied by another command; skipping auto-install");
+            return;
+        }
+        int rc = installStatuslineHook();
+        if (rc == 0) {
+            log.info("usage: statusLine auto-installed — restart Claude Code to activate");
+        } else {
+            log.warn("usage: statusLine auto-install failed rc={}", rc);
+        }
+    }
+
     public LocalUsageRsVo getLocalUsage() {
         LocalUsageRsVo rs = new LocalUsageRsVo();
+        HookState hook = inspectHook();
+        rs.setHookInstalled(hook == HookState.OURS);
+        rs.setHookOccupiedByOther(hook == HookState.OTHER);
 
         if (!Files.isDirectory(USAGE_DIR)) return rs; // ready=false
 
@@ -134,5 +161,22 @@ public class UsageService {
             if (Files.isRegularFile(c)) return c;
         }
         return null;
+    }
+
+    private enum HookState { ABSENT, OURS, OTHER }
+
+    private HookState inspectHook() {
+        if (!Files.exists(SETTINGS_PATH)) return HookState.ABSENT;
+        try {
+            JsonNode root = objectMapper.readTree(Files.newInputStream(SETTINGS_PATH));
+            JsonNode statusLine = root.path("statusLine");
+            if (statusLine.isMissingNode() || statusLine.isNull()) return HookState.ABSENT;
+            String cmd = statusLine.path("command").asText("");
+            if (cmd.isBlank()) return HookState.ABSENT;
+            return cmd.contains(SCRIPT_FILENAME) ? HookState.OURS : HookState.OTHER;
+        } catch (IOException e) {
+            log.warn("usage: read settings.json failed: {}", e.getMessage());
+            return HookState.ABSENT;
+        }
     }
 }

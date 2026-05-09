@@ -31,4 +31,10 @@ public class LocalUsageRsVo {
 
     /** statusline 이 등록되어 있는지. false 면 프론트에서 안내 배너 표시. */
     private boolean ready = false;
+
+    /** ~/.claude/settings.json 의 statusLine 이 우리 스크립트를 가리키는지. */
+    private boolean hookInstalled = false;
+
+    /** statusLine 이 우리가 아닌 다른 명령으로 이미 설정되어 있는 상태. true 면 자동 설치 안 함. */
+    private boolean hookOccupiedByOther = false;
 }
