@@ -35,27 +35,45 @@ public class UsageService {
             Paths.get(System.getProperty("user.home"), ".claude", "aidesk-usage");
     private static final Path SETTINGS_PATH =
             Paths.get(System.getProperty("user.home"), ".claude", "settings.json");
-    private static final String SCRIPT_FILENAME = "aidesk-statusline.js";
+    private static final String SCRIPT_FILENAME = "aidesk-statusline.cjs";
+    /** OURS 판정용 — 옛날 .js 경로도 우리것으로 본 뒤 currentHookMatchesScript() 가 마이그레이션 트리거. */
+    private static final String SCRIPT_BASE_NAME = "aidesk-statusline";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /** 백엔드 부팅 시 statusLine 자동 등록 — 다른 명령이 이미 설정돼 있으면 보호. */
+    /**
+     * 백엔드 부팅 시 statusLine 자동 등록 — 다른 명령이 이미 설정돼 있으면 보호.
+     * 우리것이지만 경로가 현재 locateScript() 와 다르면 (예: 옛 .js → 새 .cjs 마이그레이션) 덮어쓴다.
+     */
     @PostConstruct
     void autoInstallOnStartup() {
         HookState s = inspectHook();
-        if (s == HookState.OURS) {
-            log.info("usage: statusLine already pointing to our script");
-            return;
-        }
         if (s == HookState.OTHER) {
             log.info("usage: statusLine occupied by another command; skipping auto-install");
             return;
         }
+        if (s == HookState.OURS && currentHookMatchesScript()) {
+            log.info("usage: statusLine already pointing to our current script");
+            return;
+        }
         int rc = installStatuslineHook();
         if (rc == 0) {
-            log.info("usage: statusLine auto-installed — restart Claude Code to activate");
+            log.info("usage: statusLine {} — restart Claude Code to activate",
+                    s == HookState.OURS ? "path migrated" : "auto-installed");
         } else {
             log.warn("usage: statusLine auto-install failed rc={}", rc);
+        }
+    }
+
+    private boolean currentHookMatchesScript() {
+        Path target = locateScript();
+        if (target == null) return false;
+        try {
+            JsonNode root = objectMapper.readTree(Files.newInputStream(SETTINGS_PATH));
+            String cmd = root.path("statusLine").path("command").asText("");
+            return cmd.contains(target.toAbsolutePath().toString());
+        } catch (IOException e) {
+            return false;
         }
     }
 
@@ -154,8 +172,8 @@ public class UsageService {
         // 2) ../adesk-cli/bin/aidesk-statusline.js (backend/ 안에서 기동된 경우)
         Path cwd = Paths.get("").toAbsolutePath();
         Path[] candidates = new Path[] {
-                cwd.resolve("adesk-cli/bin/aidesk-statusline.js"),
-                cwd.resolve("../adesk-cli/bin/aidesk-statusline.js").normalize()
+                cwd.resolve("adesk-cli/bin/aidesk-statusline.cjs"),
+                cwd.resolve("../adesk-cli/bin/aidesk-statusline.cjs").normalize()
         };
         for (Path c : candidates) {
             if (Files.isRegularFile(c)) return c;
@@ -173,7 +191,7 @@ public class UsageService {
             if (statusLine.isMissingNode() || statusLine.isNull()) return HookState.ABSENT;
             String cmd = statusLine.path("command").asText("");
             if (cmd.isBlank()) return HookState.ABSENT;
-            return cmd.contains(SCRIPT_FILENAME) ? HookState.OURS : HookState.OTHER;
+            return cmd.contains(SCRIPT_BASE_NAME) ? HookState.OURS : HookState.OTHER;
         } catch (IOException e) {
             log.warn("usage: read settings.json failed: {}", e.getMessage());
             return HookState.ABSENT;
