@@ -69,8 +69,17 @@
 - ✅ 카드 메뉴 드롭다운 (VSCode/터미널/검증/삭제 — *메시지 보내기는 Phase 3 후 연결*)
 - ✅ 10초 폴링 (`startPolling` / `stopPolling` in `useAgents`)
 
-### 검증
-- ⬜ Chrome MCP로 화면 동작 검증 (M2 확정용)
+### 검증 ✅
+- ✅ Chrome MCP로 화면 동작 검증 — **M2 달성**
+  - ✅ 페이지 진입 → 카드 그리드·요약·필터·검색 정상 렌더링
+  - ✅ 필터 탭(작업중) → 1개만 표시
+  - ✅ 검색("코드") → 코드 리뷰 AI만 표시
+  - ✅ AI 생성 팝업 → 폼 입력 → 카드 즉시 추가 + 요약 갱신 (4·작업중 2)
+  - ✅ 카드 메뉴 ⋮ → 5개 항목 (메시지 보내기 disabled, 삭제 destructive)
+  - ✅ 삭제 확인 팝업 → 삭제 → 카드 사라짐 + 요약 갱신 + DB soft-delete
+- 발견된 minor 이슈 :
+  - 사이드 메뉴 `/logs`/`/messages`/`/settings` 라우터 경고 — Phase 3+ 페이지 추가 시 자연 해결
+  - 마지막 row 카드의 ⋮ dropdown이 grid reflow를 유발 — 추후 dropdown 위치 조건부 조정으로 개선 가능
 
 ---
 
@@ -146,4 +155,5 @@
 ## 변경 이력
 - 2026-05-09 : 보드 초기 작성 (Phase 0 완료, Phase 1 착수)
 - 2026-05-09 : Phase 1 백엔드 완료, Phase 2 백엔드 agents 도메인 3종 엔드포인트 작성 + GET 검증 — **M1 달성**
-- 2026-05-09 : Phase 1 프론트(Pinia·layout·CSS·api) + Phase 2 프론트(요약/필터/카드/생성/삭제) 완료. POST/DELETE 검증 OK. 남은 건 Chrome MCP 시각 검증.
+- 2026-05-09 : Phase 1 프론트(Pinia·layout·CSS·api) + Phase 2 프론트(요약/필터/카드/생성/삭제) 완료. POST/DELETE 검증 OK.
+- 2026-05-09 : Chrome MCP 시각 검증 통과 (필터·검색·생성·메뉴·삭제 전체 동작) — **M2 달성**
