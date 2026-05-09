@@ -1,6 +1,9 @@
 -- AI Desk PostgreSQL 스키마
 -- 적용: docker exec -i postgres-db psql -U postgres -d aidesk < backend/src/main/resources/db/schema.sql
 
+-- =====================================================================
+-- t_ai_agent — AI 에이전트
+-- =====================================================================
 CREATE TABLE IF NOT EXISTS t_ai_agent (
     agent_id        VARCHAR(36)  PRIMARY KEY,
     agent_name      VARCHAR(50)  NOT NULL,
@@ -32,3 +35,44 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_deleted
     ON t_ai_agent (deleted_at);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_agent_tmux_session
     ON t_ai_agent (tmux_session) WHERE deleted_at IS NULL;
+
+-- =====================================================================
+-- t_ai_message — AI 협업 메시지
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS t_ai_message (
+    message_id           VARCHAR(36)   PRIMARY KEY,
+    from_agent_id        VARCHAR(36)   NOT NULL,
+    to_agent_id          VARCHAR(36)   NOT NULL,
+    content              VARCHAR(1000) NOT NULL,
+    reply_to_message_id  VARCHAR(36),
+    root_message_id      VARCHAR(36),
+    hop_count            INTEGER       NOT NULL DEFAULT 0,
+    status               VARCHAR(15)   NOT NULL,
+    error_reason         VARCHAR(200),
+    created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    delivered_at         TIMESTAMPTZ,
+    read_at              TIMESTAMPTZ,
+    replied_at           TIMESTAMPTZ
+);
+
+COMMENT ON TABLE  t_ai_message IS 'AI 에이전트 간 메시지';
+COMMENT ON COLUMN t_ai_message.message_id           IS '메시지 UUID (PK)';
+COMMENT ON COLUMN t_ai_message.from_agent_id        IS '보낸 AI (FK → t_ai_agent)';
+COMMENT ON COLUMN t_ai_message.to_agent_id          IS '받는 AI (FK → t_ai_agent)';
+COMMENT ON COLUMN t_ai_message.content              IS '본문 (최대 1000자)';
+COMMENT ON COLUMN t_ai_message.reply_to_message_id  IS '답장 체인 — 원본 메시지 ID';
+COMMENT ON COLUMN t_ai_message.root_message_id      IS '체인 루트 메시지 (자기 자신이면 NULL)';
+COMMENT ON COLUMN t_ai_message.hop_count            IS '위임 깊이 (기본 0, 답장이면 부모+1)';
+COMMENT ON COLUMN t_ai_message.status               IS 'sent / delivered / replied / failed';
+COMMENT ON COLUMN t_ai_message.error_reason         IS 'failed 사유';
+
+CREATE INDEX IF NOT EXISTS idx_ai_message_from
+    ON t_ai_message (from_agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_message_to
+    ON t_ai_message (to_agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_message_reply
+    ON t_ai_message (reply_to_message_id);
+CREATE INDEX IF NOT EXISTS idx_ai_message_status
+    ON t_ai_message (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_message_root
+    ON t_ai_message (root_message_id, created_at);
