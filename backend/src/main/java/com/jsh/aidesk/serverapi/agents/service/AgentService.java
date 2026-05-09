@@ -21,6 +21,7 @@ import com.jsh.aidesk.serverapi.agents.vo.AgentItemRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentListRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentSummaryRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
+import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 
 import lombok.RequiredArgsConstructor;
 
@@ -36,6 +37,7 @@ public class AgentService {
     );
 
     private final AgentMapper agentMapper;
+    private final MessageMapper messageMapper;
 
     @Transactional(readOnly = true)
     public AgentListRsVo getList(String status) {
@@ -69,7 +71,14 @@ public class AgentService {
 
     @Transactional
     public boolean delete(String agentId) {
-        return agentMapper.softDelete(agentId) > 0;
+        // 메시지 cascade — 이 에이전트가 보내거나 받은 모든 t_ai_message row 도 함께 제거.
+        // FK 제약은 없지만 orphan 메시지가 남으면 audit 시 join 결과가 깨지므로 같이 비운다.
+        int msgs = messageMapper.deleteByAgent(agentId);
+        int agents = agentMapper.hardDelete(agentId);
+        if (agents > 0) {
+            log.info("agent hard-deleted: agent_id={} cascaded_messages={}", agentId, msgs);
+        }
+        return agents > 0;
     }
 
     @Transactional(readOnly = true)

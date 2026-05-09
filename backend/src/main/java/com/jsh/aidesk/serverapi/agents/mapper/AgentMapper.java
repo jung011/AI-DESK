@@ -19,7 +19,7 @@ public interface AgentMapper {
 
     int insert(AgentVo agent);
 
-    int softDelete(@Param("agentId") String agentId);
+    int hardDelete(@Param("agentId") String agentId);
 
     /**
      * 세션 파일 감지 스케줄러용 — 상태와 컨텍스트 사용률을 함께 갱신.

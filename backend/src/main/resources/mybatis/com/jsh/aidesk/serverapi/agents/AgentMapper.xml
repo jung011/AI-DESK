@@ -42,12 +42,10 @@
         )
     </insert>
 
-    <update id="softDelete">
-        UPDATE t_ai_agent
-           SET deleted_at = NOW()
+    <delete id="hardDelete">
+        DELETE FROM t_ai_agent
          WHERE agent_id = #{agentId}
-           AND deleted_at IS NULL
-    </update>
+    </delete>
 
     <update id="updateStatusFromWatcher">
         UPDATE t_ai_agent

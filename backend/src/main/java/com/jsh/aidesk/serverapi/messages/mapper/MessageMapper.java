@@ -79,4 +79,9 @@ public interface MessageMapper {
             @Param("toAgentId") String toAgentId,
             @Param("q") String q,
             @Param("limit") int limit);
+
+    /**
+     * 에이전트가 보내거나 받은 모든 메시지를 삭제 — 에이전트 hard delete cascade.
+     */
+    int deleteByAgent(@Param("agentId") String agentId);
 }

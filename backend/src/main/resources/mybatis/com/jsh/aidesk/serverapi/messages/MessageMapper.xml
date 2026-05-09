@@ -187,4 +187,10 @@
          LIMIT #{limit}
     </select>
 
+    <delete id="deleteByAgent">
+        DELETE FROM t_ai_message
+         WHERE from_agent_id = #{agentId}
+            OR to_agent_id   = #{agentId}
+    </delete>
+
 </mapper>
