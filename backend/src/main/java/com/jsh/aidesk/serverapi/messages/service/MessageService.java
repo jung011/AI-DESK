@@ -152,6 +152,14 @@ public class MessageService {
     }
 
     /**
+     * 단건 조회.
+     */
+    @Transactional(readOnly = true)
+    public MessageItemRsVo detail(String messageId) {
+        return messageMapper.selectItemById(messageId);
+    }
+
+    /**
      * 메시지 목록 조회.
      */
     @Transactional(readOnly = true)

@@ -69,6 +69,12 @@ public class AgentService {
         return agentMapper.selectById(agentId);
     }
 
+    @Transactional(readOnly = true)
+    public AgentItemRsVo detail(String agentId) {
+        AgentVo v = agentMapper.selectById(agentId);
+        return v == null ? null : toItem(v);
+    }
+
     private AgentSummaryRsVo buildSummary() {
         Map<String, Integer> counts = new HashMap<>();
         for (Map<String, Object> row : agentMapper.selectStatusCounts()) {

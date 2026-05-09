@@ -32,6 +32,12 @@ public class AgentController {
         return ResponseJson.ok(agentService.getList(status));
     }
 
+    @GetMapping("/{agentId}")
+    public ResponseJson<AgentItemRsVo> detail(@PathVariable("agentId") String agentId) {
+        AgentItemRsVo item = agentService.detail(agentId);
+        return item == null ? ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND) : ResponseJson.ok(item);
+    }
+
     @PostMapping
     public ResponseJson<AgentItemRsVo> create(@Valid @RequestBody AgentCreateRqVo body) {
         AgentItemRsVo created = agentService.create(body);

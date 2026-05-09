@@ -35,6 +35,12 @@ public class MessageController {
         return ResponseJson.ok(messageService.create(body));
     }
 
+    @GetMapping("/{messageId}")
+    public ResponseJson<MessageItemRsVo> detail(@PathVariable("messageId") String messageId) {
+        MessageItemRsVo m = messageService.detail(messageId);
+        return m == null ? ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND) : ResponseJson.ok(m);
+    }
+
     @GetMapping
     public ResponseJson<MessageListRsVo> list(
             @RequestParam("agentId") String agentId,
