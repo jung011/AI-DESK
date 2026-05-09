@@ -113,10 +113,10 @@ public class AgentService {
 
     /**
      * 에이전트의 워크스페이스에서 Terminal 을 열고 tmux 세션에서 claude 를 실행한다.
-     * - 세션이 없으면: 새 tmux 세션 생성 + 그 안에서 'claude' 실행 (last-mile send-keys 가 동작할 준비 완료)
-     * - 세션이 이미 있으면: 거기 attach (claude 가 이미 떠있으면 그대로 합류)
      *
-     * AppleScript 의 `quoted form of` 가 워크스페이스 경로의 공백/특수문자를 안전하게 셸 인용 처리한다.
+     * 동작 우선순위:
+     *   1) 같은 tmux 세션에 이미 attach 된 Terminal tab 이 있으면 → 그 윈도우/탭 활성화 (새 윈도우 생성 X)
+     *   2) 없으면 → 새 윈도우에서 cd + tmux new-session -A -s {session} 'claude'
      *
      * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = 실행 실패
      */
@@ -136,24 +136,83 @@ public class AgentService {
             return 3;
         }
 
-        // AppleScript 문자열 안에 들어가도록 \ 와 " 만 escape.
-        // 셸 escape 는 AppleScript 의 quoted form of 가 알아서 해준다.
         String dirEsc = dir.replace("\\", "\\\\").replace("\"", "\\\"");
-        String doScript = "do script \"cd \" & quoted form of \"" + dirEsc
-                + "\" & \" && tmux new-session -A -s " + session + " 'claude'\"";
+        String script = ""
+                + "set sessionName to \"" + session + "\"\n"
+                + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
+                + "set clientTty to \"\"\n"
+                + "try\n"
+                + "  set clientTty to do shell script \"tmux list-clients -t \" & sessionName & \" -F '#{client_tty}' 2>/dev/null | head -n 1\"\n"
+                + "end try\n"
+                + "if clientTty is not \"\" then\n"
+                + "  tell application \"Terminal\"\n"
+                + "    activate\n"
+                + "    repeat with w in windows\n"
+                + "      repeat with t in tabs of w\n"
+                + "        try\n"
+                + "          if (tty of t) is clientTty then\n"
+                + "            set frontmost of w to true\n"
+                + "            set selected of t to true\n"
+                + "            return\n"
+                + "          end if\n"
+                + "        end try\n"
+                + "      end repeat\n"
+                + "    end repeat\n"
+                + "  end tell\n"
+                + "end if\n"
+                + "tell application \"Terminal\"\n"
+                + "  activate\n"
+                + "  do script \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude'\"\n"
+                + "end tell\n";
 
         try {
-            new ProcessBuilder(
-                    "osascript",
-                    "-e", "tell application \"Terminal\"",
-                    "-e", "activate",
-                    "-e", doScript,
-                    "-e", "end tell"
-            ).start();
+            new ProcessBuilder("osascript", "-e", script).start();
             log.info("openTerminal: agent={} dir={} session={}", v.getAgentName(), dir, session);
             return 0;
         } catch (IOException e) {
             log.warn("openTerminal failed: {}", e.getMessage());
+            return 4;
+        }
+    }
+
+    /**
+     * 에이전트의 워크스페이스를 VSCode 의 기존 윈도우에 띄운다 (`code -r`).
+     * 같은 폴더가 이미 열려있으면 그 윈도우를 활성화, 아니면 가장 최근 윈도우를 재사용.
+     *
+     * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = 실행 실패 (대개 code CLI 부재)
+     */
+    public int openVscode(String agentId) {
+        AgentVo v = agentMapper.selectById(agentId);
+        if (v == null) return 1;
+        String dir = v.getWorkspaceDir();
+        if (dir == null || dir.isBlank()) return 2;
+
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("mac") && !os.contains("linux")) {
+            log.warn("openVscode: unsupported OS '{}'", os);
+            return 3;
+        }
+
+        // 로그인 셸로 실행해 사용자 PATH (예: /usr/local/bin) 을 읽도록 한다.
+        // 이게 있어야 Homebrew·VSCode "Install code in PATH" 로 깐 code 가 잡힌다.
+        String singleQuoted = "'" + dir.replace("'", "'\\''") + "'";
+        String shellCmd = "code -r " + singleQuoted;
+
+        try {
+            Process p = new ProcessBuilder("/bin/zsh", "-l", "-c", shellCmd)
+                    .redirectErrorStream(true)
+                    .start();
+            int exit = p.waitFor();
+            if (exit != 0) {
+                String out = new String(p.getInputStream().readAllBytes()).trim();
+                log.warn("openVscode: code CLI exit={} out={}", exit, out);
+                return 4;
+            }
+            log.info("openVscode: agent={} dir={}", v.getAgentName(), dir);
+            return 0;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("openVscode failed: {}", e.getMessage());
             return 4;
         }
     }

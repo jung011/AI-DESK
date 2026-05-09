@@ -40,7 +40,10 @@ public class AgentStatusWatcher {
 
     private static final long ACTIVE_WINDOW_SEC = 120;
     private static final long IDLE_WINDOW_SEC = 30 * 60;
-    private static final long CONTEXT_WINDOW_TOKENS = 1_000_000L;
+
+    // 모델별 컨텍스트 윈도우. 1M 변형은 모델 ID 가 `[1m]` 으로 끝남.
+    private static final long CTX_DEFAULT_TOKENS = 200_000L;
+    private static final long CTX_1M_TOKENS = 1_000_000L;
 
     private final AgentMapper agentMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -83,9 +86,12 @@ public class AgentStatusWatcher {
     }
 
     /**
-     * JSONL 의 마지막 message.usage 를 추출해 context % 로 환산.
-     * tokens = input + cache_read + cache_creation + output. 컨텍스트 윈도우 1,000,000.
-     * usage 가 없거나 파싱 실패 시 null 반환 (DB 갱신 스킵).
+     * JSONL 의 마지막 message.usage 를 추출해 Claude Code `/usage` 와 같은 형태로 컨텍스트 % 환산.
+     *
+     * 분자: input + cache_read + cache_creation (= 그 턴의 prompt 크기). output 은 컨텍스트 입력이 아니므로 제외.
+     * 분모: 모델 ID 의 `[1m]` 접미사 유무에 따라 1,000,000 또는 200,000.
+     *
+     * Claude Code `/usage` 와 미세하게(±몇 %) 다를 수 있다 — 내부 시스템 프롬프트/예약 마진을 알 수 없기 때문.
      */
     private Integer computeContextPct(Path jsonl) {
         try {
@@ -95,15 +101,18 @@ public class AgentStatusWatcher {
                 if (line.isEmpty() || !line.startsWith("{")) continue;
                 try {
                     JsonNode root = objectMapper.readTree(line);
-                    JsonNode usage = root.path("message").path("usage");
+                    JsonNode message = root.path("message");
+                    JsonNode usage = message.path("usage");
                     if (usage.isMissingNode() || usage.isEmpty()) continue;
                     long tokens = 0;
                     tokens += usage.path("input_tokens").asLong(0);
                     tokens += usage.path("cache_read_input_tokens").asLong(0);
                     tokens += usage.path("cache_creation_input_tokens").asLong(0);
-                    tokens += usage.path("output_tokens").asLong(0);
                     if (tokens == 0) continue;
-                    long pct = tokens * 100 / CONTEXT_WINDOW_TOKENS;
+
+                    String model = message.path("model").asText("");
+                    long window = contextWindowOf(model);
+                    long pct = tokens * 100 / window;
                     return (int) Math.min(100, Math.max(0, pct));
                 } catch (Exception ignore) {
                     // 깨진 라인은 건너뛰고 계속 위로 탐색
@@ -113,6 +122,12 @@ public class AgentStatusWatcher {
             log.warn("watcher: read jsonl {} failed: {}", jsonl, e.getMessage());
         }
         return null;
+    }
+
+    private static long contextWindowOf(String model) {
+        // 1M 변형 모델 ID 는 `[1m]` 으로 끝난다. 그 외는 200k 가정.
+        if (model != null && model.endsWith("[1m]")) return CTX_1M_TOKENS;
+        return CTX_DEFAULT_TOKENS;
     }
 
     private static boolean isClaudeModel(String model) {

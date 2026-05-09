@@ -74,4 +74,16 @@ public class AgentController {
             default -> ResponseJson.<Void>fail(1, "터미널 실행에 실패했습니다.");
         };
     }
+
+    @PostMapping("/{agentId}/open-vscode")
+    public ResponseJson<Void> openVscode(@PathVariable("agentId") String agentId) {
+        int rc = agentService.openVscode(agentId);
+        return switch (rc) {
+            case 0 -> ResponseJson.ok((Void) null);
+            case 1 -> ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
+            case 2 -> ResponseJson.<Void>fail(1, "워크스페이스 경로가 없습니다.");
+            case 3 -> ResponseJson.<Void>fail(1, "현재 백엔드 OS 에서는 VSCode 열기를 지원하지 않습니다.");
+            default -> ResponseJson.<Void>fail(1, "code CLI 실행에 실패했습니다. VSCode 에서 ‘Install code in PATH’ 가 되어있는지 확인하세요.");
+        };
+    }
 }
