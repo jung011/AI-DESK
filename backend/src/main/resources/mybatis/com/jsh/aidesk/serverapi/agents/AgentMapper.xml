@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.aidesk.serverapi.agents.mapper.AgentMapper">
+
+    <sql id="agentColumns">
+        agent_id, agent_name, workspace_dir, tmux_session, status,
+        task_desc, model, context_pct, started_at, updated_at, deleted_at
+    </sql>
+
+    <select id="selectList" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE deleted_at IS NULL
+        <if test="status != null and status != '' and status != 'all'">
+           AND status = #{status}
+        </if>
+         ORDER BY started_at DESC
+    </select>
+
+    <select id="selectStatusCounts" resultType="java.util.Map">
+        SELECT status, COUNT(*) AS cnt
+          FROM t_ai_agent
+         WHERE deleted_at IS NULL
+         GROUP BY status
+    </select>
+
+    <select id="selectById" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
+    </select>
+
+    <insert id="insert" parameterType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        INSERT INTO t_ai_agent (
+            agent_id, agent_name, workspace_dir, tmux_session,
+            status, task_desc, model, context_pct, started_at
+        ) VALUES (
+            #{agentId}, #{agentName}, #{workspaceDir}, #{tmuxSession},
+            #{status}, #{taskDesc}, #{model}, #{contextPct}, NOW()
+        )
+    </insert>
+
+    <update id="softDelete">
+        UPDATE t_ai_agent
+           SET deleted_at = NOW()
+         WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
+    </update>
+
+</mapper>
