@@ -1,0 +1,19 @@
+{
+  "name": "ai-desk-frontend",
+  "version": "0.0.1",
+  "description": "AI Desk — Claude Code AI 에이전트 모니터링 + 협업 채널 (Nuxt 3, SPA)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "nuxt": "4.3.1",
+    "vue": "^3.5.33",
+    "vue-router": "^5.0.6"
+  }
+}

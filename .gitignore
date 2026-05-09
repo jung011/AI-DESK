@@ -1,0 +1,92 @@
+# =====================================================================
+# AI Desk — root .gitignore
+# 프론트(Nuxt) 패키지 내부 .gitignore와 함께 적용됩니다.
+# =====================================================================
+
+# ---- OS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Editors / IDEs ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.fleet/
+*.swp
+*.swo
+*~
+
+# ---- Logs ----
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- Local env / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# =====================================================================
+# Backend — Spring Boot / Gradle / Java
+# =====================================================================
+backend/.gradle/
+backend/build/
+backend/out/
+backend/bin/
+backend/.idea/
+backend/*.iml
+
+# Gradle wrapper 자체는 커밋 (gradlew, gradlew.bat, gradle/wrapper/*)
+# Gradle 사용자별 캐시·자동 생성물만 무시
+backend/.gradle-wrapper/
+backend/gradle-app.setting
+
+# Compiled class / package
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# Spring Boot devtools / 로컬 추가
+backend/HELP.md.bak
+
+# =====================================================================
+# Frontend — Nuxt / Node (frontend/.gitignore와 중복되지만 안전망)
+# =====================================================================
+frontend/node_modules/
+frontend/.output/
+frontend/.data/
+frontend/.nuxt/
+frontend/.nitro/
+frontend/.cache/
+frontend/dist/
+
+# 일반 Node 패키지 잔재물 (워크스페이스 어디서든)
+**/node_modules/
+**/.pnpm-store/
+
+# =====================================================================
+# 빌드/캐시 일반 (워크스페이스 어디서든)
+# =====================================================================
+**/coverage/
+**/*.tsbuildinfo
+**/.turbo/
+**/.parcel-cache/
+**/.next/
