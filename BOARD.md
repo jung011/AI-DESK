@@ -134,10 +134,10 @@
 
 ---
 
-## Phase 6 — 멀티 AI / 운영 안정화 ⏸️
+## Phase 6 — 멀티 AI / 운영 안정화 🟡
 > 1:1 → 1:N → 그룹 → 정책·시각화.
 
-- ⬜ `T_AI_MESSAGE_RECEIPT` (멀티캐스트)
+- ✅ 멀티캐스트 (1:N fan-out) — `POST /api/messages/broadcast` + NewMessageDialog 체크박스 리스트. 자기·중복·미존재 필터 + 수신자별 정책 검사. (별도 receipt 테이블 대신 N개 message row 분기로 단순화 — 추후 그룹 대화 확장 시 `T_AI_MESSAGE_RECEIPT` 도입 검토)
 - ⬜ `T_AI_ROOM*` (그룹 대화)
 - ⬜ 권한 정책 (rate limit / hop count 강화)
 - ⬜ 메시지 트리 시각화 (대시보드)
