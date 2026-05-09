@@ -39,38 +39,38 @@
   - ⬜ `common/vo/` — 후속 단계에 도입 (현재 미사용)
   - ✅ `config/CorsConfig.java` (3000 허용)
 
-### Frontend ⬜
-- ⬜ Pinia 모듈 추가 (`@pinia/nuxt`)
-- ⬜ `plugins/axios.ts` — baseURL 주입 (인증 인터셉터는 미포함)
-- ⬜ `layouts/default.vue` — 헤더(56+48px) + 사이드(245px) 조합
-- ⬜ `components/layout/HeaderView.vue`, `LeftMenuView.vue`
-- ⬜ 공통 CSS 마이그레이션 (`assets/css/reset.css`, `common.css`, `layout.css`)
-- ⬜ `stores/layout.ts` — 사이드 메뉴 열림/닫힘
+### Frontend ✅
+- ✅ Pinia 모듈 추가 (`@pinia/nuxt` + `pinia`)
+- ✅ `plugins/api.ts` — `$api` (= $fetch + baseURL) 주입 (인증 인터셉터는 미포함)
+- ✅ `layouts/default.vue` — 헤더(56+48px) + 사이드(245px) 조합
+- ✅ `components/layout/HeaderView.vue`, `LeftMenuView.vue` (햄버거 토글, 활성 라우트, 미확인 뱃지 hook)
+- ✅ 공통 CSS 마이그레이션 (`assets/css/reset.css`, `common.css`, `layout.css`)
+- ✅ `stores/layout.ts` — 사이드 메뉴 열림/닫힘
 
 ---
 
 ## Phase 2 — 대시보드 화면 ⬜
 > 첫 도메인. 인프라 검증을 겸함.
 
-### Backend 🟡
+### Backend ✅
 - ✅ `agents/` 도메인 4계층 (controller/service/mapper/vo)
-- ✅ `GET /api/agents` (필터·요약카운트) — **검증 OK** (200, list 3건 + summary)
-- ✅ `POST /api/agents` (생성, TMUX_SESSION 자동 부여) — 코드 작성, 미검증
-- ✅ `DELETE /api/agents/{agentId}` (소프트 딜리트) — 코드 작성, 미검증
+- ✅ `GET /api/agents` (필터·요약카운트) — **검증 OK** (200, list + summary)
+- ✅ `POST /api/agents` (생성, TMUX_SESSION 자동 부여) — **검증 OK** (UUID + 모델 풀네임 변환)
+- ✅ `DELETE /api/agents/{agentId}` (소프트 딜리트) — **검증 OK** (deleted_at = NOW())
 - ⬜ `GET /api/context` (JSONL 파싱) — Phase 4와 연계, 후순위
 
-### Frontend
-- ⬜ `pages/dashboard.vue` 스캐폴드
-- ⬜ 페이지 헤더 (breadcrumb + AI 생성 버튼)
-- ⬜ 요약 카드 4종
-- ⬜ 필터 탭 + 검색
-- ⬜ AI 카드 그리드 (이모지 아바타·상태 컬러바·컨텍스트 바·메뉴 ⋮)
-- ⬜ AI 생성 팝업 (이름·워크스페이스·모델)
-- ⬜ 카드 메뉴 드롭다운 (VSCode/터미널/검증/삭제 — *메시지 보내기는 Phase 3 후 연결*)
-- ⬜ 10초 폴링
+### Frontend ✅
+- ✅ `pages/dashboard.vue` 스캐폴드 + index.vue 리다이렉트
+- ✅ 페이지 헤더 (breadcrumb + AI 생성 버튼)
+- ✅ 요약 카드 4종 (`SummaryCardGrid`)
+- ✅ 필터 탭 + 검색 (`FilterBar`, status는 서버, query는 클라이언트 필터)
+- ✅ AI 카드 그리드 (이모지 아바타·상태 컬러바·컨텍스트 바·메뉴 ⋮)
+- ✅ AI 생성 팝업 (이름·워크스페이스·모델, 검증 + 정책 응답 처리)
+- ✅ 카드 메뉴 드롭다운 (VSCode/터미널/검증/삭제 — *메시지 보내기는 Phase 3 후 연결*)
+- ✅ 10초 폴링 (`startPolling` / `stopPolling` in `useAgents`)
 
 ### 검증
-- ⬜ Chrome MCP로 화면 동작 검증
+- ⬜ Chrome MCP로 화면 동작 검증 (M2 확정용)
 
 ---
 
@@ -146,3 +146,4 @@
 ## 변경 이력
 - 2026-05-09 : 보드 초기 작성 (Phase 0 완료, Phase 1 착수)
 - 2026-05-09 : Phase 1 백엔드 완료, Phase 2 백엔드 agents 도메인 3종 엔드포인트 작성 + GET 검증 — **M1 달성**
+- 2026-05-09 : Phase 1 프론트(Pinia·layout·CSS·api) + Phase 2 프론트(요약/필터/카드/생성/삭제) 완료. POST/DELETE 검증 OK. 남은 건 Chrome MCP 시각 검증.
