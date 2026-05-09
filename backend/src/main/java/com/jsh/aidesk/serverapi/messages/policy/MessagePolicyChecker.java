@@ -48,9 +48,9 @@ public class MessagePolicyChecker {
     }
 
     private PolicyResult doCheck(AgentVo from, AgentVo to, MessageVo parent) {
-        if ("done".equals(to.getStatus())) {
-            return PolicyResult.reject("완료 상태 AI는 수신 불가");
-        }
+        // 과거엔 status=done 인 수신자를 막았지만, status 는 워처가 JSONL mtime 으로 추정하는
+        // 부정확한 신호라 사용자가 claude 를 다시 띄워도 done 이 한동안 남아 답장이 차단됐다.
+        // 진짜 도달 가능성은 last-mile 의 tmux has-session 이 검증하므로 정책에선 status 가드를 뺀다.
         if (to.getContextPct() != null && to.getContextPct() >= contextLimitPct) {
             return PolicyResult.reject("수신 AI 컨텍스트 " + contextLimitPct + "% 초과");
         }
