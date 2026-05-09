@@ -11,6 +11,8 @@ import java.util.stream.Stream;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 
@@ -38,8 +40,10 @@ public class AgentStatusWatcher {
 
     private static final long ACTIVE_WINDOW_SEC = 120;
     private static final long IDLE_WINDOW_SEC = 30 * 60;
+    private static final long CONTEXT_WINDOW_TOKENS = 1_000_000L;
 
     private final AgentMapper agentMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Scheduled(fixedDelay = 10_000, initialDelay = 5_000)
     public void tick() {
@@ -65,21 +69,64 @@ public class AgentStatusWatcher {
 
         long ageSec = (System.currentTimeMillis() - latest.toFile().lastModified()) / 1000;
         String newStatus = estimateStatus(ageSec);
-        if (!newStatus.equals(a.getStatus())) {
-            log.debug("watcher: agent={} status {} -> {} (jsonl mtime age={}s)",
-                    a.getAgentName(), a.getStatus(), newStatus, ageSec);
-            agentMapper.updateStatusFromWatcher(a.getAgentId(), newStatus, null);
+        Integer newCtx = computeContextPct(latest);
+
+        boolean statusChanged = !newStatus.equals(a.getStatus());
+        boolean ctxChanged = newCtx != null && !newCtx.equals(a.getContextPct());
+
+        if (statusChanged || ctxChanged) {
+            log.debug("watcher: agent={} status {}->{} ctx {}->{} (age={}s)",
+                    a.getAgentName(), a.getStatus(), newStatus,
+                    a.getContextPct(), newCtx, ageSec);
+            agentMapper.updateStatusFromWatcher(a.getAgentId(), newStatus, newCtx);
         }
+    }
+
+    /**
+     * JSONL 의 마지막 message.usage 를 추출해 context % 로 환산.
+     * tokens = input + cache_read + cache_creation + output. 컨텍스트 윈도우 1,000,000.
+     * usage 가 없거나 파싱 실패 시 null 반환 (DB 갱신 스킵).
+     */
+    private Integer computeContextPct(Path jsonl) {
+        try {
+            List<String> lines = Files.readAllLines(jsonl);
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                String line = lines.get(i).trim();
+                if (line.isEmpty() || !line.startsWith("{")) continue;
+                try {
+                    JsonNode root = objectMapper.readTree(line);
+                    JsonNode usage = root.path("message").path("usage");
+                    if (usage.isMissingNode() || usage.isEmpty()) continue;
+                    long tokens = 0;
+                    tokens += usage.path("input_tokens").asLong(0);
+                    tokens += usage.path("cache_read_input_tokens").asLong(0);
+                    tokens += usage.path("cache_creation_input_tokens").asLong(0);
+                    tokens += usage.path("output_tokens").asLong(0);
+                    if (tokens == 0) continue;
+                    long pct = tokens * 100 / CONTEXT_WINDOW_TOKENS;
+                    return (int) Math.min(100, Math.max(0, pct));
+                } catch (Exception ignore) {
+                    // 깨진 라인은 건너뛰고 계속 위로 탐색
+                }
+            }
+        } catch (IOException e) {
+            log.warn("watcher: read jsonl {} failed: {}", jsonl, e.getMessage());
+        }
+        return null;
     }
 
     private static boolean isClaudeModel(String model) {
         return model != null && model.startsWith("claude");
     }
 
-    /** workspace_dir 을 ~/.claude/projects 의 디렉토리명으로 escape. 슬래시 → 대시. */
+    /**
+     * workspace_dir 을 ~/.claude/projects 의 디렉토리명으로 escape.
+     * Claude Code 가 cwd 를 폴더명으로 변환할 때 영숫자/언더스코어 외 문자를 '-' 로 치환하므로
+     * 동일 규칙을 적용 (슬래시·공백·점 등 모두 '-').
+     */
     private static Path projectDirOf(String workspaceDir) {
         if (workspaceDir == null || workspaceDir.isBlank()) return null;
-        String escaped = workspaceDir.replace('/', '-');
+        String escaped = workspaceDir.replaceAll("[^A-Za-z0-9_]", "-");
         return CLAUDE_PROJECTS_ROOT.resolve(escaped);
     }
 
