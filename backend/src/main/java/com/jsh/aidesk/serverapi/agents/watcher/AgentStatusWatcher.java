@@ -11,8 +11,6 @@ import java.util.stream.Stream;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 
@@ -41,12 +39,7 @@ public class AgentStatusWatcher {
     private static final long ACTIVE_WINDOW_SEC = 120;
     private static final long IDLE_WINDOW_SEC = 30 * 60;
 
-    // 모델별 컨텍스트 윈도우. 1M 변형은 모델 ID 가 `[1m]` 으로 끝남.
-    private static final long CTX_DEFAULT_TOKENS = 200_000L;
-    private static final long CTX_1M_TOKENS = 1_000_000L;
-
     private final AgentMapper agentMapper;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Scheduled(fixedDelay = 10_000, initialDelay = 5_000)
     public void tick() {
@@ -72,62 +65,16 @@ public class AgentStatusWatcher {
 
         long ageSec = (System.currentTimeMillis() - latest.toFile().lastModified()) / 1000;
         String newStatus = estimateStatus(ageSec);
-        Integer newCtx = computeContextPct(latest);
 
+        // contextPct 는 더 이상 워처가 갱신하지 않는다. 정확한 값은 statusline 이 ~/.claude/aidesk-usage/
+        // 에 직접 기록하며, 카드 UI 에는 이제 표시도 안 한다. 워처가 추정값을 박아놓으면
+        // context-limit-pct 정책이 잘못 작동해 메시지가 부당하게 거절된다.
         boolean statusChanged = !newStatus.equals(a.getStatus());
-        boolean ctxChanged = newCtx != null && !newCtx.equals(a.getContextPct());
-
-        if (statusChanged || ctxChanged) {
-            log.debug("watcher: agent={} status {}->{} ctx {}->{} (age={}s)",
-                    a.getAgentName(), a.getStatus(), newStatus,
-                    a.getContextPct(), newCtx, ageSec);
-            agentMapper.updateStatusFromWatcher(a.getAgentId(), newStatus, newCtx);
+        if (statusChanged) {
+            log.debug("watcher: agent={} status {}->{} (age={}s)",
+                    a.getAgentName(), a.getStatus(), newStatus, ageSec);
+            agentMapper.updateStatusFromWatcher(a.getAgentId(), newStatus, a.getContextPct());
         }
-    }
-
-    /**
-     * JSONL 의 마지막 message.usage 를 추출해 Claude Code `/usage` 와 같은 형태로 컨텍스트 % 환산.
-     *
-     * 분자: input + cache_read + cache_creation (= 그 턴의 prompt 크기). output 은 컨텍스트 입력이 아니므로 제외.
-     * 분모: 모델 ID 의 `[1m]` 접미사 유무에 따라 1,000,000 또는 200,000.
-     *
-     * Claude Code `/usage` 와 미세하게(±몇 %) 다를 수 있다 — 내부 시스템 프롬프트/예약 마진을 알 수 없기 때문.
-     */
-    private Integer computeContextPct(Path jsonl) {
-        try {
-            List<String> lines = Files.readAllLines(jsonl);
-            for (int i = lines.size() - 1; i >= 0; i--) {
-                String line = lines.get(i).trim();
-                if (line.isEmpty() || !line.startsWith("{")) continue;
-                try {
-                    JsonNode root = objectMapper.readTree(line);
-                    JsonNode message = root.path("message");
-                    JsonNode usage = message.path("usage");
-                    if (usage.isMissingNode() || usage.isEmpty()) continue;
-                    long tokens = 0;
-                    tokens += usage.path("input_tokens").asLong(0);
-                    tokens += usage.path("cache_read_input_tokens").asLong(0);
-                    tokens += usage.path("cache_creation_input_tokens").asLong(0);
-                    if (tokens == 0) continue;
-
-                    String model = message.path("model").asText("");
-                    long window = contextWindowOf(model);
-                    long pct = tokens * 100 / window;
-                    return (int) Math.min(100, Math.max(0, pct));
-                } catch (Exception ignore) {
-                    // 깨진 라인은 건너뛰고 계속 위로 탐색
-                }
-            }
-        } catch (IOException e) {
-            log.warn("watcher: read jsonl {} failed: {}", jsonl, e.getMessage());
-        }
-        return null;
-    }
-
-    private static long contextWindowOf(String model) {
-        // 1M 변형 모델 ID 는 `[1m]` 으로 끝난다. 그 외는 200k 가정.
-        if (model != null && model.endsWith("[1m]")) return CTX_1M_TOKENS;
-        return CTX_DEFAULT_TOKENS;
     }
 
     private static boolean isClaudeModel(String model) {
