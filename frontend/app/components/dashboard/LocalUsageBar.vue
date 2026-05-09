@@ -1,22 +1,48 @@
 <template>
   <div class="local-usage">
-    <!-- 미설치: 안내 + 한 번 클릭 설치 -->
-    <template v-if="!usage.ready">
+    <!-- 자동 등록됐지만 Claude Code 재시작 대기 -->
+    <template v-if="!usage.ready && usage.hookInstalled">
       <div class="local-usage-head">
         <div class="local-usage-title">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
             <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/>
           </svg>
-          <span>Claude 사용량 (statusline 미설치)</span>
+          <span>Claude 사용량 — Claude Code 재시작 대기 중</span>
+        </div>
+      </div>
+      <p class="install-help">
+        statusLine 이 자동 등록되었습니다. <strong>Claude Code 를 한 번 재시작</strong>하면 5시간 / 컨텍스트 / 주간 사용률이 표시됩니다.
+      </p>
+    </template>
+
+    <!-- 다른 statusLine 사용 중 — 사용자 결정 필요 -->
+    <template v-else-if="!usage.ready && usage.hookOccupiedByOther">
+      <div class="local-usage-head">
+        <div class="local-usage-title">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/>
+          </svg>
+          <span>Claude 사용량 — 다른 statusLine 사용 중</span>
         </div>
         <button type="button" class="install-btn" :disabled="installing" @click="onInstall">
-          {{ installing ? '설치 중…' : '연동 설치' }}
+          {{ installing ? '교체 중…' : '우리것으로 교체' }}
         </button>
       </div>
       <p class="install-help">
-        <code>~/.claude/settings.json</code> 의 <code>statusLine</code> 필드를 자동으로 등록합니다.
-        설치 후 Claude Code 를 한 번 재시작하면 5시간 사용률 / 컨텍스트 사용률이 정확히 표시됩니다.
+        <code>~/.claude/settings.json</code> 에 이미 다른 <code>statusLine</code> 명령이 설정되어 있어 자동 교체를 보류했습니다.
       </p>
+    </template>
+
+    <!-- 자동 설치 자체가 실패한 fallback (드물게 발생) -->
+    <template v-else-if="!usage.ready">
+      <div class="local-usage-head">
+        <div class="local-usage-title">
+          <span>Claude 사용량 (자동 등록 실패)</span>
+        </div>
+        <button type="button" class="install-btn" :disabled="installing" @click="onInstall">
+          {{ installing ? '설치 중…' : '수동 설치' }}
+        </button>
+      </div>
     </template>
 
     <!-- 설치됨: 정상 표시 -->
@@ -59,6 +85,8 @@ interface LocalUsage {
   contextPct: number;
   source: string;
   ready: boolean;
+  hookInstalled: boolean;
+  hookOccupiedByOther: boolean;
 }
 
 const usage = ref<LocalUsage>({
@@ -68,7 +96,9 @@ const usage = ref<LocalUsage>({
   weeklyResetsAt: 0,
   contextPct: -1,
   source: '',
-  ready: false
+  ready: false,
+  hookInstalled: false,
+  hookOccupiedByOther: false
 });
 
 const installing = ref(false);
