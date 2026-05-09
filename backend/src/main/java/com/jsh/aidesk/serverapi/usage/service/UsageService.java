@@ -107,15 +107,32 @@ public class UsageService {
     }
 
     private Path findLatest(Path dir) {
+        long nowSec = System.currentTimeMillis() / 1000;
         try (Stream<Path> stream = Files.list(dir)) {
             return stream
                     .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .filter(p -> belongsToCurrentWindow(p, nowSec))
                     .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
                     .orElse(null);
         } catch (IOException e) {
             log.warn("usage: list {} failed: {}", dir, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * 5시간 rate-limit 은 모든 세션이 같은 글로벌 윈도우를 공유한다. 다른 세션이 idle 해서
+     * statusline 이 갱신 안 된 채 윈도우만 리셋되면 그 파일은 옛 윈도우의 사용률(예: 81%)을
+     * 그대로 들고 있어 stale 하다. fiveHourResetsAt 이 현재보다 미래인 파일만 신뢰한다.
+     */
+    private boolean belongsToCurrentWindow(Path file, long nowSec) {
+        try {
+            JsonNode root = objectMapper.readTree(Files.newInputStream(file));
+            long resetsAt = root.path("fiveHourResetsAt").asLong(0);
+            return resetsAt > nowSec;
+        } catch (IOException e) {
+            return false;
         }
     }
 
