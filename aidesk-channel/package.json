@@ -1,0 +1,18 @@
+{
+  "name": "aidesk-channel",
+  "version": "0.1.0",
+  "description": "AI Desk MCP server — AI 측 last mile 인터페이스 (send_to / reply / check_inbox / list_agents)",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "aidesk-channel": "./bin/aidesk-channel"
+  },
+  "main": "./src/server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.0"
+  }
+}
