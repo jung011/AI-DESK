@@ -143,6 +143,7 @@ public class AgentService {
         String script = ""
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
+                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude'\"\n"
                 + "set clientTty to \"\"\n"
                 + "try\n"
                 + "  set clientTty to do shell script \"tmux list-clients -t \" & sessionName & \" -F '#{client_tty}' 2>/dev/null | head -n 1\"\n"
@@ -163,9 +164,25 @@ public class AgentService {
                 + "    end repeat\n"
                 + "  end tell\n"
                 + "end if\n"
+                // Terminal 이 꺼져 있으면 launch 가 기본 윈도우 1개를 자동 생성한다.
+                // 그 윈도우를 do script 의 in 절로 재사용해서 새 윈도우 추가 생성을 막는다.
                 + "tell application \"Terminal\"\n"
-                + "  activate\n"
-                + "  do script \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude'\"\n"
+                + "  if (count windows) is 0 then\n"
+                + "    launch\n"
+                + "    repeat 30 times\n"
+                + "      if (count windows) > 0 then exit repeat\n"
+                + "      delay 0.1\n"
+                + "    end repeat\n"
+                + "    activate\n"
+                + "    if (count windows) > 0 then\n"
+                + "      do script shellCmd in selected tab of front window\n"
+                + "    else\n"
+                + "      do script shellCmd\n"
+                + "    end if\n"
+                + "  else\n"
+                + "    activate\n"
+                + "    do script shellCmd\n"
+                + "  end if\n"
                 + "end tell\n";
 
         try {
