@@ -15,8 +15,14 @@ import com.jsh.aidesk.serverapi.messages.policy.MessagePolicyChecker;
 import com.jsh.aidesk.serverapi.messages.policy.PolicyResult;
 import java.util.List;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 import com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.ConversationItemRsVo;
+import com.jsh.aidesk.serverapi.messages.vo.MessageBroadcastRqVo;
+import com.jsh.aidesk.serverapi.messages.vo.MessageBroadcastRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageCreateRqVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageListRsVo;
@@ -157,6 +163,61 @@ public class MessageService {
     @Transactional(readOnly = true)
     public MessageItemRsVo detail(String messageId) {
         return messageMapper.selectItemById(messageId);
+    }
+
+    /**
+     * 멀티캐스트 발신 — 한 번의 요청을 여러 수신자에게 fan-out.
+     *
+     * - 자기 자신·중복은 사전 제거
+     * - 미존재 수신자는 notFound 카운트로 집계 (예외 X)
+     * - 각 수신자별로 create() 의 정책 검사 + INSERT + last mile 동작 그대로 적용
+     */
+    @Transactional
+    public MessageBroadcastRsVo broadcast(MessageBroadcastRqVo req) {
+        AgentVo from = agentMapper.selectById(req.getFromAgentId());
+        if (from == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "발신 AI 미존재");
+        }
+
+        Set<String> uniqueTo = new LinkedHashSet<>();
+        int duplicateOrSelf = 0;
+        for (String id : req.getToAgentIds()) {
+            if (id == null || id.isBlank()) continue;
+            if (id.equals(from.getAgentId())) { duplicateOrSelf++; continue; }
+            if (!uniqueTo.add(id)) duplicateOrSelf++;
+        }
+
+        List<MessageItemRsVo> created = new ArrayList<>();
+        int notFound = duplicateOrSelf;
+
+        for (String toId : uniqueTo) {
+            AgentVo to = agentMapper.selectById(toId);
+            if (to == null) { notFound++; continue; }
+
+            MessageCreateRqVo single = new MessageCreateRqVo();
+            single.setFromAgentId(from.getAgentId());
+            single.setToAgentId(toId);
+            single.setContent(req.getContent());
+            try {
+                created.add(create(single));
+            } catch (ResponseStatusException ex) {
+                // 사전 검증으로 self-message 등은 걸러졌으므로 여기 도달은 드물다.
+                notFound++;
+            }
+        }
+
+        int succ = (int) created.stream()
+                .filter(m -> !"failed".equals(m.getStatus()))
+                .count();
+        int fail = created.size() - succ;
+
+        MessageBroadcastRsVo rs = new MessageBroadcastRsVo();
+        rs.setList(created);
+        rs.setTotalAttempted(created.size());
+        rs.setSucceeded(succ);
+        rs.setFailed(fail);
+        rs.setNotFound(notFound);
+        return rs;
     }
 
     /**

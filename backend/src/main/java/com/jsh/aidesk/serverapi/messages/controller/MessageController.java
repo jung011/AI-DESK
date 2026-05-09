@@ -15,6 +15,8 @@ import com.jsh.aidesk.serverapi.common.response.ResponseCode;
 import com.jsh.aidesk.serverapi.common.response.ResponseJson;
 import com.jsh.aidesk.serverapi.messages.service.MessageService;
 import com.jsh.aidesk.serverapi.messages.vo.ConversationItemRsVo;
+import com.jsh.aidesk.serverapi.messages.vo.MessageBroadcastRqVo;
+import com.jsh.aidesk.serverapi.messages.vo.MessageBroadcastRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageCreateRqVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo;
 import com.jsh.aidesk.serverapi.messages.vo.MessageListRsVo;
@@ -33,6 +35,12 @@ public class MessageController {
     @PostMapping
     public ResponseJson<MessageItemRsVo> create(@Valid @RequestBody MessageCreateRqVo body) {
         return ResponseJson.ok(messageService.create(body));
+    }
+
+    @PostMapping("/broadcast")
+    public ResponseJson<MessageBroadcastRsVo> broadcast(
+            @Valid @RequestBody MessageBroadcastRqVo body) {
+        return ResponseJson.ok(messageService.broadcast(body));
     }
 
     @GetMapping("/{messageId}")
