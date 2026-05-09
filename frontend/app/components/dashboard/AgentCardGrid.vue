@@ -24,7 +24,8 @@ const emit = defineEmits<{
 <style scoped>
 .ai-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* minmax 240px — viewport 가 좁아져도 4 카드가 한 줄에 유지되어 dropdown 펼침으로 인한 reflow를 안정화 */
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
 }
 .ai-grid-empty {

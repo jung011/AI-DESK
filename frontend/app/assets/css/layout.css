@@ -1,5 +1,10 @@
 @charset "UTF-8";
 
+/* 페이지 콘텐츠 길이가 변해 vertical scrollbar 가 새로 등장/소멸할 때
+ * 본문 너비가 흔들리지 않도록 scrollbar gutter 를 항상 예약한다.
+ * (대시보드 카드 그리드가 dropdown 메뉴 펼침으로 reflow 되던 이슈 대응) */
+html { scrollbar-gutter: stable; }
+
 /* Layout - SubLayout :: PageHeader */
 .group_pageLocation{display:flex;align-items:center;position:relative;padding-bottom:24px}
 .group_pageLocation >.tit_h2{display:flex;align-items:center;padding-bottom:0}
