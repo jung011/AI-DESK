@@ -1,12 +1,16 @@
 package com.jsh.aidesk.serverapi.agents.service;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import lombok.extern.slf4j.Slf4j;
 
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentCreateRqVo;
@@ -19,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AgentService {
 
     private static final Map<String, String> MODEL_FULLNAMES = Map.of(
@@ -73,6 +78,34 @@ public class AgentService {
     public AgentItemRsVo detail(String agentId) {
         AgentVo v = agentMapper.selectById(agentId);
         return v == null ? null : toItem(v);
+    }
+
+    /**
+     * 에이전트의 워크스페이스 디렉토리를 macOS Terminal 로 연다.
+     * 백엔드와 사용자가 같은 머신을 쓰는 PoC 환경 한정으로 동작.
+     *
+     * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = 실행 실패
+     */
+    public int openTerminal(String agentId) {
+        AgentVo v = agentMapper.selectById(agentId);
+        if (v == null) return 1;
+        String dir = v.getWorkspaceDir();
+        if (dir == null || dir.isBlank()) return 2;
+
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("mac")) {
+            log.warn("openTerminal: unsupported OS '{}'", os);
+            return 3;
+        }
+
+        try {
+            new ProcessBuilder("open", "-a", "Terminal", dir).start();
+            log.info("openTerminal: agent={} dir={}", v.getAgentName(), dir);
+            return 0;
+        } catch (IOException e) {
+            log.warn("openTerminal failed: {}", e.getMessage());
+            return 4;
+        }
     }
 
     private AgentSummaryRsVo buildSummary() {

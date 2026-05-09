@@ -52,4 +52,16 @@ public class AgentController {
         boolean ok = agentService.delete(agentId);
         return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
     }
+
+    @PostMapping("/{agentId}/open-terminal")
+    public ResponseJson<Void> openTerminal(@PathVariable("agentId") String agentId) {
+        int rc = agentService.openTerminal(agentId);
+        return switch (rc) {
+            case 0 -> ResponseJson.ok((Void) null);
+            case 1 -> ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
+            case 2 -> ResponseJson.<Void>fail(1, "워크스페이스 경로가 없습니다.");
+            case 3 -> ResponseJson.<Void>fail(1, "현재 백엔드 OS 에서는 터미널 열기를 지원하지 않습니다 (macOS 한정).");
+            default -> ResponseJson.<Void>fail(1, "터미널 실행에 실패했습니다.");
+        };
+    }
 }

@@ -49,4 +49,11 @@ public class ResponseJson<T> {
     public static <T> ResponseJson<T> fail(CodeData codeData, T data) {
         return new ResponseJson<>(codeData, data);
     }
+
+    public static <T> ResponseJson<T> fail(int code, String message) {
+        return new ResponseJson<>(new CodeData() {
+            @Override public int getCode() { return code; }
+            @Override public String getMessage() { return message; }
+        }, null);
+    }
 }
