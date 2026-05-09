@@ -4,7 +4,16 @@
       <div class="ai-card-name-wrap">
         <div class="ai-avatar" :class="statusClass">{{ avatarEmoji }}</div>
         <div>
-          <div class="ai-name">{{ agent.agentName }}</div>
+          <div class="ai-name">
+            {{ agent.agentName }}
+            <NuxtLink
+              v-if="unreadCount > 0"
+              :to="`/messages?withId=${encodeURIComponent(agent.agentId)}`"
+              class="unread-msg-badge"
+              :title="`미확인 메시지 ${unreadCount}건`">
+              {{ unreadCount > 99 ? '99+' : unreadCount }}
+            </NuxtLink>
+          </div>
           <div class="ai-workspace" :title="agent.workspaceDir">{{ agent.workspaceDir }}</div>
         </div>
       </div>
@@ -65,11 +74,18 @@
 
 <script setup lang="ts">
 import type { AgentItem } from '~/vo/agents/AgentVo';
+import { useMessagesStore } from '~/stores/messages';
 
 const props = defineProps<{ agent: AgentItem }>();
 const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
 }>();
+
+const messages = useMessagesStore();
+const unreadCount = computed(() => {
+  const row = messages.unread.byAgent.find(a => a.agentId === props.agent.agentId);
+  return row ? row.unread : 0;
+});
 
 const menuOpen = ref(false);
 const menuRoot = ref<HTMLElement | null>(null);
@@ -185,7 +201,21 @@ function formatTime(iso: string, status: string): string {
 .ai-avatar.idle    { background: #FFF8E1; }
 .ai-avatar.done    { background: #F3E8FF; }
 
-.ai-name { font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em; }
+.ai-name {
+  font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.unread-msg-badge {
+  min-width: 18px; height: 18px; padding: 0 6px;
+  border-radius: 9px; background: #E53935; color: #fff;
+  font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .12s, transform .08s;
+}
+.unread-msg-badge:hover { background: #C42154; }
+.unread-msg-badge:active { transform: scale(.95); }
 .ai-workspace {
   font-size: 12px; color: #999; margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;
