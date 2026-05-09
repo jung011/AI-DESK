@@ -7,6 +7,12 @@
         <a href="#">HOME</a>
         <a href="#"><em>메시지</em></a>
       </div>
+      <div style="margin-left: auto;">
+        <button type="button" class="btn normal type_v1" @click="newMsgOpen = true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:6px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+          새 메시지
+        </button>
+      </div>
     </div>
 
     <!-- 메시지 본문 — 좌 320 + 우 타임라인 -->
@@ -106,13 +112,25 @@
       </section>
 
     </div>
+
+    <!-- 새 메시지 팝업 -->
+    <NewMessageDialog
+      :open="newMsgOpen"
+      :agents="allAgents"
+      :initial-from-agent-id="me.meAgentId"
+      :submitting="newMsgSubmitting"
+      :error-message="newMsgError"
+      @close="closeNewMsg"
+      @submit="onSendNewMessage" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useMessagesStore } from '~/stores/messages';
 import MessageBubble from '~/components/messages/MessageBubble.vue';
+import NewMessageDialog from '~/components/messages/NewMessageDialog.vue';
 import type { AgentItem, AgentListResponse, ApiEnvelope, AgentStatus } from '~/vo/agents/AgentVo';
+import type { MessageCreateRequest } from '~/vo/messages/MessageVo';
 
 const me = useMessagesStore();
 const route = useRoute();
@@ -122,6 +140,33 @@ const allAgents = ref<AgentItem[]>([]);
 const composerText = ref('');
 const sending = ref(false);
 const timelineEl = ref<HTMLElement | null>(null);
+
+// 새 메시지 팝업
+const newMsgOpen = ref(false);
+const newMsgSubmitting = ref(false);
+const newMsgError = ref<string | null>(null);
+
+function closeNewMsg(): void {
+  if (newMsgSubmitting.value) return;
+  newMsgOpen.value = false;
+  newMsgError.value = null;
+}
+
+async function onSendNewMessage(req: MessageCreateRequest): Promise<void> {
+  newMsgSubmitting.value = true;
+  newMsgError.value = null;
+  const result = await me.sendNewMessage(req);
+  newMsgSubmitting.value = false;
+  if (result) {
+    newMsgOpen.value = false;
+    // 발신 후 해당 대화로 자동 진입 (관점 AI 가 발신자라면)
+    if (me.meAgentId === req.fromAgentId) {
+      await me.selectConversation(req.toAgentId);
+    }
+  } else {
+    newMsgError.value = me.error ?? '발신 실패';
+  }
+}
 
 const selectableAgents = computed(() =>
   allAgents.value.filter(a => a.status === 'active' || a.status === 'idle')

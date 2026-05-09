@@ -137,6 +137,36 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  /**
+   * 새 메시지 발신 — 현재 선택된 대화와 무관하게 임의의 from/to 로 보낸다.
+   * 새 메시지 팝업(NewMessageDialog) 에서 사용.
+   */
+  async function sendNewMessage(req: MessageCreateRequest): Promise<MessageItem | null> {
+    try {
+      const env = await api()<ApiEnvelope<MessageItem>>('/api/messages', {
+        method: 'POST',
+        body: req
+      });
+      if (env.result === 0 && env.data) {
+        // 후속 효과: unread + 관련 대화 목록 갱신
+        await fetchUnreadCount();
+        if (meAgentId.value === req.fromAgentId || meAgentId.value === req.toAgentId) {
+          await fetchConversations();
+          if (selectedPartnerId.value === req.toAgentId || selectedPartnerId.value === req.fromAgentId) {
+            await fetchMessages();
+          }
+        }
+        error.value = null;
+        return env.data;
+      }
+      error.value = env.message ?? '발신 실패';
+      return null;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
   return {
     // state
     meAgentId,
@@ -154,6 +184,7 @@ export const useMessagesStore = defineStore('messages', () => {
     fetchMessages,
     selectConversation,
     sendMessage,
+    sendNewMessage,
     markConversationRead,
     fetchUnreadCount
   };
