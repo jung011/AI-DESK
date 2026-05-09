@@ -10,22 +10,10 @@
 
 <script setup lang="ts">
 import { useLayoutStore } from '~/stores/layout';
-import { useMessagesStore } from '~/stores/messages';
 import HeaderView from '~/components/layout/HeaderView.vue';
 import LeftMenuView from '~/components/layout/LeftMenuView.vue';
 
 const layout = useLayoutStore();
-const messages = useMessagesStore();
-
-// 미확인 메시지 카운트 — 사이드 메뉴/대시보드 카드 뱃지가 모두 구독한다.
-let unreadPoll: ReturnType<typeof setInterval> | null = null;
-onMounted(() => {
-  void messages.fetchUnreadCount();
-  unreadPoll = setInterval(() => void messages.fetchUnreadCount(), 10_000);
-});
-onUnmounted(() => {
-  if (unreadPoll !== null) clearInterval(unreadPoll);
-});
 </script>
 
 <style scoped>
