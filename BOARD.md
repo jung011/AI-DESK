@@ -134,14 +134,13 @@
 
 ---
 
-## Phase 6 — 멀티 AI / 운영 안정화 🟡
-> 1:1 → 1:N → 그룹 → 정책·시각화.
+## Phase 6 — 멀티 AI / 운영 안정화 ✅
 
-- ✅ 멀티캐스트 (1:N fan-out) — `POST /api/messages/broadcast` + NewMessageDialog 체크박스 리스트. 자기·중복·미존재 필터 + 수신자별 정책 검사. (별도 receipt 테이블 대신 N개 message row 분기로 단순화 — 추후 그룹 대화 확장 시 `T_AI_MESSAGE_RECEIPT` 도입 검토)
-- ⬜ `T_AI_ROOM*` (그룹 대화) — 가장 큰 항목, 다음 라운드
-- ✅ 권한 정책 강화 — 임계값 외부화(`messages.policy.*` in application.yaml) + 거절 시 INFO 로깅
-- ✅ 메시지 트리 시각화 (대시보드/메시지 페이지) — MessageBubble 답장 인용 박스 + 클릭 시 원본 스크롤·하이라이트
-- ✅ 감사 로그 화면 — `GET /api/messages/audit` + `/logs` 페이지 테이블 (status·발신·수신·검색)
+- ✅ 멀티캐스트 (1:N fan-out) — `POST /api/messages/broadcast` + NewMessageDialog 체크박스 리스트
+- ✅ `T_AI_ROOM*` (그룹 대화) — 3 테이블 + 6 endpoint(`/api/rooms*`) + `/rooms` 페이지 + 사이드 메뉴 + 룸 생성 모달
+- ✅ 권한 정책 강화 — `messages.policy.*` 외부화 + 거절 INFO 로깅
+- ✅ 메시지 트리 시각화 — MessageBubble 답장 인용·스크롤·하이라이트
+- ✅ 감사 로그 — `GET /api/messages/audit` + `/logs` 페이지 테이블
 
 ---
 
