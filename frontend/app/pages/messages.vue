@@ -130,7 +130,7 @@ import { useMessagesStore } from '~/stores/messages';
 import MessageBubble from '~/components/messages/MessageBubble.vue';
 import NewMessageDialog from '~/components/messages/NewMessageDialog.vue';
 import type { AgentItem, AgentListResponse, ApiEnvelope, AgentStatus } from '~/vo/agents/AgentVo';
-import type { MessageCreateRequest } from '~/vo/messages/MessageVo';
+import type { MessageBroadcastRequest } from '~/vo/messages/MessageVo';
 
 const me = useMessagesStore();
 const route = useRoute();
@@ -152,16 +152,17 @@ function closeNewMsg(): void {
   newMsgError.value = null;
 }
 
-async function onSendNewMessage(req: MessageCreateRequest): Promise<void> {
+async function onSendNewMessage(req: MessageBroadcastRequest): Promise<void> {
   newMsgSubmitting.value = true;
   newMsgError.value = null;
-  const result = await me.sendNewMessage(req);
+  const result = await me.sendBroadcast(req);
   newMsgSubmitting.value = false;
   if (result) {
     newMsgOpen.value = false;
-    // 발신 후 해당 대화로 자동 진입 (관점 AI 가 발신자라면)
-    if (me.meAgentId === req.fromAgentId) {
-      await me.selectConversation(req.toAgentId);
+    // 단일 수신자고 관점 AI 가 발신자라면 해당 대화로 자동 진입
+    if (req.toAgentIds.length === 1 && me.meAgentId === req.fromAgentId) {
+      const partnerId = req.toAgentIds[0];
+      if (partnerId) await me.selectConversation(partnerId);
     }
   } else {
     newMsgError.value = me.error ?? '발신 실패';

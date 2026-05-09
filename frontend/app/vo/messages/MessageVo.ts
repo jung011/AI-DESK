@@ -32,6 +32,20 @@ export interface MessageCreateRequest {
   replyToMessageId?: string;
 }
 
+export interface MessageBroadcastRequest {
+  fromAgentId: string;
+  toAgentIds: string[];
+  content: string;
+}
+
+export interface MessageBroadcastResponse {
+  list: MessageItem[];
+  totalAttempted: number;
+  succeeded: number;
+  failed: number;
+  notFound: number;
+}
+
 export interface ConversationItem {
   partnerAgentId: string;
   partnerAgentName: string;

@@ -3,27 +3,35 @@
     <div v-if="open" class="popup-overlay" @click.self="emit('close')">
       <div class="popup-box" role="dialog">
         <header class="popup-head">
-          <h3>새 메시지</h3>
+          <h3>새 메시지{{ totalChecked > 1 ? ` (${totalChecked}명에게)` : '' }}</h3>
           <button class="popup-close" type="button" @click="emit('close')">×</button>
         </header>
 
         <div class="popup-body">
           <div class="form_field">
             <label class="form_label">받는 AI <span class="required">*</span></label>
-            <div class="select-wrap">
-              <select v-model="form.toAgentId" :disabled="lockTo">
-                <option value="">선택하세요…</option>
-                <option
-                  v-for="a in agents"
-                  :key="a.agentId"
+            <div class="checkbox-list">
+              <label
+                v-for="a in agents"
+                :key="a.agentId"
+                class="checkbox-row"
+                :class="{ disabled: !isReceivable(a) || (lockTo && a.agentId === initialToAgentId) }">
+                <input
+                  type="checkbox"
                   :value="a.agentId"
-                  :disabled="!isReceivable(a) || a.agentId === form.fromAgentId">
-                  {{ a.agentName }}{{ receivableLabel(a) }}
-                </option>
-              </select>
+                  :checked="selectedSet.has(a.agentId)"
+                  :disabled="!isReceivable(a) || (lockTo && a.agentId === initialToAgentId)"
+                  @change="onToggle(a.agentId, ($event.target as HTMLInputElement).checked)" />
+                <span class="checkbox-label">
+                  {{ a.agentName }}{{ receivableSuffix(a) }}
+                </span>
+              </label>
             </div>
             <span class="form_help">
               완료 상태이거나 컨텍스트가 90% 초과한 AI 는 수신할 수 없습니다.
+              <template v-if="lockTo && initialToAgentId">
+                · 사전 선택된 수신자는 해제할 수 없습니다.
+              </template>
             </span>
           </div>
 
@@ -36,12 +44,12 @@
                   v-for="a in agents"
                   :key="a.agentId"
                   :value="a.agentId"
-                  :disabled="!isSendable(a) || a.agentId === form.toAgentId">
-                  {{ a.agentName }}{{ sendableLabel(a) }}
+                  :disabled="!isSendable(a) || selectedSet.has(a.agentId)">
+                  {{ a.agentName }}{{ sendableSuffix(a) }}
                 </option>
               </select>
             </div>
-            <span class="form_help">발신자 역할을 할 AI 를 선택하세요.</span>
+            <span class="form_help">발신자 역할을 할 AI 를 선택하세요. 받는 AI 와 같은 AI 는 선택할 수 없습니다.</span>
           </div>
 
           <div class="form_field">
@@ -64,7 +72,7 @@
             type="button"
             :disabled="!canSubmit || submitting"
             @click="onSubmit">
-            {{ submitting ? '보내는 중…' : '보내기' }}
+            {{ submitting ? '보내는 중…' : (totalChecked > 1 ? `${totalChecked}명에게 보내기` : '보내기') }}
           </button>
         </footer>
       </div>
@@ -74,13 +82,14 @@
 
 <script setup lang="ts">
 import type { AgentItem } from '~/vo/agents/AgentVo';
-import type { MessageCreateRequest } from '~/vo/messages/MessageVo';
+import type { MessageBroadcastRequest } from '~/vo/messages/MessageVo';
 
 const props = withDefaults(defineProps<{
   open: boolean;
   agents: AgentItem[];
   initialFromAgentId?: string | null;
   initialToAgentId?: string | null;
+  /** true 면 initialToAgentId 가 사전 체크 + 해제 불가 (대시보드 카드 메뉴에서 사용) */
   lockTo?: boolean;
   submitting?: boolean;
   errorMessage?: string | null;
@@ -94,22 +103,30 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'submit', request: MessageCreateRequest): void;
+  (e: 'submit', request: MessageBroadcastRequest): void;
 }>();
 
 const form = reactive({
   fromAgentId: '',
-  toAgentId: '',
   content: ''
 });
+const selectedSet = reactive<Set<string>>(new Set<string>());
+
+const totalChecked = computed(() => selectedSet.size);
 
 watch(() => props.open, (next) => {
   if (next) {
     form.fromAgentId = props.initialFromAgentId ?? '';
-    form.toAgentId = props.initialToAgentId ?? '';
     form.content = '';
+    selectedSet.clear();
+    if (props.initialToAgentId) selectedSet.add(props.initialToAgentId);
   }
 });
+
+function onToggle(agentId: string, checked: boolean): void {
+  if (checked) selectedSet.add(agentId);
+  else selectedSet.delete(agentId);
+}
 
 function isSendable(a: AgentItem): boolean {
   return a.status !== 'done';
@@ -121,31 +138,31 @@ function isReceivable(a: AgentItem): boolean {
   return true;
 }
 
-function sendableLabel(a: AgentItem): string {
+function sendableSuffix(a: AgentItem): string {
   if (a.status === 'done') return ' (완료 — 발신 불가)';
   if (a.status === 'idle') return ' (쉬는 중)';
   return ' (작업중)';
 }
 
-function receivableLabel(a: AgentItem): string {
+function receivableSuffix(a: AgentItem): string {
   if (a.status === 'done') return ' (완료 — 수신 불가)';
   if (a.contextPct !== null && a.contextPct >= 90) return ` (컨텍스트 ${a.contextPct}% — 수신 불가)`;
   if (a.status === 'idle') return ' (쉬는 중)';
   return ' (작업중)';
 }
 
-const canSubmit = computed(() =>
-  form.fromAgentId.length > 0 &&
-  form.toAgentId.length > 0 &&
-  form.fromAgentId !== form.toAgentId &&
-  form.content.trim().length > 0
-);
+const canSubmit = computed(() => {
+  if (form.fromAgentId.length === 0) return false;
+  if (selectedSet.size === 0) return false;
+  if (selectedSet.has(form.fromAgentId)) return false;
+  return form.content.trim().length > 0;
+});
 
 function onSubmit(): void {
   if (!canSubmit.value || props.submitting) return;
   emit('submit', {
     fromAgentId: form.fromAgentId,
-    toAgentId: form.toAgentId,
+    toAgentIds: Array.from(selectedSet),
     content: form.content.trim()
   });
 }
@@ -159,7 +176,7 @@ function onSubmit(): void {
   z-index: 1000;
 }
 .popup-box {
-  width: 520px; max-width: calc(100vw - 40px);
+  width: 540px; max-width: calc(100vw - 40px);
   background: #fff; border-radius: 10px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .2);
   display: flex; flex-direction: column;
@@ -175,7 +192,7 @@ function onSubmit(): void {
   color: #94A3B8; cursor: pointer; line-height: 1;
 }
 .popup-close:hover { color: #475569; }
-.popup-body { padding: 20px; }
+.popup-body { padding: 20px; max-height: 70vh; overflow-y: auto; }
 .popup-foot {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 20px; border-top: 1px solid #F0F2F5;
@@ -184,10 +201,32 @@ function onSubmit(): void {
 .form_field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
 .form_label { font-size: 13px; font-weight: 600; color: #333; }
 .form_label .required { color: #E53935; }
-.form_help { font-size: 12px; color: #AAB4BE; }
+.form_help { font-size: 12px; color: #AAB4BE; line-height: 1.5; }
 .form_error {
   margin: 0; padding: 8px 12px; border-radius: 6px;
   background: #FFE5E9; color: #B22B45; font-size: 12px;
+}
+
+.checkbox-list {
+  display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid #D4DCE4; border-radius: 6px;
+  padding: 8px 6px; background: #fff;
+  max-height: 220px; overflow-y: auto;
+}
+.checkbox-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 4px;
+  cursor: pointer; user-select: none;
+}
+.checkbox-row:hover:not(.disabled) { background: #F8FAFC; }
+.checkbox-row.disabled {
+  cursor: not-allowed; color: #94A3B8;
+}
+.checkbox-row input[type="checkbox"] {
+  width: 16px; height: 16px; cursor: inherit;
+}
+.checkbox-label {
+  font-size: 13px; color: inherit;
 }
 
 .select-wrap { position: relative; }

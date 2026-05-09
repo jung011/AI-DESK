@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia';
 import type {
   ConversationItem,
+  MessageBroadcastRequest,
+  MessageBroadcastResponse,
   MessageCreateRequest,
   MessageItem,
   MessageListResponse,
@@ -167,6 +169,35 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  /**
+   * 멀티캐스트 발신 — toAgentIds 의 모든 AI 에게 한 번에 fan-out.
+   */
+  async function sendBroadcast(req: MessageBroadcastRequest): Promise<MessageBroadcastResponse | null> {
+    try {
+      const env = await api()<ApiEnvelope<MessageBroadcastResponse>>('/api/messages/broadcast', {
+        method: 'POST',
+        body: req
+      });
+      if (env.result === 0 && env.data) {
+        await fetchUnreadCount();
+        const me = meAgentId.value;
+        if (me && (req.fromAgentId === me || req.toAgentIds.includes(me))) {
+          await fetchConversations();
+          if (selectedPartnerId.value && req.toAgentIds.includes(selectedPartnerId.value)) {
+            await fetchMessages();
+          }
+        }
+        error.value = null;
+        return env.data;
+      }
+      error.value = env.message ?? '발신 실패';
+      return null;
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
   return {
     // state
     meAgentId,
@@ -185,6 +216,7 @@ export const useMessagesStore = defineStore('messages', () => {
     selectConversation,
     sendMessage,
     sendNewMessage,
+    sendBroadcast,
     markConversationRead,
     fetchUnreadCount
   };

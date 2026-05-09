@@ -78,7 +78,7 @@ import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 import NewMessageDialog from '~/components/messages/NewMessageDialog.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
-import type { MessageCreateRequest } from '~/vo/messages/MessageVo';
+import type { MessageBroadcastRequest } from '~/vo/messages/MessageVo';
 
 const {
   list,
@@ -166,10 +166,10 @@ function closeNewMessage(): void {
   newMsg.toAgentId = null;
 }
 
-async function onSendNewMessage(req: MessageCreateRequest): Promise<void> {
+async function onSendNewMessage(req: MessageBroadcastRequest): Promise<void> {
   newMsg.submitting = true;
   newMsg.error = null;
-  const result = await messagesStore.sendNewMessage(req);
+  const result = await messagesStore.sendBroadcast(req);
   newMsg.submitting = false;
   if (result) {
     newMsg.open = false;
