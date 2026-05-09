@@ -76,3 +76,53 @@ CREATE INDEX IF NOT EXISTS idx_ai_message_status
     ON t_ai_message (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_message_root
     ON t_ai_message (root_message_id, created_at);
+
+-- =====================================================================
+-- t_ai_room — 그룹 대화방 (Phase 6 그룹 대화)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS t_ai_room (
+    room_id      VARCHAR(36)  PRIMARY KEY,
+    room_name    VARCHAR(50)  NOT NULL,
+    created_by   VARCHAR(36)  NOT NULL,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    archived_at  TIMESTAMPTZ
+);
+
+COMMENT ON TABLE  t_ai_room IS 'AI 그룹 대화방';
+COMMENT ON COLUMN t_ai_room.created_by  IS '방을 만든 AI agent_id';
+COMMENT ON COLUMN t_ai_room.archived_at IS '아카이브 시각, NULL = 활성';
+
+CREATE INDEX IF NOT EXISTS idx_ai_room_archived
+    ON t_ai_room (archived_at);
+
+-- =====================================================================
+-- t_ai_room_member — 방 멤버 (다대다)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS t_ai_room_member (
+    room_id    VARCHAR(36) NOT NULL,
+    agent_id   VARCHAR(36) NOT NULL,
+    role       VARCHAR(20) NOT NULL DEFAULT 'member',
+    joined_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (room_id, agent_id)
+);
+
+COMMENT ON COLUMN t_ai_room_member.role IS 'coordinator / member';
+
+CREATE INDEX IF NOT EXISTS idx_ai_room_member_agent
+    ON t_ai_room_member (agent_id);
+
+-- =====================================================================
+-- t_ai_room_message — 방 안에서 오간 메시지
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS t_ai_room_message (
+    message_id     VARCHAR(36)   PRIMARY KEY,
+    room_id        VARCHAR(36)   NOT NULL,
+    from_agent_id  VARCHAR(36)   NOT NULL,
+    content        VARCHAR(1000) NOT NULL,
+    created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_room_message_room
+    ON t_ai_room_message (room_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_room_message_from
+    ON t_ai_room_message (from_agent_id, created_at DESC);
