@@ -201,7 +201,7 @@ public class AgentService {
                 + "    activate\n"
                 + "    set newTab to do script shellCmd\n"
                 + "    try\n"
-                + "      set font size of newTab to 16\n"
+                + "      set font size of newTab to 14\n"
                 + "    end try\n"
                 + "  end tell\n"
                 + "else\n"
@@ -219,7 +219,7 @@ public class AgentService {
                 + "      set newTab to do script shellCmd\n"
                 + "    end if\n"
                 + "    try\n"
-                + "      set font size of newTab to 16\n"
+                + "      set font size of newTab to 14\n"
                 + "    end try\n"
                 + "  end tell\n"
                 + "end if\n";
