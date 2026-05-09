@@ -24,19 +24,6 @@
 
     <div class="ai-card-body">{{ agent.taskDesc ?? '—' }}</div>
 
-    <div class="context-bar-wrap">
-      <div class="context-bar-label">
-        <span>컨텍스트 사용률</span>
-        <strong :style="{ color: contextColor }">{{ agent.contextPct ?? 0 }}%</strong>
-      </div>
-      <div class="context-bar">
-        <div
-          class="context-bar-fill"
-          :class="contextLevel"
-          :style="{ width: (agent.contextPct ?? 0) + '%' }" />
-      </div>
-    </div>
-
     <div class="ai-card-footer">
       <span class="ai-model-tag">{{ agent.model }}</span>
       <div class="ai-meta">{{ metaLabel }}: <strong>{{ metaValue }}</strong></div>
@@ -182,19 +169,6 @@ const avatarEmoji = computed(() => ({
   done: '✅'
 }[props.agent.status] ?? '🤖'));
 
-const contextLevel = computed(() => {
-  const v = props.agent.contextPct ?? 0;
-  if (v >= 90) return 'high';
-  if (v >= 71) return 'mid';
-  return 'low';
-});
-
-const contextColor = computed(() => {
-  if (contextLevel.value === 'high') return '#E53935';
-  if (contextLevel.value === 'mid')  return '#E65100';
-  return '#2E7D32';
-});
-
 const metaLabel = computed(() => ({
   active: '시작',
   idle: '대기 시간',
@@ -269,19 +243,6 @@ function formatTime(iso: string, status: string): string {
 }
 .ai-meta { font-size: 12px; color: #AAB4BE; }
 .ai-meta strong { color: #666; font-weight: 500; }
-
-.context-bar-wrap { margin-bottom: 16px; }
-.context-bar-label {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 5px;
-}
-.context-bar-label span { font-size: 11px; color: #AAB4BE; }
-.context-bar-label strong { font-size: 12px; font-weight: 600; }
-.context-bar { height: 5px; background: #F0F2F5; border-radius: 4px; overflow: hidden; }
-.context-bar-fill { height: 100%; border-radius: 4px; transition: width .3s; }
-.context-bar-fill.low  { background: #00C853; }
-.context-bar-fill.mid  { background: #FFB300; }
-.context-bar-fill.high { background: #E53935; }
 
 .card-menu-wrap { position: relative; }
 .btn-card-menu {

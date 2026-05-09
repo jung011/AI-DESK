@@ -15,6 +15,9 @@
       </div>
     </div>
 
+    <!-- 로컬 통합 Claude 사용량 -->
+    <LocalUsageBar />
+
     <!-- 요약 카드 -->
     <SummaryCardGrid :summary="summary" />
 
@@ -72,6 +75,7 @@ import { useAgents } from '~/composables/useAgents';
 import { useMessagesStore } from '~/stores/messages';
 import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
+import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
