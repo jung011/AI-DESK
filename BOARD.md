@@ -109,15 +109,16 @@
 
 ---
 
-## Phase 4 — Last Mile + 스케줄러 🟡
-> 실제 AI 세션과 연동하여 한 방향 전달 자동화.
+## Phase 4 — Last Mile + 스케줄러 ✅
+> 실제 AI 세션과 연동하여 한 방향 전달 자동화. **M4 달성**.
 
 - ✅ `TmuxLastMileAdapter` (`tmux has-session`/`send-keys`) — @Primary 로 stub 대체
 - ✅ 메시지 헤더 컨벤션 렌더 (`[aidesk · FROM:.. | MSG:..] {content}  ↳ 응답: adesk reply ...`)
 - ✅ 비동기 처리 (Java 21 virtual thread — `Thread.startVirtualThread`)
-- ⬜ `adesk` CLI 1차 (`whoami` / `reply`) — Node.js 별도 패키지, 다음 라운드
+- ✅ `adesk` CLI 1차 (`whoami` / `reply`) — Node.js 패키지 (`adesk-cli/`), commander 기반
 - ✅ 세션 파일 감지 스케줄러 (`@Scheduled(fixedDelay=10_000, initialDelay=5_000)` + AgentStatusWatcher) — claude 모델 한정
 - ✅ 컨텍스트 사용량 자동 갱신 (`~/.claude/projects/**/*.jsonl` 파싱, message.usage → tokens / 1M)
+- ✅ 백엔드 단건 조회 endpoint 2종 추가 (CLI lookups) : `GET /api/agents/{id}`, `GET /api/messages/{id}`
 
 ---
 
@@ -162,4 +163,5 @@
 - 2026-05-09 : Chrome MCP 시각 검증 통과 (필터·검색·생성·메뉴·삭제 전체 동작) — **M2 달성**
 - 2026-05-09 : Phase 3 백엔드 완료 (messages 도메인 + 정책 + last mile stub + read/conversations/unread-count)
 - 2026-05-09 : Phase 3 프론트 완료 (메시지 페이지 + NewMessageDialog + 사이드/카드 뱃지 + 카드 메뉴 활성화). Chrome MCP 시각 검증 통과 — **M3 달성**
-- 2026-05-09 : Phase 4 백엔드 3종 완료 (TmuxLastMileAdapter + virtual thread + AgentStatusWatcher + jsonl context_pct 파싱). 실제 tmux 세션 도착·세션 부재 failed·context 0→74% 자동 갱신 검증. 남은 건 adesk CLI.
+- 2026-05-09 : Phase 4 백엔드 3종 완료 (TmuxLastMileAdapter + virtual thread + AgentStatusWatcher + jsonl context_pct 파싱). 실제 tmux 세션 도착·세션 부재 failed·context 0→74% 자동 갱신 검증.
+- 2026-05-09 : adesk CLI (whoami / reply) Node.js 패키지 작성 + 백엔드 단건 endpoints. 양방향 시나리오 (문서화 → 코드 리뷰 발신 → tmux 도착 → adesk reply → 답장 체인 INSERT) 검증 — **M4 달성**
