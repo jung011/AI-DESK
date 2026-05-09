@@ -112,8 +112,11 @@ public class AgentService {
     }
 
     /**
-     * 에이전트의 워크스페이스 디렉토리를 macOS Terminal 로 연다.
-     * 백엔드와 사용자가 같은 머신을 쓰는 PoC 환경 한정으로 동작.
+     * 에이전트의 워크스페이스에서 Terminal 을 열고 tmux 세션에서 claude 를 실행한다.
+     * - 세션이 없으면: 새 tmux 세션 생성 + 그 안에서 'claude' 실행 (last-mile send-keys 가 동작할 준비 완료)
+     * - 세션이 이미 있으면: 거기 attach (claude 가 이미 떠있으면 그대로 합류)
+     *
+     * AppleScript 의 `quoted form of` 가 워크스페이스 경로의 공백/특수문자를 안전하게 셸 인용 처리한다.
      *
      * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = 실행 실패
      */
@@ -122,6 +125,10 @@ public class AgentService {
         if (v == null) return 1;
         String dir = v.getWorkspaceDir();
         if (dir == null || dir.isBlank()) return 2;
+        String session = v.getTmuxSession();
+        if (session == null || session.isBlank()) {
+            session = "aidesk-" + agentId.substring(0, Math.min(8, agentId.length()));
+        }
 
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (!os.contains("mac")) {
@@ -129,9 +136,21 @@ public class AgentService {
             return 3;
         }
 
+        // AppleScript 문자열 안에 들어가도록 \ 와 " 만 escape.
+        // 셸 escape 는 AppleScript 의 quoted form of 가 알아서 해준다.
+        String dirEsc = dir.replace("\\", "\\\\").replace("\"", "\\\"");
+        String doScript = "do script \"cd \" & quoted form of \"" + dirEsc
+                + "\" & \" && tmux new-session -A -s " + session + " 'claude'\"";
+
         try {
-            new ProcessBuilder("open", "-a", "Terminal", dir).start();
-            log.info("openTerminal: agent={} dir={}", v.getAgentName(), dir);
+            new ProcessBuilder(
+                    "osascript",
+                    "-e", "tell application \"Terminal\"",
+                    "-e", "activate",
+                    "-e", doScript,
+                    "-e", "end tell"
+            ).start();
+            log.info("openTerminal: agent={} dir={} session={}", v.getAgentName(), dir, session);
             return 0;
         } catch (IOException e) {
             log.warn("openTerminal failed: {}", e.getMessage());
