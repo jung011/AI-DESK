@@ -1,0 +1,22 @@
+server:
+  port: 8081
+
+cors:
+  allowed-origins: "http://localhost:3000,http://0.0.0.0:3000"
+  allowed-methods: GET,POST,PATCH,DELETE,OPTIONS
+  allowed-headers: "*"
+  exposed-headers: Content-Disposition,Content-Type,Content-Length
+  allow-credentials: true
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/aidesk
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+logging:
+  level:
+    root: INFO
+    com.jsh.aidesk: DEBUG
+    org.mybatis: DEBUG
