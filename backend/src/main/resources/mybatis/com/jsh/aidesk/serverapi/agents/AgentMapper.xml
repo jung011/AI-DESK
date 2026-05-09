@@ -49,4 +49,15 @@
            AND deleted_at IS NULL
     </update>
 
+    <update id="updateStatusFromWatcher">
+        UPDATE t_ai_agent
+           SET status = #{status},
+               updated_at = NOW()
+        <if test="contextPct != null">
+              ,context_pct = #{contextPct}
+        </if>
+         WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
+    </update>
+
 </mapper>

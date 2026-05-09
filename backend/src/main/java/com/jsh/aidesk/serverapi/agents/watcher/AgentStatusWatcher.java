@@ -1,0 +1,106 @@
+package com.jsh.aidesk.serverapi.agents.watcher;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Stream;
+
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
+import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * AI 세션 파일 (Claude Code JSONL 등) 의 최신 수정 시각으로 status 를 자동 갱신한다.
+ *
+ * 추정 규칙:
+ *   2분 이내 → active, 2분~30분 → idle, 30분 초과 또는 파일 없음 → done
+ *
+ * 1단계 PoC 범위:
+ *   - claude 모델만 처리. codex / hermes 는 spec TBD 라 건너뜀.
+ *   - workspace_dir 을 escape 하여 ~/.claude/projects/{escaped}/ 디렉토리 매칭.
+ *   - 디렉토리 부재 / .jsonl 부재 시 갱신 스킵 (시드 데이터 보호).
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class AgentStatusWatcher {
+
+    private static final Path CLAUDE_PROJECTS_ROOT =
+            Paths.get(System.getProperty("user.home"), ".claude", "projects");
+
+    private static final long ACTIVE_WINDOW_SEC = 120;
+    private static final long IDLE_WINDOW_SEC = 30 * 60;
+
+    private final AgentMapper agentMapper;
+
+    @Scheduled(fixedDelay = 10_000, initialDelay = 5_000)
+    public void tick() {
+        try {
+            List<AgentVo> agents = agentMapper.selectList(null);
+            for (AgentVo a : agents) {
+                if ("done".equals(a.getStatus())) continue;
+                if (!isClaudeModel(a.getModel())) continue;
+                checkAndUpdate(a);
+            }
+        } catch (Exception e) {
+            log.warn("AgentStatusWatcher tick failed: {}", e.getMessage());
+        }
+    }
+
+    private void checkAndUpdate(AgentVo a) {
+        Path projectDir = projectDirOf(a.getWorkspaceDir());
+        if (projectDir == null || !Files.isDirectory(projectDir)) {
+            return; // 매칭되는 jsonl 디렉토리 없음 — 1단계 스킵
+        }
+        Path latest = findLatestJsonl(projectDir);
+        if (latest == null) return;
+
+        long ageSec = (System.currentTimeMillis() - latest.toFile().lastModified()) / 1000;
+        String newStatus = estimateStatus(ageSec);
+        if (!newStatus.equals(a.getStatus())) {
+            log.debug("watcher: agent={} status {} -> {} (jsonl mtime age={}s)",
+                    a.getAgentName(), a.getStatus(), newStatus, ageSec);
+            agentMapper.updateStatusFromWatcher(a.getAgentId(), newStatus, null);
+        }
+    }
+
+    private static boolean isClaudeModel(String model) {
+        return model != null && model.startsWith("claude");
+    }
+
+    /** workspace_dir 을 ~/.claude/projects 의 디렉토리명으로 escape. 슬래시 → 대시. */
+    private static Path projectDirOf(String workspaceDir) {
+        if (workspaceDir == null || workspaceDir.isBlank()) return null;
+        String escaped = workspaceDir.replace('/', '-');
+        return CLAUDE_PROJECTS_ROOT.resolve(escaped);
+    }
+
+    private static Path findLatestJsonl(Path dir) {
+        // Claude Code 는 ~/.claude/projects/{escaped}/{session-id}/.../*.jsonl 형태로
+        // subagent 단위 폴더에 jsonl 을 둔다. 깊이 5 까지 recursively 검색.
+        try (Stream<Path> stream = Files.walk(dir, 5)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
+                    .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
+                    .orElse(null);
+        } catch (IOException e) {
+            log.warn("watcher: walk {} failed: {}", dir, e.getMessage());
+            return null;
+        }
+    }
+
+    private static String estimateStatus(long ageSec) {
+        if (ageSec <= ACTIVE_WINDOW_SEC) return "active";
+        if (ageSec <= IDLE_WINDOW_SEC) return "idle";
+        return "done";
+    }
+}
