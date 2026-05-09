@@ -18,7 +18,13 @@
     <!-- 요약 카드 -->
     <SummaryCardGrid :summary="summary" />
 
-    <!-- 임시 — 필터 탭/검색은 다음 commit 단계에서 추가 -->
+    <!-- 필터 탭 + 이름 검색 -->
+    <FilterBar
+      :status="status"
+      :query="query"
+      @update:status="status = $event"
+      @update:query="query = $event" />
+
     <div v-if="error" class="error-box">
       백엔드 호출 실패: {{ error }}
     </div>
@@ -31,9 +37,18 @@
 <script setup lang="ts">
 import { useAgents } from '~/composables/useAgents';
 import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
+import FilterBar from '~/components/dashboard/FilterBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 
-const { summary, filteredList, error, startPolling, stopPolling } = useAgents();
+const {
+  summary,
+  status,
+  query,
+  filteredList,
+  error,
+  startPolling,
+  stopPolling
+} = useAgents();
 
 onMounted(() => startPolling(10_000));
 onUnmounted(() => stopPolling());
