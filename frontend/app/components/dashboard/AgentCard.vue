@@ -49,11 +49,11 @@
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
             메시지 보내기
           </button>
-          <button type="button" class="card-menu-item" @click="onPlaceholder('VSCode 열기')">
+          <button type="button" class="card-menu-item" @click="onOpenVscode">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
             VSCode 열기
           </button>
-          <button type="button" class="card-menu-item" @click="onPlaceholder('터미널 열기')">
+          <button type="button" class="card-menu-item" @click="onOpenTerminal">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10z"/></svg>
             터미널 열기
           </button>
@@ -110,6 +110,38 @@ function onPlaceholder(label: string): void {
   menuOpen.value = false;
   // eslint-disable-next-line no-alert
   alert(`${label}는 후속 단계에 구현됩니다.`);
+}
+
+function onOpenVscode(): void {
+  menuOpen.value = false;
+  const dir = props.agent.workspaceDir;
+  if (!dir) {
+    // eslint-disable-next-line no-alert
+    alert('워크스페이스 경로가 비어있습니다.');
+    return;
+  }
+  // vscode:// URI 스킴 — 브라우저가 외부 핸들러로 열어 VSCode 가 직접 처리.
+  // 인코딩은 file URI 규칙에 맞춰 공백·한글 등을 안전화.
+  const encoded = dir.split('/').map(encodeURIComponent).join('/');
+  window.location.href = `vscode://file${encoded.startsWith('/') ? '' : '/'}${encoded}`;
+}
+
+async function onOpenTerminal(): Promise<void> {
+  menuOpen.value = false;
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<{ result: number; message: string }>(
+      `/api/agents/${encodeURIComponent(props.agent.agentId)}/open-terminal`,
+      { method: 'POST' }
+    );
+    if (env.result !== 0) {
+      // eslint-disable-next-line no-alert
+      alert(env.message || '터미널 열기에 실패했습니다.');
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-alert
+    alert(`터미널 열기 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 function onDelete(): void {

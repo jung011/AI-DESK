@@ -26,7 +26,9 @@
     </div>
     <div class="header-bottom-right">
       <span class="header-user">{{ layout.user.name }}</span>
+      <!-- 로그인 시스템이 없으므로 로그아웃 버튼 숨김. 필요해지면 복원.
       <button type="button" class="header-logout" @click="onLogout">로그아웃</button>
+      -->
     </div>
   </div>
 </template>
@@ -36,11 +38,10 @@ import { useLayoutStore } from '~/stores/layout';
 
 const layout = useLayoutStore();
 
-function onLogout() {
-  // 1단계엔 로그인 시스템이 없으므로 자리만 잡아둔다.
-  // eslint-disable-next-line no-alert
-  alert('1단계는 로그인 시스템이 없습니다.');
-}
+// 로그인 시스템이 도입되면 로그아웃 핸들러를 다시 살린다.
+// function onLogout() {
+//   alert('1단계는 로그인 시스템이 없습니다.');
+// }
 </script>
 
 <style scoped>
