@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.aidesk.serverapi.messages.mapper.MessageMapper">
+
+    <sql id="messageBaseColumns">
+        message_id, from_agent_id, to_agent_id, content,
+        reply_to_message_id, root_message_id, hop_count,
+        status, error_reason,
+        created_at, delivered_at, read_at, replied_at
+    </sql>
+
+    <sql id="itemSelectClause">
+        SELECT
+            m.message_id           AS message_id,
+            m.from_agent_id        AS from_agent_id,
+            af.agent_name          AS from_agent_name,
+            m.to_agent_id          AS to_agent_id,
+            at.agent_name          AS to_agent_name,
+            m.content              AS content,
+            m.reply_to_message_id  AS reply_to_message_id,
+            m.status               AS status,
+            m.error_reason         AS error_reason,
+            m.created_at           AS created_at,
+            m.delivered_at         AS delivered_at,
+            m.read_at              AS read_at,
+            m.replied_at           AS replied_at
+          FROM t_ai_message m
+          JOIN t_ai_agent af ON af.agent_id = m.from_agent_id
+          JOIN t_ai_agent at ON at.agent_id = m.to_agent_id
+    </sql>
+
+    <insert id="insert" parameterType="com.jsh.aidesk.serverapi.messages.vo.MessageVo">
+        INSERT INTO t_ai_message (
+            message_id, from_agent_id, to_agent_id, content,
+            reply_to_message_id, root_message_id, hop_count,
+            status, error_reason
+        ) VALUES (
+            #{messageId}, #{fromAgentId}, #{toAgentId}, #{content},
+            #{replyToMessageId}, #{rootMessageId},
+            <choose><when test="hopCount != null">#{hopCount}</when><otherwise>0</otherwise></choose>,
+            #{status}, #{errorReason}
+        )
+    </insert>
+
+    <update id="updateStatus">
+        UPDATE t_ai_message
+           SET status = #{status},
+               error_reason = #{errorReason},
+               delivered_at = CASE WHEN #{status} = 'delivered' THEN NOW() ELSE delivered_at END,
+               replied_at   = CASE WHEN #{status} = 'replied'   THEN NOW() ELSE replied_at   END
+         WHERE message_id = #{messageId}
+    </update>
+
+    <select id="selectById" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageVo">
+        SELECT <include refid="messageBaseColumns"/>
+          FROM t_ai_message
+         WHERE message_id = #{messageId}
+    </select>
+
+    <select id="selectItemById" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
+        <include refid="itemSelectClause"/>
+         WHERE m.message_id = #{messageId}
+    </select>
+
+    <select id="selectByAgent" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
+        <include refid="itemSelectClause"/>
+         WHERE 1 = 1
+        <choose>
+            <when test="direction == 'inbox'">
+               AND m.to_agent_id = #{agentId}
+            </when>
+            <when test="direction == 'outbox'">
+               AND m.from_agent_id = #{agentId}
+            </when>
+            <otherwise>
+               AND (m.from_agent_id = #{agentId} OR m.to_agent_id = #{agentId})
+            </otherwise>
+        </choose>
+        <if test="withId != null and withId != ''">
+           AND ((m.from_agent_id = #{agentId} AND m.to_agent_id = #{withId})
+             OR (m.from_agent_id = #{withId}  AND m.to_agent_id = #{agentId}))
+        </if>
+        <if test="status != null and status != ''">
+           AND m.status = #{status}
+        </if>
+         ORDER BY m.created_at ASC
+         LIMIT #{limit}
+    </select>
+
+    <select id="countRecentByFrom" resultType="int">
+        SELECT COUNT(*)
+          FROM t_ai_message
+         WHERE from_agent_id = #{agentId}
+           AND created_at >= NOW() - (#{seconds} || ' seconds')::INTERVAL
+    </select>
+
+</mapper>
