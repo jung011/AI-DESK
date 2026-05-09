@@ -112,18 +112,22 @@ function onPlaceholder(label: string): void {
   alert(`${label}는 후속 단계에 구현됩니다.`);
 }
 
-function onOpenVscode(): void {
+async function onOpenVscode(): Promise<void> {
   menuOpen.value = false;
-  const dir = props.agent.workspaceDir;
-  if (!dir) {
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<{ result: number; message: string }>(
+      `/api/agents/${encodeURIComponent(props.agent.agentId)}/open-vscode`,
+      { method: 'POST' }
+    );
+    if (env.result !== 0) {
+      // eslint-disable-next-line no-alert
+      alert(env.message || 'VSCode 열기에 실패했습니다.');
+    }
+  } catch (e) {
     // eslint-disable-next-line no-alert
-    alert('워크스페이스 경로가 비어있습니다.');
-    return;
+    alert(`VSCode 열기 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
   }
-  // vscode:// URI 스킴 — 브라우저가 외부 핸들러로 열어 VSCode 가 직접 처리.
-  // 인코딩은 file URI 규칙에 맞춰 공백·한글 등을 안전화.
-  const encoded = dir.split('/').map(encodeURIComponent).join('/');
-  window.location.href = `vscode://file${encoded.startsWith('/') ? '' : '/'}${encoded}`;
 }
 
 async function onOpenTerminal(): Promise<void> {
