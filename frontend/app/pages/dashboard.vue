@@ -35,8 +35,7 @@
     <!-- AI 카드 그리드 -->
     <AgentCardGrid
       :agents="filteredList"
-      @delete="onDeleteRequest"
-      @sendMessage="onSendMessageRequest" />
+      @delete="onDeleteRequest" />
 
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
@@ -56,36 +55,21 @@
       :busy="deleting"
       @cancel="closeDeleteDialog"
       @confirm="onDeleteConfirm" />
-
-    <!-- 새 메시지 팝업 (카드 메뉴에서 진입) -->
-    <NewMessageDialog
-      :open="newMsg.open"
-      :agents="list"
-      :initial-to-agent-id="newMsg.toAgentId"
-      :lock-to="true"
-      :submitting="newMsg.submitting"
-      :error-message="newMsg.error"
-      @close="closeNewMessage"
-      @submit="onSendNewMessage" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useAgents } from '~/composables/useAgents';
-import { useMessagesStore } from '~/stores/messages';
 import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
 import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
-import NewMessageDialog from '~/components/messages/NewMessageDialog.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
-import type { MessageBroadcastRequest } from '~/vo/messages/MessageVo';
 
 const {
-  list,
   summary,
   status,
   query,
@@ -96,8 +80,6 @@ const {
   createAgent,
   deleteAgent
 } = useAgents();
-
-const messagesStore = useMessagesStore();
 
 const dialogOpen = ref(false);
 const creating = ref(false);
@@ -144,43 +126,6 @@ async function onDeleteConfirm(): Promise<void> {
     confirmDelete.agent = null;
   }
   // 실패 시는 error 메시지가 useAgents.error 에 채워지고, 페이지 상단에 표시됨.
-}
-
-const newMsg = reactive<{
-  open: boolean;
-  toAgentId: string | null;
-  submitting: boolean;
-  error: string | null;
-}>({
-  open: false,
-  toAgentId: null,
-  submitting: false,
-  error: null
-});
-
-function onSendMessageRequest(agent: AgentItem): void {
-  newMsg.toAgentId = agent.agentId;
-  newMsg.error = null;
-  newMsg.open = true;
-}
-
-function closeNewMessage(): void {
-  if (newMsg.submitting) return;
-  newMsg.open = false;
-  newMsg.toAgentId = null;
-}
-
-async function onSendNewMessage(req: MessageBroadcastRequest): Promise<void> {
-  newMsg.submitting = true;
-  newMsg.error = null;
-  const result = await messagesStore.sendBroadcast(req);
-  newMsg.submitting = false;
-  if (result) {
-    newMsg.open = false;
-    newMsg.toAgentId = null;
-  } else {
-    newMsg.error = messagesStore.error ?? '발신 실패';
-  }
 }
 
 onMounted(() => startPolling(10_000));

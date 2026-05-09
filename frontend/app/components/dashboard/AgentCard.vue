@@ -32,10 +32,6 @@
           <span /><span /><span />
         </button>
         <div v-if="menuOpen" class="card-menu-dropdown" @click.stop>
-          <button type="button" class="card-menu-item" @click="onSendMessage">
-            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
-            메시지 보내기
-          </button>
           <button type="button" class="card-menu-item" @click="onOpenVscode">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
             VSCode 열기
@@ -66,7 +62,6 @@ import { useMessagesStore } from '~/stores/messages';
 const props = defineProps<{ agent: AgentItem }>();
 const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
-  (e: 'sendMessage', agent: AgentItem): void;
 }>();
 
 const messages = useMessagesStore();
@@ -138,11 +133,6 @@ async function onOpenTerminal(): Promise<void> {
 function onDelete(): void {
   menuOpen.value = false;
   emit('delete', props.agent);
-}
-
-function onSendMessage(): void {
-  menuOpen.value = false;
-  emit('sendMessage', props.agent);
 }
 
 const statusClass = computed(() => ({

@@ -7,12 +7,6 @@
         <a href="#">HOME</a>
         <a href="#"><em>메시지</em></a>
       </div>
-      <div style="margin-left: auto;">
-        <button type="button" class="btn normal type_v1" @click="newMsgOpen = true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right:6px"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-          새 메시지
-        </button>
-      </div>
     </div>
 
     <!-- 메시지 본문 — 좌 320 + 우 타임라인 -->
@@ -87,23 +81,6 @@
               :outgoing="m.fromAgentId === me.meAgentId" />
           </div>
 
-          <div class="composer">
-            <textarea
-              v-model="composerText"
-              :maxlength="1000"
-              placeholder="메시지를 입력하세요... (Shift+Enter 줄바꿈, Enter 전송)"
-              :disabled="sending"
-              @keydown.enter.exact.prevent="onSend"
-              @keydown.enter.shift.exact="" />
-            <span class="composer-counter">{{ composerText.length }} / 1000</span>
-            <button
-              type="button"
-              class="btn normal type_v1"
-              :disabled="!canSend || sending"
-              @click="onSend">
-              {{ sending ? '보내는 중…' : '보내기' }}
-            </button>
-          </div>
         </template>
 
         <div v-else class="conv-detail-empty">
@@ -112,71 +89,23 @@
       </section>
 
     </div>
-
-    <!-- 새 메시지 팝업 -->
-    <NewMessageDialog
-      :open="newMsgOpen"
-      :agents="allAgents"
-      :initial-from-agent-id="me.meAgentId"
-      :submitting="newMsgSubmitting"
-      :error-message="newMsgError"
-      @close="closeNewMsg"
-      @submit="onSendNewMessage" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useMessagesStore } from '~/stores/messages';
 import MessageBubble from '~/components/messages/MessageBubble.vue';
-import NewMessageDialog from '~/components/messages/NewMessageDialog.vue';
 import type { AgentItem, AgentListResponse, ApiEnvelope, AgentStatus } from '~/vo/agents/AgentVo';
-import type { MessageBroadcastRequest } from '~/vo/messages/MessageVo';
 
 const me = useMessagesStore();
 const route = useRoute();
 const { $api } = useNuxtApp();
 
 const allAgents = ref<AgentItem[]>([]);
-const composerText = ref('');
-const sending = ref(false);
 const timelineEl = ref<HTMLElement | null>(null);
-
-// 새 메시지 팝업
-const newMsgOpen = ref(false);
-const newMsgSubmitting = ref(false);
-const newMsgError = ref<string | null>(null);
-
-function closeNewMsg(): void {
-  if (newMsgSubmitting.value) return;
-  newMsgOpen.value = false;
-  newMsgError.value = null;
-}
-
-async function onSendNewMessage(req: MessageBroadcastRequest): Promise<void> {
-  newMsgSubmitting.value = true;
-  newMsgError.value = null;
-  const result = await me.sendBroadcast(req);
-  newMsgSubmitting.value = false;
-  if (result) {
-    newMsgOpen.value = false;
-    // 단일 수신자고 관점 AI 가 발신자라면 해당 대화로 자동 진입
-    if (req.toAgentIds.length === 1 && me.meAgentId === req.fromAgentId) {
-      const partnerId = req.toAgentIds[0];
-      if (partnerId) await me.selectConversation(partnerId);
-    }
-  } else {
-    newMsgError.value = me.error ?? '발신 실패';
-  }
-}
 
 const selectableAgents = computed(() =>
   allAgents.value.filter(a => a.status === 'active' || a.status === 'idle')
-);
-
-const canSend = computed(() =>
-  Boolean(me.meAgentId) &&
-  Boolean(me.selectedPartnerId) &&
-  composerText.value.trim().length > 0
 );
 
 async function loadAgents(): Promise<void> {
@@ -190,17 +119,6 @@ async function onMeChange(e: Event): Promise<void> {
   // 만약 ?withId 가 쿼리에 있으면 해당 대화로 진입 시도
   await maybeApplyWithIdFromQuery();
   await me.fetchUnreadCount();
-}
-
-async function onSend(): Promise<void> {
-  if (!canSend.value || sending.value) return;
-  sending.value = true;
-  const text = composerText.value.trim();
-  composerText.value = '';
-  await me.sendMessage(text);
-  sending.value = false;
-  await nextTick();
-  scrollTimelineToBottom();
 }
 
 async function maybeApplyWithIdFromQuery(): Promise<void> {
@@ -374,22 +292,4 @@ watch(() => me.messages.length, async () => {
   display: flex; align-items: center; gap: 8px;
 }
 .conv-timeline { flex: 1; overflow-y: auto; padding: 18px; background: #FAFBFD; }
-
-.composer {
-  border-top: 1px solid #F0F2F5; padding: 12px 14px;
-  display: flex; gap: 8px; align-items: flex-end; background: #fff;
-}
-.composer textarea {
-  flex: 1; min-height: 40px; max-height: 120px;
-  padding: 10px 12px; border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; resize: none; font-family: inherit;
-}
-.composer textarea:focus { outline: none; border-color: #0062ff; }
-.composer-counter {
-  font-size: 11px; color: #AAB4BE; margin-right: 4px; align-self: center;
-}
-.btn.normal { display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
-.btn.normal.type_v1 { background: #0062ff; color: #fff; }
-.btn.normal.type_v1:hover:not(:disabled) { background: #0052d4; }
-.btn.normal.type_v1:disabled { background: #94A3B8; cursor: not-allowed; }
 </style>

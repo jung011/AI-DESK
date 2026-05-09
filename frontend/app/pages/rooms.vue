@@ -406,7 +406,7 @@ watch(() => store.messages.length, async () => {
 .btn.normal.type_v2 { background: #fff; color: #475569; border-color: #D4DCE4; }
 .btn.normal.type_v2:hover:not(:disabled) { background: #F8FAFC; }
 
-/* 새 방 팝업 — NewMessageDialog 와 비슷한 톤 */
+/* 새 방 팝업 */
 .popup-overlay {
   position: fixed; inset: 0;
   background: rgba(15, 23, 42, 0.45);

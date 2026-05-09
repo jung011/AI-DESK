@@ -1,9 +1,6 @@
 import { defineStore } from 'pinia';
 import type {
   ConversationItem,
-  MessageBroadcastRequest,
-  MessageBroadcastResponse,
-  MessageCreateRequest,
   MessageItem,
   MessageListResponse,
   UnreadCountResponse
@@ -83,32 +80,6 @@ export const useMessagesStore = defineStore('messages', () => {
     await markConversationRead();
   }
 
-  async function sendMessage(content: string, replyToMessageId?: string): Promise<MessageItem | null> {
-    if (!meAgentId.value || !selectedPartnerId.value) return null;
-    const body: MessageCreateRequest = {
-      fromAgentId: meAgentId.value,
-      toAgentId: selectedPartnerId.value,
-      content,
-      ...(replyToMessageId ? { replyToMessageId } : {})
-    };
-    try {
-      const env = await api()<ApiEnvelope<MessageItem>>('/api/messages', {
-        method: 'POST',
-        body
-      });
-      if (env.result === 0 && env.data) {
-        await fetchMessages();
-        await fetchConversations();
-        return env.data;
-      }
-      error.value = env.message ?? '발신 실패';
-      return null;
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
-      return null;
-    }
-  }
-
   async function markConversationRead(): Promise<void> {
     if (!meAgentId.value || !selectedPartnerId.value) return;
     const me = meAgentId.value;
@@ -139,65 +110,6 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
-  /**
-   * 새 메시지 발신 — 현재 선택된 대화와 무관하게 임의의 from/to 로 보낸다.
-   * 새 메시지 팝업(NewMessageDialog) 에서 사용.
-   */
-  async function sendNewMessage(req: MessageCreateRequest): Promise<MessageItem | null> {
-    try {
-      const env = await api()<ApiEnvelope<MessageItem>>('/api/messages', {
-        method: 'POST',
-        body: req
-      });
-      if (env.result === 0 && env.data) {
-        // 후속 효과: unread + 관련 대화 목록 갱신
-        await fetchUnreadCount();
-        if (meAgentId.value === req.fromAgentId || meAgentId.value === req.toAgentId) {
-          await fetchConversations();
-          if (selectedPartnerId.value === req.toAgentId || selectedPartnerId.value === req.fromAgentId) {
-            await fetchMessages();
-          }
-        }
-        error.value = null;
-        return env.data;
-      }
-      error.value = env.message ?? '발신 실패';
-      return null;
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
-      return null;
-    }
-  }
-
-  /**
-   * 멀티캐스트 발신 — toAgentIds 의 모든 AI 에게 한 번에 fan-out.
-   */
-  async function sendBroadcast(req: MessageBroadcastRequest): Promise<MessageBroadcastResponse | null> {
-    try {
-      const env = await api()<ApiEnvelope<MessageBroadcastResponse>>('/api/messages/broadcast', {
-        method: 'POST',
-        body: req
-      });
-      if (env.result === 0 && env.data) {
-        await fetchUnreadCount();
-        const me = meAgentId.value;
-        if (me && (req.fromAgentId === me || req.toAgentIds.includes(me))) {
-          await fetchConversations();
-          if (selectedPartnerId.value && req.toAgentIds.includes(selectedPartnerId.value)) {
-            await fetchMessages();
-          }
-        }
-        error.value = null;
-        return env.data;
-      }
-      error.value = env.message ?? '발신 실패';
-      return null;
-    } catch (e) {
-      error.value = e instanceof Error ? e.message : String(e);
-      return null;
-    }
-  }
-
   return {
     // state
     meAgentId,
@@ -214,9 +126,6 @@ export const useMessagesStore = defineStore('messages', () => {
     fetchConversations,
     fetchMessages,
     selectConversation,
-    sendMessage,
-    sendNewMessage,
-    sendBroadcast,
     markConversationRead,
     fetchUnreadCount
   };
