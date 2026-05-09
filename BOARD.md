@@ -122,15 +122,15 @@
 
 ---
 
-## Phase 5 — D + C 결합 (자율 협업) 🟡
-> AI가 도구 호출로 능동 발신/응답 가능하도록.
+## Phase 5 — D + C 결합 (자율 협업) ✅
+> AI가 도구 호출로 능동 발신/응답 가능하도록. **M5 달성**.
 
 - ✅ `aidesk-channel/` MCP 서버 별도 패키지 (Node.js, @modelcontextprotocol/sdk)
 - ✅ MCP 도구 4종 — `send_to` / `reply` / `check_inbox` / `list_agents`
 - ✅ `<channel>` 푸시 형식 구현 — 5초 폴링 + sendLoggingMessage
 - ✅ 양쪽 AI mcp.json 등록 가이드 (README)
 - ⏸️ `McpLastMileAdapter` (백엔드 → MCP push) — 폴링 방식으로 충분, 2단계 보강 항목
-- ⬜ Claude Code 실제 등록 후 도구 호출 검증 — 사용자 환경에서 다음 세션 시작 시점에 가능 (M5 달성 조건)
+- ✅ Claude Code 실제 등록 후 도구 호출 검증 — 4 도구 호출 + 답장 체인 + 부모 자동 replied + tmux 도착 모두 통과
 
 ---
 
@@ -166,4 +166,5 @@
 - 2026-05-09 : Phase 3 프론트 완료 (메시지 페이지 + NewMessageDialog + 사이드/카드 뱃지 + 카드 메뉴 활성화). Chrome MCP 시각 검증 통과 — **M3 달성**
 - 2026-05-09 : Phase 4 백엔드 3종 완료 (TmuxLastMileAdapter + virtual thread + AgentStatusWatcher + jsonl context_pct 파싱). 실제 tmux 세션 도착·세션 부재 failed·context 0→74% 자동 갱신 검증.
 - 2026-05-09 : adesk CLI (whoami / reply) Node.js 패키지 작성 + 백엔드 단건 endpoints. 양방향 시나리오 (문서화 → 코드 리뷰 발신 → tmux 도착 → adesk reply → 답장 체인 INSERT) 검증 — **M4 달성**
-- 2026-05-09 : Phase 5 첫 라운드 — aidesk-channel MCP 서버 (4 도구 + `<channel>` 5초 폴링 push + 등록 가이드) 작성. 기동 smoke 통과. 다음 라운드에 Claude Code 실제 등록·도구 호출 검증으로 M5 달성 예정.
+- 2026-05-09 : Phase 5 첫 라운드 — aidesk-channel MCP 서버 (4 도구 + `<channel>` 5초 폴링 push + 등록 가이드) 작성. 기동 smoke 통과.
+- 2026-05-09 : Claude Code 새 세션에 mcp.json 등록 후 도구 호출 검증 — list_agents·check_inbox·send_to·reply 모두 동작, 답장 체인 reply_to_message_id 매핑 + 부모 자동 status=replied 갱신 + tmux 도착 모두 확인 — **M5 달성**. 1단계 5 마일스톤 모두 완료.
