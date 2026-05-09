@@ -83,26 +83,29 @@
 
 ---
 
-## Phase 3 — 메시지 화면 ⬜
-> AI 협업 채널 1단계 (D 단독, last mile은 Phase 4).
+## Phase 3 — 메시지 화면 ✅
+> AI 협업 채널 1단계 (D 단독, last mile 은 Phase 4).
 
-### Backend
-- ⬜ `T_AI_MESSAGE` 스키마 + 인덱스
-- ⬜ `messages/` 도메인 4계층
-- ⬜ `POST /api/messages` (정책 검사 + INSERT, last mile은 stub)
-- ⬜ `GET /api/messages` / `/conversations` / `/unread-count`
-- ⬜ `PATCH /api/messages/{id}/read` / `/reply`
-- ⬜ `MessagePolicyChecker` (rate/hop/context guard/done guard)
+### Backend ✅
+- ✅ `t_ai_message` 스키마 + 인덱스 5종
+- ✅ `messages/` 도메인 4계층 (controller / service / mapper / vo / policy / lastmile)
+- ✅ `POST /api/messages` (정책 검사 + INSERT + last mile stub + 부모 자동 replied)
+- ✅ `GET /api/messages` / `/conversations` (CTE roll-up) / `/unread-count`
+- ✅ `PATCH /api/messages/{id}/read`
+- ⬜ `PATCH /api/messages/{id}/reply` (POST + replyToMessageId 가 자동 처리하므로 후순위)
+- ✅ `MessagePolicyChecker` (rate/hop/context guard/done guard)
 
-### Frontend
-- ⬜ `pages/messages.vue` (대화 목록 320px + 타임라인 + 컴포저)
-- ⬜ `NewMessageDialog.vue` (대시보드와 공유)
-- ⬜ 발신 버블 상태 라벨 (sent/delivered/replied/failed)
-- ⬜ 미확인 뱃지 (대시보드 카드 + 사이드 메뉴 항목)
-- ⬜ 카드 메뉴 "메시지 보내기" 항목 연결
+### Frontend ✅
+- ✅ `pages/messages.vue` (관점 AI 선택 + 대화 목록 320px + 타임라인 + 컴포저)
+- ✅ `components/messages/NewMessageDialog.vue` (대시보드 카드 메뉴 + 메시지 페이지 헤더 공유)
+- ✅ 발신 버블 상태 라벨 (sent/delivered/replied/failed)
+- ✅ 미확인 뱃지 (대시보드 카드 + 사이드 메뉴 totalUnread)
+- ✅ 카드 메뉴 "메시지 보내기" 항목 연결 (받는 AI 사전 선택 + 잠금)
 
-### 검증
-- ⬜ 두 AI 간 메시지 전송 → DB 영속화 → 타임라인 표시 시나리오
+### 검증 ✅
+- ✅ POST/GET/PATCH curl 검증 (정상 발신·정책 거절·self-message·답장 체인·conversations·unread-count·read)
+- ✅ Chrome MCP: 관점 AI 선택 → 대화 진입 → 자동 read → 메시지 발신(이모지 포함) → 좌측 미리보기 갱신 — **M3 달성**
+- ✅ Chrome MCP: 대시보드 카드 메뉴 → 새 메시지 팝업 → 발신 → 사이드/카드 뱃지 자동 갱신
 
 ---
 
@@ -157,3 +160,5 @@
 - 2026-05-09 : Phase 1 백엔드 완료, Phase 2 백엔드 agents 도메인 3종 엔드포인트 작성 + GET 검증 — **M1 달성**
 - 2026-05-09 : Phase 1 프론트(Pinia·layout·CSS·api) + Phase 2 프론트(요약/필터/카드/생성/삭제) 완료. POST/DELETE 검증 OK.
 - 2026-05-09 : Chrome MCP 시각 검증 통과 (필터·검색·생성·메뉴·삭제 전체 동작) — **M2 달성**
+- 2026-05-09 : Phase 3 백엔드 완료 (messages 도메인 + 정책 + last mile stub + read/conversations/unread-count)
+- 2026-05-09 : Phase 3 프론트 완료 (메시지 페이지 + NewMessageDialog + 사이드/카드 뱃지 + 카드 메뉴 활성화). Chrome MCP 시각 검증 통과 — **M3 달성**
