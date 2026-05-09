@@ -205,13 +205,18 @@ public class AgentService {
     }
 
     /**
-     * 에이전트의 워크스페이스를 VSCode 의 기존 윈도우에 띄운다 (`code -r`).
+     * 에이전트의 워크스페이스를 VSCode 에 띄운다.
+     *
+     * 동작:
+     *   - 같은 폴더가 이미 열려있으면 → VSCode 가 그 윈도우를 활성화 (기본 동작)
+     *   - 다른 폴더면 → 새 윈도우 (기존 작업 윈도우는 그대로 유지)
+     *
+     * `-r` 플래그는 사용하지 않는다 — 그건 "현재 윈도우를 이 폴더로 교체" 라
+     * 다른 프로젝트 작업 중이던 윈도우를 덮어버린다.
      *
      * code 바이너리 후보 순서:
      *   1) 로그인 셸 PATH 의 `code` (사용자가 "Install code in PATH" 한 경우)
      *   2) macOS Spotlight (`mdfind`) 로 찾은 VSCode.app 번들 안의 code 바이너리
-     *
-     * 둘 다 실패하면 4 반환 — 사용자에게 설치 안내.
      *
      * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = code 미발견/실행 실패
      */
@@ -229,14 +234,14 @@ public class AgentService {
 
         // 1) PATH 의 code
         String quoted = "'" + dir.replace("'", "'\\''") + "'";
-        if (runOk(new ProcessBuilder("/bin/zsh", "-l", "-c", "code -r " + quoted))) {
+        if (runOk(new ProcessBuilder("/bin/zsh", "-l", "-c", "code " + quoted))) {
             log.info("openVscode (PATH): agent={} dir={}", v.getAgentName(), dir);
             return 0;
         }
 
         // 2) VSCode.app 번들 안의 code 바이너리
         String bundled = locateVscodeBundled();
-        if (bundled != null && runOk(new ProcessBuilder(bundled, "-r", dir))) {
+        if (bundled != null && runOk(new ProcessBuilder(bundled, dir))) {
             log.info("openVscode (bundled): agent={} via {}", v.getAgentName(), bundled);
             return 0;
         }
