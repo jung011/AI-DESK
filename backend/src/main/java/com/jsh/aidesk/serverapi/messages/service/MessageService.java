@@ -87,24 +87,28 @@ public class MessageService {
             return messageMapper.selectItemById(entity.getMessageId());
         }
 
-        // 5. INSERT + last mile
+        // 5. INSERT + last mile (virtual thread 로 비동기)
         entity.setStatus("sent");
         messageMapper.insert(entity);
 
         final String messageId = entity.getMessageId();
         final String parentId = parent != null ? parent.getMessageId() : null;
-        lastMile.deliver(entity, to, new LastMileAdapter.DeliveryCallback() {
-            @Override
-            public void onDelivered() {
-                messageMapper.updateStatus(messageId, "delivered", null);
-                if (parentId != null) {
-                    messageMapper.updateParentReplied(parentId);
+        final AgentVo fromAgent = from;
+        final AgentVo toAgent = to;
+        Thread.startVirtualThread(() -> {
+            lastMile.deliver(entity, fromAgent, toAgent, new LastMileAdapter.DeliveryCallback() {
+                @Override
+                public void onDelivered() {
+                    messageMapper.updateStatus(messageId, "delivered", null);
+                    if (parentId != null) {
+                        messageMapper.updateParentReplied(parentId);
+                    }
                 }
-            }
-            @Override
-            public void onFailed(String reason) {
-                messageMapper.updateStatus(messageId, "failed", reason);
-            }
+                @Override
+                public void onFailed(String reason) {
+                    messageMapper.updateStatus(messageId, "failed", reason);
+                }
+            });
         });
 
         return messageMapper.selectItemById(messageId);
