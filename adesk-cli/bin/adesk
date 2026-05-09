@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// AI Desk CLI 진입점.
+import { run } from '../src/index.js';
+
+run(process.argv).catch(err => {
+  // eslint-disable-next-line no-console
+  console.error('adesk: unexpected error:', err?.message ?? err);
+  process.exit(1);
+});
