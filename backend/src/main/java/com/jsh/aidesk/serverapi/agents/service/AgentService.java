@@ -1,6 +1,9 @@
 package com.jsh.aidesk.serverapi.agents.service;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -177,9 +180,14 @@ public class AgentService {
 
     /**
      * 에이전트의 워크스페이스를 VSCode 의 기존 윈도우에 띄운다 (`code -r`).
-     * 같은 폴더가 이미 열려있으면 그 윈도우를 활성화, 아니면 가장 최근 윈도우를 재사용.
      *
-     * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = 실행 실패 (대개 code CLI 부재)
+     * code 바이너리 후보 순서:
+     *   1) 로그인 셸 PATH 의 `code` (사용자가 "Install code in PATH" 한 경우)
+     *   2) macOS Spotlight (`mdfind`) 로 찾은 VSCode.app 번들 안의 code 바이너리
+     *
+     * 둘 다 실패하면 4 반환 — 사용자에게 설치 안내.
+     *
+     * @return 0 = 성공, 1 = agent 없음, 2 = workspace 비어있음, 3 = OS 미지원, 4 = code 미발견/실행 실패
      */
     public int openVscode(String agentId) {
         AgentVo v = agentMapper.selectById(agentId);
@@ -188,33 +196,56 @@ public class AgentService {
         if (dir == null || dir.isBlank()) return 2;
 
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        if (!os.contains("mac") && !os.contains("linux")) {
+        if (!os.contains("mac")) {
             log.warn("openVscode: unsupported OS '{}'", os);
             return 3;
         }
 
-        // 로그인 셸로 실행해 사용자 PATH (예: /usr/local/bin) 을 읽도록 한다.
-        // 이게 있어야 Homebrew·VSCode "Install code in PATH" 로 깐 code 가 잡힌다.
-        String singleQuoted = "'" + dir.replace("'", "'\\''") + "'";
-        String shellCmd = "code -r " + singleQuoted;
-
-        try {
-            Process p = new ProcessBuilder("/bin/zsh", "-l", "-c", shellCmd)
-                    .redirectErrorStream(true)
-                    .start();
-            int exit = p.waitFor();
-            if (exit != 0) {
-                String out = new String(p.getInputStream().readAllBytes()).trim();
-                log.warn("openVscode: code CLI exit={} out={}", exit, out);
-                return 4;
-            }
-            log.info("openVscode: agent={} dir={}", v.getAgentName(), dir);
+        // 1) PATH 의 code
+        String quoted = "'" + dir.replace("'", "'\\''") + "'";
+        if (runOk(new ProcessBuilder("/bin/zsh", "-l", "-c", "code -r " + quoted))) {
+            log.info("openVscode (PATH): agent={} dir={}", v.getAgentName(), dir);
             return 0;
+        }
+
+        // 2) VSCode.app 번들 안의 code 바이너리
+        String bundled = locateVscodeBundled();
+        if (bundled != null && runOk(new ProcessBuilder(bundled, "-r", dir))) {
+            log.info("openVscode (bundled): agent={} via {}", v.getAgentName(), bundled);
+            return 0;
+        }
+
+        log.warn("openVscode: failed (no code in PATH and bundled lookup={})", bundled);
+        return 4;
+    }
+
+    private static boolean runOk(ProcessBuilder pb) {
+        try {
+            Process p = pb.redirectErrorStream(true).start();
+            int exit = p.waitFor();
+            return exit == 0;
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("openVscode failed: {}", e.getMessage());
-            return 4;
+            return false;
         }
+    }
+
+    private static String locateVscodeBundled() {
+        try {
+            Process p = new ProcessBuilder(
+                    "mdfind", "kMDItemCFBundleIdentifier == 'com.microsoft.VSCode'"
+            ).redirectErrorStream(true).start();
+            String out = new String(p.getInputStream().readAllBytes()).trim();
+            p.waitFor();
+            if (out.isEmpty()) return null;
+            for (String hit : out.split("\\R")) {
+                Path bin = Paths.get(hit, "Contents/Resources/app/bin/code");
+                if (Files.isExecutable(bin)) return bin.toString();
+            }
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+        }
+        return null;
     }
 
     private AgentSummaryRsVo buildSummary() {

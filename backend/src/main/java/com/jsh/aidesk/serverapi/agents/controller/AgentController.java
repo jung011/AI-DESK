@@ -83,7 +83,7 @@ public class AgentController {
             case 1 -> ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
             case 2 -> ResponseJson.<Void>fail(1, "워크스페이스 경로가 없습니다.");
             case 3 -> ResponseJson.<Void>fail(1, "현재 백엔드 OS 에서는 VSCode 열기를 지원하지 않습니다.");
-            default -> ResponseJson.<Void>fail(1, "code CLI 실행에 실패했습니다. VSCode 에서 ‘Install code in PATH’ 가 되어있는지 확인하세요.");
+            default -> ResponseJson.<Void>fail(1, "VSCode 를 찾지 못했습니다. /Applications/Visual Studio Code.app 에 설치되어있는지, 또는 VSCode 명령 팔레트에서 ‘Shell Command: Install ‘code’ command in PATH’ 를 실행했는지 확인하세요.");
         };
     }
 }
