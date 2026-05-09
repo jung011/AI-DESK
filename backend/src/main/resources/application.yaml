@@ -4,6 +4,13 @@ spring:
   profiles:
     active: dev
 
+# 메시지 발신 정책 임계값. 운영 중에 운영자가 yaml 만 고쳐 재기동해도 반영되도록 외부화.
+messages:
+  policy:
+    rate-limit-per-minute: 30   # 발신자당 1분 윈도우
+    hop-limit: 10               # 답장 체인 최대 깊이
+    context-limit-pct: 90       # 수신 AI 의 contextPct 가 이 값 이상이면 거절
+
 mybatis:
   mapper-locations:
     - classpath*:mybatis/**/*.xml
