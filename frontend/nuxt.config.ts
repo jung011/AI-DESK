@@ -6,6 +6,16 @@ export default defineNuxtConfig({
   // 사내 관리자 도구 — SEO 불필요, 인증 뒤에 위치하므로 SPA 모드로 운영
   ssr: false,
 
+  modules: [
+    '@pinia/nuxt'
+  ],
+
+  css: [
+    '~/assets/css/reset.css',
+    '~/assets/css/common.css',
+    '~/assets/css/layout.css'
+  ],
+
   app: {
     head: {
       title: 'AI 사무실',

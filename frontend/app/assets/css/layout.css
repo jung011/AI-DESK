@@ -1,0 +1,14 @@
+@charset "UTF-8";
+
+/* Layout - SubLayout :: PageHeader */
+.group_pageLocation{display:flex;align-items:center;position:relative;padding-bottom:24px}
+.group_pageLocation >.tit_h2{display:flex;align-items:center;padding-bottom:0}
+.group_pageLocation >.tit_h2 > button{width:18px;height:18px;margin-right:4px}
+.descList_pageLocation{display:flex;align-items:center;margin-left:12px;font-size:13px}
+.descList_pageLocation a{color:#888}
+.descList_pageLocation a::after{display:inline-block;content:'/';padding:0 6px;font-size:13px;color:#BBB;font-weight:100}
+.descList_pageLocation a:last-child::after{display:none}
+.descList_pageLocation a > em{color:#444;text-decoration:underline}
+
+/* Layout Container */
+.arrange_container{display:flex;flex-wrap:wrap;column-gap:20px;row-gap:24px}
