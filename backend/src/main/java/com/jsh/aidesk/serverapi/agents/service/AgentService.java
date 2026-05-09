@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +39,15 @@ public class AgentService {
 
     private final AgentMapper agentMapper;
     private final MessageMapper messageMapper;
+
+    /**
+     * 새 tmux 세션이 처음 만들어진 직후 claude 에 자동 주입할 첫 프롬프트.
+     * 비어있으면 주입을 건너뛴다.
+     */
+    @Value("${agents.bootstrap-prompt:}")
+    private String bootstrapPrompt;
+    /** claude 부팅 후 첫 프롬프트가 그려질 때까지 대기 (ms). */
+    private static final long BOOTSTRAP_DELAY_MS = 4_000;
 
     @Transactional(readOnly = true)
     public AgentListRsVo getList(String status) {
@@ -203,13 +213,53 @@ public class AgentService {
                 + "  end tell\n"
                 + "end if\n";
 
+        // 신규 tmux 세션을 만들 케이스인지 미리 판단 — 기존 세션이면 그냥 attach 해서
+        // 부트스트랩 프롬프트를 다시 주입하지 않는다 (작업 중인 세션을 침범하지 않기 위함).
+        boolean freshSession = !tmuxHasSession(session);
+
         try {
             new ProcessBuilder("osascript", "-e", script).start();
-            log.info("openTerminal: agent={} dir={} session={}", v.getAgentName(), dir, session);
+            log.info("openTerminal: agent={} dir={} session={} fresh={}",
+                    v.getAgentName(), dir, session, freshSession);
+            if (freshSession && bootstrapPrompt != null && !bootstrapPrompt.isBlank()) {
+                final String tgt = session;
+                Thread.startVirtualThread(() -> sendBootstrapPrompt(tgt));
+            }
             return 0;
         } catch (IOException e) {
             log.warn("openTerminal failed: {}", e.getMessage());
             return 4;
+        }
+    }
+
+    private boolean tmuxHasSession(String session) {
+        try {
+            Process p = new ProcessBuilder("tmux", "has-session", "-t", session)
+                    .redirectErrorStream(true).start();
+            return p.waitFor() == 0;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /**
+     * 새로 띄운 claude 가 첫 프롬프트를 그릴 때까지 잠시 대기한 뒤 부트스트랩 프롬프트를
+     * tmux send-keys 로 주입한다. literal 모드 + 별도 Enter 로 분리해 paste-detect 가
+     * Enter 를 흡수하지 않게 한다 (TmuxLastMileAdapter 와 같은 패턴).
+     */
+    private void sendBootstrapPrompt(String session) {
+        try {
+            Thread.sleep(BOOTSTRAP_DELAY_MS);
+            new ProcessBuilder("tmux", "send-keys", "-l", "-t", session, bootstrapPrompt)
+                    .redirectErrorStream(true).start().waitFor();
+            Thread.sleep(200);
+            new ProcessBuilder("tmux", "send-keys", "-t", session, "Enter")
+                    .redirectErrorStream(true).start().waitFor();
+            log.info("bootstrap prompt injected into tmux session {}", session);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("bootstrap prompt failed: {}", e.getMessage());
         }
     }
 
