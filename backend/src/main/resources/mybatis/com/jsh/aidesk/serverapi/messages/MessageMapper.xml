@@ -167,4 +167,24 @@
          ORDER BY unread DESC
     </select>
 
+    <select id="selectAudit"
+            resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
+        <include refid="itemSelectClause"/>
+         WHERE 1 = 1
+        <if test="status != null and status != ''">
+           AND m.status = #{status}
+        </if>
+        <if test="fromAgentId != null and fromAgentId != ''">
+           AND m.from_agent_id = #{fromAgentId}
+        </if>
+        <if test="toAgentId != null and toAgentId != ''">
+           AND m.to_agent_id = #{toAgentId}
+        </if>
+        <if test="q != null and q != ''">
+           AND m.content ILIKE CONCAT('%', #{q}, '%')
+        </if>
+         ORDER BY m.created_at DESC
+         LIMIT #{limit}
+    </select>
+
 </mapper>

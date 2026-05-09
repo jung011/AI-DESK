@@ -65,6 +65,16 @@ public class MessageController {
         return ResponseJson.ok(messageService.getConversations(agentId));
     }
 
+    @GetMapping("/audit")
+    public ResponseJson<MessageListRsVo> audit(
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "fromAgentId", required = false) String fromAgentId,
+            @RequestParam(value = "toAgentId", required = false) String toAgentId,
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "limit", defaultValue = "100") int limit) {
+        return ResponseJson.ok(messageService.audit(status, fromAgentId, toAgentId, q, limit));
+    }
+
     @GetMapping("/unread-count")
     public ResponseJson<UnreadCountRsVo> unreadCount(
             @RequestParam(value = "agentId", required = false) String agentId) {

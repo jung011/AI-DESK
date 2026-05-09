@@ -68,4 +68,15 @@ public interface MessageMapper {
      * status IN (delivered, replied) AND read_at IS NULL 만 카운트.
      */
     List<com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo> selectUnreadCounts();
+
+    /**
+     * 감사 로그 — 모든 메시지를 시간 역순으로. 필터는 모두 선택.
+     * q 는 본문 부분 일치 (ILIKE).
+     */
+    List<com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo> selectAudit(
+            @Param("status") String status,
+            @Param("fromAgentId") String fromAgentId,
+            @Param("toAgentId") String toAgentId,
+            @Param("q") String q,
+            @Param("limit") int limit);
 }

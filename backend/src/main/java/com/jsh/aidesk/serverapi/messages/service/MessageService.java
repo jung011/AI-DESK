@@ -137,6 +137,21 @@ public class MessageService {
     }
 
     /**
+     * 감사 로그 — 모든 메시지를 시간 역순으로 검색·필터.
+     */
+    @Transactional(readOnly = true)
+    public MessageListRsVo audit(String status, String fromAgentId, String toAgentId, String q, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 1000));
+        var list = messageMapper.selectAudit(status, fromAgentId, toAgentId, q, safeLimit + 1);
+        boolean hasMore = list.size() > safeLimit;
+        if (hasMore) list = list.subList(0, safeLimit);
+        MessageListRsVo rs = new MessageListRsVo();
+        rs.setList(list);
+        rs.setHasMore(hasMore);
+        return rs;
+    }
+
+    /**
      * 미확인 수신 메시지 수 — 전체 합 + 에이전트별 분해.
      * agentId 가 주어지면 그 에이전트의 수만 반환.
      */
