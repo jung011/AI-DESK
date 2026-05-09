@@ -5,7 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Comparator;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import org.springframework.stereotype.Service;
@@ -17,84 +18,121 @@ import com.jsh.aidesk.serverapi.usage.vo.LocalUsageRsVo;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 로컬 머신의 Claude Code 통합 사용량.
+ * 로컬 Claude Code 사용량.
  *
- * 정의: ~/.claude/projects 아래 모든 JSONL 중 mtime 이 가장 최근인 파일 → 그 파일의
- * 가장 최근 message.usage → (input + cache_read + cache_creation) 토큰 수.
- * 분모는 현재 1,000,000 고정 (1M 컨텍스트 모델 기준).
+ * 데이터 소스: ~/.claude/aidesk-usage/{sessionId}.json — adesk-cli 의 statusline 스크립트가
+ * Claude Code 의 statusLine 콜백에서 받은 JSON (rate_limits, context_window) 을 기록한 파일.
+ * 가장 최근 mtime 의 세션 파일을 읽어 그 값을 그대로 노출 → /usage 와 동일 값.
  *
- * 한 머신에 여러 Claude Code 세션이 떠 있으면 가장 최근 활동 세션을 보여준다.
+ * 스크립트 미설치 시 디렉토리/파일 자체가 없으므로 ready=false 로 응답해 프론트가 설치 안내를 띄운다.
  */
 @Service
 @Slf4j
 public class UsageService {
 
-    private static final Path CLAUDE_PROJECTS_ROOT =
-            Paths.get(System.getProperty("user.home"), ".claude", "projects");
-
-    private static final long CONTEXT_WINDOW_TOKENS = 1_000_000L;
+    private static final Path USAGE_DIR =
+            Paths.get(System.getProperty("user.home"), ".claude", "aidesk-usage");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public LocalUsageRsVo getLocalUsage() {
         LocalUsageRsVo rs = new LocalUsageRsVo();
-        rs.setWindow(CONTEXT_WINDOW_TOKENS);
-        rs.setSource("");
-        rs.setTokens(0);
-        rs.setPct(0);
 
-        if (!Files.isDirectory(CLAUDE_PROJECTS_ROOT)) return rs;
+        if (!Files.isDirectory(USAGE_DIR)) return rs; // ready=false
 
-        Path latest = findLatestJsonl(CLAUDE_PROJECTS_ROOT);
+        Path latest = findLatest(USAGE_DIR);
         if (latest == null) return rs;
 
-        long tokens = readLatestUsageTokens(latest);
-        if (tokens <= 0) {
+        try {
+            JsonNode root = objectMapper.readTree(Files.newInputStream(latest));
+            rs.setReady(true);
             rs.setSource(latest.toString());
-            return rs;
+            rs.setFiveHourPct(asInt(root.path("fiveHourUsedPct"), -1));
+            rs.setFiveHourResetsAt(asLong(root.path("fiveHourResetsAt"), 0));
+            rs.setWeeklyPct(asInt(root.path("weeklyUsedPct"), -1));
+            rs.setWeeklyResetsAt(asLong(root.path("weeklyResetsAt"), 0));
+            // contextRemainingPct 은 "남은 %" 라 사용량으로 환산해 노출 (자동 압축 16.5% 마진은 무시).
+            int rem = asInt(root.path("contextRemainingPct"), -1);
+            if (rem >= 0) rs.setContextPct(Math.max(0, Math.min(100, 100 - rem)));
+        } catch (IOException e) {
+            log.warn("usage: read {} failed: {}", latest, e.getMessage());
         }
 
-        long pct = tokens * 100 / CONTEXT_WINDOW_TOKENS;
-        rs.setTokens(tokens);
-        rs.setPct((int) Math.min(100, Math.max(0, pct)));
-        rs.setSource(latest.toString());
         return rs;
     }
 
-    private Path findLatestJsonl(Path root) {
-        try (Stream<Path> stream = Files.walk(root, 6)) {
+    private Path findLatest(Path dir) {
+        try (Stream<Path> stream = Files.list(dir)) {
             return stream
                     .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
+                    .filter(p -> p.getFileName().toString().endsWith(".json"))
                     .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
                     .orElse(null);
         } catch (IOException e) {
-            log.warn("usage: walk {} failed: {}", root, e.getMessage());
+            log.warn("usage: list {} failed: {}", dir, e.getMessage());
             return null;
         }
     }
 
-    private long readLatestUsageTokens(Path jsonl) {
+    private static int asInt(JsonNode n, int dflt) {
+        if (n == null || n.isNull() || n.isMissingNode()) return dflt;
+        return (int) Math.round(n.asDouble(dflt));
+    }
+
+    private static long asLong(JsonNode n, long dflt) {
+        if (n == null || n.isNull() || n.isMissingNode()) return dflt;
+        return n.asLong(dflt);
+    }
+
+    /**
+     * ~/.claude/settings.json 에 statusLine 블록을 주입 (이미 있으면 교체).
+     *
+     * @return 0 = ok, 1 = 스크립트 파일 미발견, 2 = settings.json 갱신 실패
+     */
+    public int installStatuslineHook() {
+        Path scriptPath = locateScript();
+        if (scriptPath == null) return 1;
+
+        Path settings = Paths.get(System.getProperty("user.home"), ".claude", "settings.json");
         try {
-            List<String> lines = Files.readAllLines(jsonl);
-            for (int i = lines.size() - 1; i >= 0; i--) {
-                String line = lines.get(i).trim();
-                if (line.isEmpty() || !line.startsWith("{")) continue;
-                try {
-                    JsonNode root = objectMapper.readTree(line);
-                    JsonNode usage = root.path("message").path("usage");
-                    if (usage.isMissingNode() || usage.isEmpty()) continue;
-                    long tokens = usage.path("input_tokens").asLong(0)
-                            + usage.path("cache_read_input_tokens").asLong(0)
-                            + usage.path("cache_creation_input_tokens").asLong(0);
-                    if (tokens > 0) return tokens;
-                } catch (Exception ignore) {
-                    // 깨진 라인은 위로 계속 탐색
-                }
+            Files.createDirectories(settings.getParent());
+            Map<String, Object> root;
+            if (Files.exists(settings) && Files.size(settings) > 0) {
+                JsonNode existing = objectMapper.readTree(Files.newInputStream(settings));
+                root = existing.isObject()
+                        ? objectMapper.convertValue(existing, new com.fasterxml.jackson.core.type.TypeReference<>() {})
+                        : new LinkedHashMap<>();
+            } else {
+                root = new LinkedHashMap<>();
             }
+
+            Map<String, Object> statusLine = new LinkedHashMap<>();
+            statusLine.put("type", "command");
+            statusLine.put("command", "node \"" + scriptPath.toAbsolutePath() + "\"");
+            root.put("statusLine", statusLine);
+
+            byte[] pretty = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(root);
+            Files.write(settings, pretty);
+            log.info("usage: installed statusLine hook at {}", scriptPath);
+            return 0;
         } catch (IOException e) {
-            log.warn("usage: read jsonl {} failed: {}", jsonl, e.getMessage());
+            log.warn("usage: install hook failed: {}", e.getMessage());
+            return 2;
         }
-        return 0;
+    }
+
+    private Path locateScript() {
+        // 백엔드 작업 디렉토리 기준으로 adesk-cli 위치를 추정.
+        // 1) ./adesk-cli/bin/aidesk-statusline.js (모노레포 루트에서 기동된 경우)
+        // 2) ../adesk-cli/bin/aidesk-statusline.js (backend/ 안에서 기동된 경우)
+        Path cwd = Paths.get("").toAbsolutePath();
+        Path[] candidates = new Path[] {
+                cwd.resolve("adesk-cli/bin/aidesk-statusline.js"),
+                cwd.resolve("../adesk-cli/bin/aidesk-statusline.js").normalize()
+        };
+        for (Path c : candidates) {
+            if (Files.isRegularFile(c)) return c;
+        }
+        return null;
     }
 }
