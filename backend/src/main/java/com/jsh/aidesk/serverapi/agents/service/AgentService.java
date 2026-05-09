@@ -81,6 +81,37 @@ public class AgentService {
     }
 
     /**
+     * macOS Finder "choose folder" 다이얼로그를 띄우고 선택된 절대 경로를 반환한다.
+     * 사용자가 취소하면 빈 문자열, OS 미지원이면 null.
+     */
+    public String browseWorkspace() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("mac")) {
+            log.warn("browseWorkspace: unsupported OS '{}'", os);
+            return null;
+        }
+        try {
+            Process p = new ProcessBuilder(
+                    "osascript", "-e",
+                    "POSIX path of (choose folder with prompt \"워크스페이스 폴더를 선택하세요\")"
+            ).redirectErrorStream(true).start();
+            String out = new String(p.getInputStream().readAllBytes()).trim();
+            int exit = p.waitFor();
+            if (exit != 0) {
+                // 사용자가 취소하면 osascript 가 비-0 + "User canceled" 출력. 정상 흐름.
+                log.debug("browseWorkspace: osascript exit={} out={}", exit, out);
+                return "";
+            }
+            // 트레일링 슬래시 제거 (insert 시 stripTrailingSlash 와 동일 규칙)
+            return stripTrailingSlash(out);
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("browseWorkspace failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
      * 에이전트의 워크스페이스 디렉토리를 macOS Terminal 로 연다.
      * 백엔드와 사용자가 같은 머신을 쓰는 PoC 환경 한정으로 동작.
      *

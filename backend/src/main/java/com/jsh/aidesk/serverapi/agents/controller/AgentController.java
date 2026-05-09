@@ -53,6 +53,16 @@ public class AgentController {
         return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
     }
 
+    @PostMapping("/_browse-workspace")
+    public ResponseJson<String> browseWorkspace() {
+        String path = agentService.browseWorkspace();
+        if (path == null) {
+            return ResponseJson.<String>fail(1, "현재 백엔드 OS 에서는 폴더 선택 다이얼로그를 지원하지 않습니다 (macOS 한정).");
+        }
+        // 빈 문자열은 사용자 취소 — 정상 응답으로 내려보내고 프론트에서 무시한다.
+        return ResponseJson.ok(path);
+    }
+
     @PostMapping("/{agentId}/open-terminal")
     public ResponseJson<Void> openTerminal(@PathVariable("agentId") String agentId) {
         int rc = agentService.openTerminal(agentId);
