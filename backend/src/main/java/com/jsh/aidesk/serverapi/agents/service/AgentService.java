@@ -186,6 +186,8 @@ public class AgentService {
         }
 
         String dirEsc = dir.replace("\\", "\\\\").replace("\"", "\\\"");
+        String titleEsc = (v.getAgentName() == null ? session : v.getAgentName())
+                .replace("\\", "\\\\").replace("\"", "\\\"");
         // 워크스페이스에 옛 Claude Code JSONL 이 있으면 그 대화를 이어간다 (`claude -c`).
         // 이러면 재부팅·세션 종료 후에도 컨텍스트·작업 규칙·말투가 그대로 회복.
         boolean hasPastSession = workspaceHasPastSession(dir);
@@ -193,6 +195,7 @@ public class AgentService {
         String script = ""
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
+                + "set tabTitle to \"" + titleEsc + "\"\n"
                 + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" '" + claudeCmd + "'\"\n"
                 // Terminal.app 이 이미 떠있는지 셸로 먼저 확인. tell application "Terminal" 안에서 count windows
                 // 류를 호출하면 그 자체로 Terminal 이 launch 되며 기본 윈도우 1개가 생기기 때문.
@@ -229,6 +232,9 @@ public class AgentService {
                 + "    try\n"
                 + "      set font size of newTab to 14\n"
                 + "    end try\n"
+                + "    try\n"
+                + "      set custom title of newTab to tabTitle\n"
+                + "    end try\n"
                 + "  end tell\n"
                 + "else\n"
                 // Terminal 꺼져 있음 — launch 가 자동 생성하는 기본 윈도우를 재사용.
@@ -246,6 +252,9 @@ public class AgentService {
                 + "    end if\n"
                 + "    try\n"
                 + "      set font size of newTab to 14\n"
+                + "    end try\n"
+                + "    try\n"
+                + "      set custom title of newTab to tabTitle\n"
                 + "    end try\n"
                 + "  end tell\n"
                 + "end if\n";
