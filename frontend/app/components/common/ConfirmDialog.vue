@@ -64,7 +64,10 @@ const emit = defineEmits<{
 .popup-head { padding: 16px 20px; border-bottom: 1px solid #F0F2F5; }
 .popup-head h3 { font-size: 15px; font-weight: 700; color: #101010; margin: 0; }
 .popup-body { padding: 20px; }
-.popup-body p { margin: 0; color: #475569; font-size: 13px; line-height: 1.6; }
+.popup-body p {
+  margin: 0; color: #475569; font-size: 13px; line-height: 1.6;
+  white-space: pre-line;  /* message 의 \n 을 줄바꿈으로 렌더 */
+}
 .popup-foot {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 20px; border-top: 1px solid #F0F2F5;

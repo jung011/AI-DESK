@@ -106,7 +106,7 @@ async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
 
 function onDeleteRequest(agent: AgentItem): void {
   confirmDelete.agent = agent;
-  confirmDelete.message = `${agent.agentName}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`;
+  confirmDelete.message = `${agent.agentName}을(를) 삭제하시겠습니까?\n\n· DB 에서 영구 제거됩니다 (메시지 기록 포함)\n· 실행 중인 claude 세션과 터미널 창도 함께 종료됩니다`;
   confirmDelete.open = true;
 }
 
