@@ -3,4 +3,5 @@ export interface ExternalAgentItem {
   name: string;
   department: string;
   online: boolean;
+  skills: string[];
 }
