@@ -46,7 +46,9 @@ public class AgentStatusWatcher {
         try {
             List<AgentVo> agents = agentMapper.selectList(null);
             for (AgentVo a : agents) {
-                if ("done".equals(a.getStatus())) continue;
+                // 옛날엔 status=done 인 에이전트를 건너뛰었지만, 사용자가 다시 작업을 시키면
+                // 워처가 그대로 무시해 카드가 영원히 "완료"로 굳어졌다. 매 tick 마다 JSONL mtime
+                // 으로 재평가해 active / idle / done 사이를 자유롭게 오가도록 한다.
                 if (!isClaudeModel(a.getModel())) continue;
                 checkAndUpdate(a);
             }
