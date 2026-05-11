@@ -1,5 +1,5 @@
 <template>
-  <nav class="side-menu" :class="{ 'is-closed': !layout.sideMenuOpen }">
+  <nav class="side-menu" :class="{ open: layout.sideMenuOpen }">
     <div class="side-menu-logo">
       <h1>AI 사무실</h1>
     </div>
@@ -41,15 +41,12 @@ const route = useRoute();
 <style scoped>
 .side-menu {
   position: fixed; top: 0; left: 0; bottom: 0;
-  width: 245px; background: #1E293B;
+  width: 0; background: #1E293B;
   display: flex; flex-direction: column;
-  z-index: 200;
-  transition: width .15s, opacity .15s;
+  z-index: 200; overflow: hidden;
+  transition: width 0.25s ease;
 }
-.side-menu.is-closed {
-  width: 0;
-  overflow: hidden;
-}
+.side-menu.open { width: 245px; }
 .side-menu-logo {
   height: 56px; display: flex; align-items: center;
   padding: 0 20px; border-bottom: 1px solid #334155;

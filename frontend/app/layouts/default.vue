@@ -24,7 +24,7 @@ const layout = useLayoutStore();
 .app-main {
   padding-top: 104px;        /* header-top 56 + header-bottom 48 */
   padding-left: 0;
-  transition: padding-left .15s;
+  transition: padding-left 0.25s ease;
   min-height: calc(100vh - 104px);
 }
 .app-main.menu-open {

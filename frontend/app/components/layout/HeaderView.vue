@@ -1,6 +1,6 @@
 <template>
   <!-- 상단 — 로고 + 서비스명 + 시스템 상태 배지 -->
-  <div class="header-top">
+  <div class="header-top" :style="{ left: layout.sideMenuOpen ? '245px' : '0' }">
     <div class="header-top-left">
       <div class="header-logo-box">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -20,7 +20,7 @@
   </div>
 
   <!-- 하단 — 햄버거 + 사용자 + 로그아웃 -->
-  <div class="header-bottom">
+  <div class="header-bottom" :style="{ left: layout.sideMenuOpen ? '245px' : '0' }">
     <div class="header-bottom-left">
       <button type="button" class="header-burger" @click="layout.toggleSideMenu()" />
     </div>
@@ -50,6 +50,7 @@ const layout = useLayoutStore();
   height: 56px; background: #f0f2f8; border-bottom: 1px solid #dde1ea;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; z-index: 100;
+  transition: left 0.25s ease;
 }
 .header-top-left { display: flex; align-items: center; gap: 12px; }
 .header-logo-box {
@@ -73,6 +74,7 @@ const layout = useLayoutStore();
   height: 48px; background: #fff; border-bottom: 1px solid #dde1ea;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; z-index: 99;
+  transition: left 0.25s ease;
 }
 .header-bottom-left { display: flex; align-items: center; }
 .header-bottom-right { display: flex; align-items: center; gap: 12px; }
