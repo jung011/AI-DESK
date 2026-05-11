@@ -29,14 +29,14 @@ export default defineNuxtConfig({
   },
 
   devServer: {
-    port: 3000
+    // NodePort 대역(30000-32767) 안의 포트 사용 — 운영 환경 시뮬레이션용
+    port: 30080
   },
 
   runtimeConfig: {
     public: {
       // 백엔드 베이스 URL — .env 의 NUXT_PUBLIC_API_BASE 로 오버라이드 가능
-      // 8080은 다른 프로세스 점유 가능성이 있어 기본 8081 사용
-      apiBase: 'http://localhost:8081'
+      apiBase: 'http://localhost:30081'
     }
   }
 })
