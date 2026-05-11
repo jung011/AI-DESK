@@ -82,7 +82,16 @@ public class AgentService {
 
     @Transactional
     public boolean delete(String agentId) {
-        // 메시지 cascade — 이 에이전트가 보내거나 받은 모든 t_ai_message row 도 함께 제거.
+        // 1) DB 작업 전에 tmux 세션부터 정리. kill-session 으로 tmux 가 종료되면 그 안에서
+        //    돌던 claude 도 같이 죽고, Terminal.app 탭의 셸도 끝나면서 윈도우가 자동으로 닫힌다
+        //    (Terminal 기본 프로필: "shell exited cleanly → close window"). 사용자는 별도로
+        //    Ctrl+C 누르거나 창 닫을 필요 없음.
+        AgentVo v = agentMapper.selectById(agentId);
+        if (v != null) {
+            killTmuxSession(v.getTmuxSession());
+        }
+
+        // 2) 메시지 cascade — 이 에이전트가 보내거나 받은 모든 t_ai_message row 도 함께 제거.
         // FK 제약은 없지만 orphan 메시지가 남으면 audit 시 join 결과가 깨지므로 같이 비운다.
         int msgs = messageMapper.deleteByAgent(agentId);
         int agents = agentMapper.hardDelete(agentId);
@@ -90,6 +99,23 @@ public class AgentService {
             log.info("agent hard-deleted: agent_id={} cascaded_messages={}", agentId, msgs);
         }
         return agents > 0;
+    }
+
+    /** tmux 세션이 살아있으면 강제 종료. 없으면 조용히 패스. */
+    private void killTmuxSession(String session) {
+        if (session == null || session.isBlank()) return;
+        try {
+            Process p = new ProcessBuilder("tmux", "kill-session", "-t", session)
+                    .redirectErrorStream(true).start();
+            int exit = p.waitFor();
+            if (exit == 0) {
+                log.info("tmux session killed: {}", session);
+            }
+            // exit != 0 은 세션이 이미 없을 때라 정상 — 별도 처리 없음
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("tmux kill-session failed for {}: {}", session, e.getMessage());
+        }
     }
 
     @Transactional(readOnly = true)
