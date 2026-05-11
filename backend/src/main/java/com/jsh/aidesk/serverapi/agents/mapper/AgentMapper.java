@@ -28,4 +28,10 @@ public interface AgentMapper {
     int updateStatusFromWatcher(@Param("agentId") String agentId,
                                  @Param("status") String status,
                                  @Param("contextPct") Integer contextPct);
+
+    /**
+     * 부트스트랩 프롬프트 주입 완료 마킹 — 첫 [터미널 열기] 시 워크로드 학습 직후 호출.
+     * 이후 호출에서는 부트스트랩 재주입을 건너뛴다.
+     */
+    int markBootstrapApplied(@Param("agentId") String agentId);
 }

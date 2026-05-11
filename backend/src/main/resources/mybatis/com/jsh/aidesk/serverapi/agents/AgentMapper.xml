@@ -5,7 +5,8 @@
 
     <sql id="agentColumns">
         agent_id, agent_name, workspace_dir, tmux_session, status,
-        task_desc, model, context_pct, started_at, updated_at, deleted_at
+        task_desc, model, context_pct, bootstrap_applied,
+        started_at, updated_at, deleted_at
     </sql>
 
     <select id="selectList" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
@@ -56,6 +57,13 @@
         </if>
          WHERE agent_id = #{agentId}
            AND deleted_at IS NULL
+    </update>
+
+    <update id="markBootstrapApplied">
+        UPDATE t_ai_agent
+           SET bootstrap_applied = TRUE,
+               updated_at = NOW()
+         WHERE agent_id = #{agentId}
     </update>
 
 </mapper>

@@ -19,6 +19,7 @@ public class AgentVo {
     private String taskDesc;
     private String model;
     private Integer contextPct;
+    private boolean bootstrapApplied;
     private OffsetDateTime startedAt;
     private OffsetDateTime updatedAt;
     private OffsetDateTime deletedAt;

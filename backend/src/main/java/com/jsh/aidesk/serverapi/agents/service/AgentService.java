@@ -226,22 +226,30 @@ public class AgentService {
 
         // 신규 tmux 세션을 만들 케이스인지 미리 판단. 부트스트랩은 다음 두 조건이 모두 참일 때만:
         //   1) tmux 세션이 살아있지 않다 — 살아있으면 그냥 attach 라 작업 중인 세션을 침범하면 안 됨
-        //   2) 워크스페이스에 옛 Claude Code 대화 JSONL 도 없다 — 있으면 claude -c 로 이어가므로
-        //      이미 옛 부트스트랩 학습 결과가 컨텍스트에 살아있다
+        //   2) 이 에이전트(t_ai_agent.agent_id) 가 아직 부트스트랩을 받아본 적이 없다
+        //
+        // (참고) 워크스페이스에 옛 jsonl 이 있어도 그건 다른 에이전트의 흔적일 수 있으므로
+        // jsonl 존재 여부로 판단하지 않는다 — 사용자가 [AI 생성] 으로 만든 에이전트는 한 번은
+        // workrole 을 학습하도록 보장.
         boolean freshSession = !tmuxHasSession(session);
         boolean injectBootstrap =
                 freshSession
-                        && !hasPastSession
+                        && !v.isBootstrapApplied()
                         && bootstrapPrompt != null
                         && !bootstrapPrompt.isBlank();
 
         try {
             new ProcessBuilder("osascript", "-e", script).start();
-            log.info("openTerminal: agent={} dir={} session={} fresh={} resume={} bootstrap={}",
-                    v.getAgentName(), dir, session, freshSession, hasPastSession, injectBootstrap);
+            log.info("openTerminal: agent={} dir={} session={} fresh={} resume={} alreadyBootstrapped={} willInject={}",
+                    v.getAgentName(), dir, session, freshSession, hasPastSession,
+                    v.isBootstrapApplied(), injectBootstrap);
             if (injectBootstrap) {
                 final String tgt = session;
-                Thread.startVirtualThread(() -> sendBootstrapPrompt(tgt));
+                final String agentId2 = agentId;
+                Thread.startVirtualThread(() -> {
+                    sendBootstrapPrompt(tgt);
+                    agentMapper.markBootstrapApplied(agentId2);
+                });
             }
             return 0;
         } catch (IOException e) {
