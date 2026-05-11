@@ -12,8 +12,6 @@
       </span>
     </div>
 
-    <div class="ai-card-body">{{ agent.taskDesc ?? '—' }}</div>
-
     <div class="ai-card-footer">
       <span class="ai-model-tag">{{ agent.model }}</span>
       <div class="ai-meta">{{ metaLabel }}: <strong>{{ metaValue }}</strong></div>
@@ -193,7 +191,6 @@ function formatTime(iso: string, status: string): string {
   font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.ai-card-body { font-size: 13px; color: #666; margin-bottom: 16px; line-height: 1.6; }
 .ai-card-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding-top: 14px; border-top: 1px solid #F0F2F5;
