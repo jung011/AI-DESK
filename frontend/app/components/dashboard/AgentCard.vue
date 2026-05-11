@@ -5,7 +5,6 @@
         <div class="ai-avatar" :class="statusClass">{{ avatarEmoji }}</div>
         <div>
           <div class="ai-name">{{ agent.agentName }}</div>
-          <div class="ai-workspace" :title="agent.workspaceDir">{{ agent.workspaceDir }}</div>
         </div>
       </div>
       <span class="ico_badge small" :class="badgeClass">
@@ -193,10 +192,6 @@ function formatTime(iso: string, status: string): string {
 .ai-name {
   font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
   display: inline-flex; align-items: center; gap: 6px;
-}
-.ai-workspace {
-  font-size: 12px; color: #999; margin-top: 2px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;
 }
 .ai-card-body { font-size: 13px; color: #666; margin-bottom: 16px; line-height: 1.6; }
 .ai-card-footer {
