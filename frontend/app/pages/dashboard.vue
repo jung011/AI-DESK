@@ -37,6 +37,9 @@
       :agents="filteredList"
       @delete="onDeleteRequest" />
 
+    <!-- 사내 동료 AI (kaflix-a2a Control Plane) -->
+    <ExternalAgentGrid />
+
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
       :open="dialogOpen"
@@ -66,6 +69,7 @@ import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
+import ExternalAgentGrid from '~/components/dashboard/ExternalAgentGrid.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
 
