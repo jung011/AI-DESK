@@ -2,7 +2,7 @@
 //
 // 환경변수:
 //   AIDESK_AGENT_ID  필수. 이 tmux 세션이 어떤 t_ai_agent 행에 해당하는지.
-//   AIDESK_API_URL   선택. 백엔드 베이스 URL (기본 http://localhost:8081).
+//   AIDESK_API_URL   선택. 백엔드 베이스 URL (기본 http://localhost:30081).
 //   AIDESK_API_TOKEN 선택. 향후 인증 도입 시 사용 (현재는 무시).
 //
 // 종료 코드:
@@ -31,7 +31,7 @@ export async function run(argv) {
 /** 공통 환경 헬퍼. */
 export function loadEnv() {
   const agentId = process.env.AIDESK_AGENT_ID;
-  const apiUrl = process.env.AIDESK_API_URL || 'http://localhost:8081';
+  const apiUrl = process.env.AIDESK_API_URL || 'http://localhost:30081';
   const token = process.env.AIDESK_API_TOKEN || null;
   return { agentId, apiUrl, token };
 }

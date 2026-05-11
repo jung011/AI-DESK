@@ -3,7 +3,7 @@
 // 환경변수:
 //   AIDESK_AGENT_ID    선택. 이 MCP 인스턴스가 어느 t_ai_agent 에 해당하는지를 명시.
 //                      비어있거나 DB 에 없는 ID 면 process.cwd() 로 자동 매칭.
-//   AIDESK_API_URL     선택 (기본 http://localhost:8081).
+//   AIDESK_API_URL     선택 (기본 http://localhost:30081).
 //   AIDESK_POLL_MS     선택 (기본 5000). inbox 폴링 주기.
 //
 // 4 도구:
@@ -28,7 +28,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 const ENV_AGENT_ID = process.env.AIDESK_AGENT_ID;
-const API_URL  = process.env.AIDESK_API_URL || 'http://localhost:8081';
+const API_URL  = process.env.AIDESK_API_URL || 'http://localhost:30081';
 const POLL_MS  = Number(process.env.AIDESK_POLL_MS || 5000);
 
 // 부팅 시 한 번 결정되며, 결정 실패해도 종료하지 않는다 (백엔드 미기동 시점에 claude 가
