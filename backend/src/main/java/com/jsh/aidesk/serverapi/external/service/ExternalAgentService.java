@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -68,6 +69,12 @@ public class ExternalAgentService {
         v.setName(n.path("name").asText(v.getEmployeeId()));
         v.setDepartment(n.path("department").asText(""));
         v.setOnline(n.path("online").asBoolean(false));
+        List<String> skills = new ArrayList<>();
+        JsonNode arr = n.path("skills");
+        if (arr.isArray()) {
+            arr.forEach(s -> skills.add(s.asText("")));
+        }
+        v.setSkills(skills);
         return v;
     }
 }
