@@ -249,10 +249,9 @@ public class AgentService {
         String dirEsc = dir.replace("\\", "\\\\").replace("\"", "\\\"");
         String titleEsc = (v.getAgentName() == null ? session : v.getAgentName())
                 .replace("\\", "\\\\").replace("\"", "\\\"");
-        // 워크스페이스에 옛 Claude Code JSONL 이 있으면 그 대화를 이어간다 (`claude -c`).
-        // 이러면 재부팅·세션 종료 후에도 컨텍스트·작업 규칙·말투가 그대로 회복.
-        boolean hasPastSession = workspaceHasPastSession(dir);
-        String claudeCmd = hasPastSession ? "claude -c" : "claude";
+        // 에이전트의 model 필드에 맞춰 실제 CLI 를 선택. claude 만 -c resume 을 지원하고,
+        // codex / hermes 는 자체 resume 메커니즘 정해지면 별도로 다시 손본다.
+        String claudeCmd = resolveCliCommand(v.getModel(), dir);
         String script = ""
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
@@ -340,14 +339,15 @@ public class AgentService {
 
         try {
             new ProcessBuilder("osascript", "-e", script).start();
-            log.info("openTerminal: agent={} dir={} session={} fresh={} resume={} alreadyBootstrapped={} willInject={}",
-                    v.getAgentName(), dir, session, freshSession, hasPastSession,
+            log.info("openTerminal: agent={} dir={} session={} fresh={} cli={} alreadyBootstrapped={} willInject={}",
+                    v.getAgentName(), dir, session, freshSession, claudeCmd,
                     v.isBootstrapApplied(), injectBootstrap);
             if (injectBootstrap) {
                 final String tgt = session;
                 final String agentId2 = agentId;
+                final String model = v.getModel();
                 Thread.startVirtualThread(() -> {
-                    sendBootstrapPrompt(tgt);
+                    sendBootstrapPrompt(tgt, model);
                     agentMapper.markBootstrapApplied(agentId2);
                 });
             }
@@ -356,6 +356,33 @@ public class AgentService {
             log.warn("openTerminal failed: {}", e.getMessage());
             return 4;
         }
+    }
+
+    /**
+     * 에이전트가 생성될 때 저장된 풀모델(claude-opus-4-7 / codex / hermes 등) 을
+     * 실제로 tmux 안에서 실행할 CLI 한 줄로 변환한다.
+     *
+     *   - claude  계열  → `claude` (또는 워크스페이스에 옛 jsonl 있으면 `claude -c`)
+     *   - codex          → `codex`
+     *   - hermes         → `hermes`
+     *
+     * 빈 값이나 미지의 모델은 claude 로 폴백 + 경고 로그.
+     */
+    private String resolveCliCommand(String fullModel, String workspaceDir) {
+        if (fullModel == null || fullModel.isBlank()) {
+            log.warn("resolveCliCommand: model empty — falling back to claude");
+            return claudeCmdWithResume(workspaceDir);
+        }
+        if (fullModel.startsWith("claude")) return claudeCmdWithResume(workspaceDir);
+        if ("codex".equals(fullModel))  return "codex";
+        if ("hermes".equals(fullModel)) return "hermes";
+        log.warn("resolveCliCommand: unknown model '{}' — falling back to claude", fullModel);
+        return claudeCmdWithResume(workspaceDir);
+    }
+
+    /** claude 만 워크스페이스에 옛 JSONL 이 남아있으면 자동으로 -c resume 한다. */
+    private String claudeCmdWithResume(String workspaceDir) {
+        return workspaceHasPastSession(workspaceDir) ? "claude -c" : "claude";
     }
 
     /**
@@ -390,19 +417,28 @@ public class AgentService {
     }
 
     /**
-     * 새로 띄운 claude 가 첫 프롬프트를 그릴 때까지 잠시 대기한 뒤 부트스트랩 프롬프트를
+     * 새로 띄운 LLM CLI 가 첫 프롬프트를 그릴 때까지 잠시 대기한 뒤 부트스트랩 프롬프트를
      * tmux send-keys 로 주입한다. literal 모드 + 별도 Enter 로 분리해 paste-detect 가
      * Enter 를 흡수하지 않게 한다 (TmuxLastMileAdapter 와 같은 패턴).
+     *
+     * 모델별 차이:
+     *   - claude   — paste-detect 가 200ms 안에 끝남. 부팅 4s 면 충분.
+     *   - hermes/codex — REPL/입력 처리 속도가 더 느릴 수 있어 부팅 대기 +2s, Enter 직전
+     *                    공백 800ms 로 늘려 입력 누락을 막는다.
      */
-    private void sendBootstrapPrompt(String session) {
+    private void sendBootstrapPrompt(String session, String model) {
+        boolean isClaude = model != null && model.startsWith("claude");
+        long bootDelay = isClaude ? BOOTSTRAP_DELAY_MS : BOOTSTRAP_DELAY_MS + 2_000L;
+        long enterGap  = isClaude ? 200L : 800L;
         try {
-            Thread.sleep(BOOTSTRAP_DELAY_MS);
+            Thread.sleep(bootDelay);
             new ProcessBuilder("tmux", "send-keys", "-l", "-t", session, bootstrapPrompt)
                     .redirectErrorStream(true).start().waitFor();
-            Thread.sleep(200);
+            Thread.sleep(enterGap);
             new ProcessBuilder("tmux", "send-keys", "-t", session, "Enter")
                     .redirectErrorStream(true).start().waitFor();
-            log.info("bootstrap prompt injected into tmux session {}", session);
+            log.info("bootstrap prompt injected into tmux session {} (model={}, bootDelay={}ms, enterGap={}ms)",
+                    session, model, bootDelay, enterGap);
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             log.warn("bootstrap prompt failed: {}", e.getMessage());
