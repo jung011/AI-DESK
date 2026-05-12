@@ -13,7 +13,7 @@
     </div>
 
     <div class="ai-card-footer">
-      <span class="ai-model-tag">{{ agent.model }}</span>
+      <span class="ai-model-tag" :class="modelClass">{{ modelLabel }}</span>
       <div class="ai-meta">{{ metaLabel }}: <strong>{{ metaValue }}</strong></div>
       <div ref="menuRoot" class="card-menu-wrap">
         <button class="btn-card-menu" type="button" aria-label="더보기" @click.stop="menuOpen = !menuOpen">
@@ -147,6 +147,21 @@ const metaLabel = computed(() => ({
 
 const metaValue = computed(() => formatTime(props.agent.startedAt, props.agent.status));
 
+/** 모델별 색상 구분 — 풀네임에서 prefix 만 매칭. 알 수 없는 모델은 기본 회색. */
+const modelClass = computed(() => {
+  const m = (props.agent.model || '').toLowerCase();
+  if (m.startsWith('claude')) return 'model-claude';
+  if (m === 'codex')          return 'model-codex';
+  if (m === 'hermes')         return 'model-hermes';
+  return '';
+});
+
+/** 카드에 표시할 짧은 모델명. `claude-opus-4-7` → `claude`, 그 외는 원본 그대로. */
+const modelLabel = computed(() => {
+  const m = (props.agent.model || '');
+  return m.toLowerCase().startsWith('claude') ? 'claude' : m;
+});
+
 function formatTime(iso: string, status: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -249,4 +264,8 @@ function formatTime(iso: string, status: string): string {
   border-radius: 4px; font-size: 11px; font-weight: 500;
   background: #F1F5F9; color: #64748B; font-family: monospace;
 }
+/* 모델별 컬러 — 카드를 흘긋 봐도 어떤 모델인지 즉시 식별. */
+.ai-model-tag.model-claude { background: #FEF3C7; color: #92400E; }  /* amber  — Anthropic 톤 */
+.ai-model-tag.model-codex  { background: #D1FAE5; color: #065F46; }  /* green  — OpenAI 톤 */
+.ai-model-tag.model-hermes { background: #EDE9FE; color: #5B21B6; }  /* purple — Nous 톤 */
 </style>
