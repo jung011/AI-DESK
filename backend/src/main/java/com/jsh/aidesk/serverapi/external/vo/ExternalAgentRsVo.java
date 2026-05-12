@@ -17,4 +17,6 @@ public class ExternalAgentRsVo {
     private String department;
     private boolean online;
     private List<String> skills;
+    /** 이 백엔드를 운영하는 본인 여부 (kaflix.me-employee-id 와 employeeId 가 일치). */
+    private boolean me;
 }
