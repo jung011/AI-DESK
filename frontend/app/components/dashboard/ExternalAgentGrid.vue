@@ -19,10 +19,12 @@
         :key="a.employeeId"
         type="button"
         class="external-card"
-        :class="{ offline: !a.online }"
+        :class="{ offline: !a.online, 'is-me': a.me }"
         @click="openDetail(a)">
         <span class="online-dot" :class="{ online: a.online }" />
-        <div class="external-name">{{ a.name || a.employeeId }}</div>
+        <div class="external-name">
+          {{ a.name || a.employeeId }}<span v-if="a.me" class="me-tag">(me)</span>
+        </div>
         <div class="external-dept">{{ a.department || '—' }}</div>
       </button>
     </div>
@@ -33,9 +35,21 @@
           <header class="popup-head">
             <div class="popup-title-wrap">
               <span class="online-dot" :class="{ online: selected.online }" />
-              <h3>{{ selected.name || selected.employeeId }}</h3>
+              <h3>
+                {{ selected.name || selected.employeeId }}<span v-if="selected.me" class="me-tag">(me)</span>
+              </h3>
             </div>
-            <button class="popup-close" type="button" @click="selected = null">×</button>
+            <div class="popup-head-actions">
+              <button
+                v-if="selected.me"
+                class="popup-action-btn"
+                type="button"
+                :disabled="terminalBusy"
+                @click="openTerminal(selected)">
+                {{ terminalBusy ? '여는 중…' : '터미널 열기' }}
+              </button>
+              <button class="popup-close" type="button" @click="selected = null">×</button>
+            </div>
           </header>
           <div class="popup-body">
             <div class="meta-row">
@@ -70,9 +84,27 @@ import type { ExternalAgentItem } from '~/vo/external/ExternalAgentVo';
 
 const list = ref<ExternalAgentItem[]>([]);
 const selected = ref<ExternalAgentItem | null>(null);
+const terminalBusy = ref(false);
 
 function openDetail(a: ExternalAgentItem): void {
   selected.value = a;
+}
+
+async function openTerminal(a: ExternalAgentItem): Promise<void> {
+  if (!a.me || terminalBusy.value) return;
+  terminalBusy.value = true;
+  try {
+    const { $api } = useNuxtApp();
+    await $api<ApiEnvelope<null>>(
+      `/api/external-agents/${encodeURIComponent(a.employeeId)}/open-terminal`,
+      { method: 'POST' },
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    alert(`터미널 열기에 실패했습니다.\n${msg}`);
+  } finally {
+    terminalBusy.value = false;
+  }
 }
 
 const onlineCount = computed(() => list.value.filter((a) => a.online).length);
@@ -147,8 +179,21 @@ onUnmounted(() => {
   transition: border-color .15s, background .15s, transform .08s;
 }
 .external-card.offline { background: #FAFBFD; }
+.external-card.is-me { border-color: #0062ff; background: #F0F6FF; }
 .external-card:hover { border-color: #0062ff; background: #F8FAFC; }
 .external-card:active { transform: scale(.98); }
+
+.me-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #0062ff;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: 1px;
+}
 
 .online-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -186,6 +231,19 @@ onUnmounted(() => {
 }
 .popup-title-wrap { display: inline-flex; align-items: center; gap: 8px; }
 .popup-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: #101010; }
+.popup-head-actions {
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.popup-action-btn {
+  height: 28px; padding: 0 12px;
+  background: #0062ff; color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, opacity .15s;
+}
+.popup-action-btn:hover:not(:disabled) { background: #0052d9; }
+.popup-action-btn:disabled { opacity: .55; cursor: progress; }
 .popup-close {
   width: 28px; height: 28px;
   background: none; border: none; font-size: 22px;
