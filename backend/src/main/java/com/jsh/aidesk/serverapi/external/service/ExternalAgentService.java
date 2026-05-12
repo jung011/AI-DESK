@@ -18,7 +18,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jsh.aidesk.serverapi.external.vo.ExternalAgentRsVo;
+import com.jsh.aidesk.serverapi.setting.service.SettingService;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -30,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class ExternalAgentService {
 
     private static final TypeReference<List<JsonNode>> LIST_TYPE = new TypeReference<>() {};
@@ -40,8 +43,7 @@ public class ExternalAgentService {
     @Value("${kaflix.me-employee-id:}")
     private String meEmployeeId;
 
-    @Value("${kaflix.colleague-terminal-workspace:}")
-    private String colleagueTerminalWorkspace;
+    private final SettingService settingService;
 
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
@@ -105,7 +107,7 @@ public class ExternalAgentService {
         if (employeeId == null || employeeId.isBlank()) return 1;
         if (!employeeId.equalsIgnoreCase(meEmployeeId)) return 1;
 
-        String dir = colleagueTerminalWorkspace;
+        String dir = settingService.getA2aWorkspace();
         if (dir == null || dir.isBlank()) return 2;
 
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
@@ -124,7 +126,9 @@ public class ExternalAgentService {
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
                 + "set tabTitle to \"" + titleEsc + "\"\n"
-                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude -c'\"\n"
+                // 끝에 `; exit 0` — tmux 가 끝나면 부모 zsh 도 exit 0 으로 같이 종료되도록.
+                // (Terminal 기본 프로필이 셸 정상 종료 시 윈도우를 자동으로 닫는다)
+                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" 'claude -c'; exit 0\"\n"
                 + "set termRunning to false\n"
                 + "try\n"
                 + "  do shell script \"pgrep -x Terminal > /dev/null\"\n"

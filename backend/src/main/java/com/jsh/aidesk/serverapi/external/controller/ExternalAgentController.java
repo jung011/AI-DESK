@@ -33,7 +33,7 @@ public class ExternalAgentController {
         return switch (rc) {
             case 0 -> ResponseJson.ok((Void) null);
             case 1 -> ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
-            case 2 -> ResponseJson.<Void>fail(1, "동료 터미널 워크스페이스가 설정되어 있지 않습니다 (kaflix.colleague-terminal-workspace).");
+            case 2 -> ResponseJson.<Void>fail(1, "A2A 워크스페이스가 지정되어 있지 않습니다. (me) 모달에서 먼저 지정하세요.");
             case 3 -> ResponseJson.<Void>fail(1, "현재 백엔드 OS 에서는 터미널 열기를 지원하지 않습니다 (macOS 한정).");
             default -> ResponseJson.<Void>fail(1, "터미널 실행에 실패했습니다.");
         };

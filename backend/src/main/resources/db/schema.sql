@@ -78,3 +78,18 @@ CREATE INDEX IF NOT EXISTS idx_ai_message_status
     ON t_ai_message (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_message_root
     ON t_ai_message (root_message_id, created_at);
+
+-- =====================================================================
+-- t_aidesk_setting — 런타임 변경 가능한 앱 단일 설정 (key-value)
+-- 첫 항목: 'a2a_workspace' — 사내 동료 AI 와의 소통(kaflix-a2a/kaflix-channel MCP)
+-- 권한이 활성화되는 워크스페이스 절대 경로. NULL 이면 (me) 터미널 열기 비활성.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS t_aidesk_setting (
+    setting_key   VARCHAR(80)  PRIMARY KEY,
+    setting_value TEXT,
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE  t_aidesk_setting IS 'AI Desk 런타임 단일값 설정';
+COMMENT ON COLUMN t_aidesk_setting.setting_key   IS '설정 키';
+COMMENT ON COLUMN t_aidesk_setting.setting_value IS '설정값 (NULL 가능)';
