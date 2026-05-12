@@ -3,7 +3,7 @@ server:
 
 cors:
   allowed-origins: "http://localhost:30080,http://0.0.0.0:30080"
-  allowed-methods: GET,POST,PATCH,DELETE,OPTIONS
+  allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
   allowed-headers: "*"
   exposed-headers: Content-Disposition,Content-Type,Content-Length
   allow-credentials: true
