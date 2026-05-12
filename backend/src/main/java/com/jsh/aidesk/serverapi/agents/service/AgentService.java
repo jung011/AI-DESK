@@ -82,13 +82,14 @@ public class AgentService {
 
     @Transactional
     public boolean delete(String agentId) {
-        // 1) DB 작업 전에 tmux 세션부터 정리. kill-session 으로 tmux 가 종료되면 그 안에서
-        //    돌던 claude 도 같이 죽고, Terminal.app 탭의 셸도 끝나면서 윈도우가 자동으로 닫힌다
-        //    (Terminal 기본 프로필: "shell exited cleanly → close window"). 사용자는 별도로
-        //    Ctrl+C 누르거나 창 닫을 필요 없음.
+        // 1) DB 작업 전에 tmux 세션과 그에 붙어있던 Terminal 탭을 정리한다.
+        //    셸 종료만으로는 Terminal 의 "Don't close window" 프로필에서 탭이 살아남기 때문에
+        //    tmux 클라이언트의 tty 를 먼저 캡처한 뒤 osascript 로 명시적으로 close.
         AgentVo v = agentMapper.selectById(agentId);
         if (v != null) {
+            String tty = tmuxClientTty(v.getTmuxSession());
             killTmuxSession(v.getTmuxSession());
+            if (!tty.isBlank()) closeTerminalTabByTty(tty);
         }
 
         // 2) 메시지 cascade — 이 에이전트가 보내거나 받은 모든 t_ai_message row 도 함께 제거.
@@ -99,6 +100,24 @@ public class AgentService {
             log.info("agent hard-deleted: agent_id={} cascaded_messages={}", agentId, msgs);
         }
         return agents > 0;
+    }
+
+    /** tmux 세션에 attach 된 첫 번째 클라이언트의 tty 를 반환. 없으면 빈 문자열. */
+    private String tmuxClientTty(String session) {
+        if (session == null || session.isBlank()) return "";
+        try {
+            Process p = new ProcessBuilder(
+                    "tmux", "list-clients", "-t", session, "-F", "#{client_tty}")
+                    .redirectErrorStream(true).start();
+            String out = new String(p.getInputStream().readAllBytes()).trim();
+            p.waitFor();
+            if (out.startsWith("can't find") || out.startsWith("no clients")) return "";
+            int nl = out.indexOf('\n');
+            return nl >= 0 ? out.substring(0, nl).trim() : out;
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            return "";
+        }
     }
 
     /** tmux 세션이 살아있으면 강제 종료. 없으면 조용히 패스. */
@@ -115,6 +134,48 @@ public class AgentService {
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             log.warn("tmux kill-session failed for {}: {}", session, e.getMessage());
+        }
+    }
+
+    /**
+     * Terminal.app 의 모든 윈도우/탭을 훑어서 주어진 tty 에 매칭되는 탭을 닫는다.
+     * 셸이 이미 깨끗하게 exit 했더라도 Terminal 프로필이 "Don't close window" 이면 탭이
+     * 살아남기 때문에 이 단계가 필요하다. 매칭이 없으면 조용히 패스.
+     */
+    private void closeTerminalTabByTty(String tty) {
+        if (tty == null || tty.isBlank()) return;
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!os.contains("mac")) return;
+        // tmux 클라이언트 disconnect → zsh 의 `; exit 0` 후 logout 처리가 끝나기까지 약간의
+        // 여유가 필요. 안 기다리면 close 가 "프로세스 종료할까요?" 다이얼로그를 띄울 수 있다.
+        try { Thread.sleep(400); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        String ttyEsc = tty.replace("\\", "\\\\").replace("\"", "\\\"");
+        // 탭 단위 close 는 1탭 윈도우에서 동작하지 않는 경우가 있어 윈도우 단위로 close 한다.
+        // (do script 는 매 호출마다 새 윈도우를 만들므로 보통 1탭/윈도우 — 안전하다)
+        String script = ""
+                + "tell application \"Terminal\"\n"
+                + "  repeat with w in windows\n"
+                + "    try\n"
+                + "      set matched to false\n"
+                + "      repeat with t in tabs of w\n"
+                + "        try\n"
+                + "          if (tty of t) is \"" + ttyEsc + "\" then\n"
+                + "            set matched to true\n"
+                + "            exit repeat\n"
+                + "          end if\n"
+                + "        end try\n"
+                + "      end repeat\n"
+                + "      if matched then\n"
+                + "        close w saving no\n"
+                + "      end if\n"
+                + "    end try\n"
+                + "  end repeat\n"
+                + "end tell\n";
+        try {
+            new ProcessBuilder("osascript", "-e", script).start();
+            log.info("Terminal window close requested: tty={}", tty);
+        } catch (IOException e) {
+            log.warn("closeTerminalTabByTty failed: {}", e.getMessage());
         }
     }
 
@@ -196,7 +257,11 @@ public class AgentService {
                 + "set sessionName to \"" + session + "\"\n"
                 + "set wsQuoted to quoted form of \"" + dirEsc + "\"\n"
                 + "set tabTitle to \"" + titleEsc + "\"\n"
-                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" '" + claudeCmd + "'\"\n"
+                // 끝에 `; exit 0` — tmux 가 (사용자 종료/kill-session 등 어떤 경로로든) 끝나면
+                // 부모 zsh 도 exit 0 으로 같이 종료되도록 한다. Terminal 기본 프로필 "shell exited
+                // cleanly → close window" 가 동작해서 [에이전트 삭제] 후 빈 윈도우가 남지 않는다.
+                // (tmux 클라이언트가 kill-session 으로 강제 종료될 때 비-0 을 반환해도 우리는 0 으로 회수)
+                + "set shellCmd to \"cd \" & wsQuoted & \" && tmux new-session -A -s \" & sessionName & \" '" + claudeCmd + "'; exit 0\"\n"
                 // Terminal.app 이 이미 떠있는지 셸로 먼저 확인. tell application "Terminal" 안에서 count windows
                 // 류를 호출하면 그 자체로 Terminal 이 launch 되며 기본 윈도우 1개가 생기기 때문.
                 + "set termRunning to false\n"
