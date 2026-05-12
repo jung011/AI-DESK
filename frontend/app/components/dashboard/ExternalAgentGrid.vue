@@ -44,7 +44,8 @@
                 v-if="selected.me"
                 class="popup-action-btn"
                 type="button"
-                :disabled="terminalBusy"
+                :disabled="terminalBusy || !a2aWorkspace"
+                :title="!a2aWorkspace ? '먼저 A2A 워크스페이스를 지정하세요' : ''"
                 @click="openTerminal(selected)">
                 {{ terminalBusy ? '여는 중…' : '터미널 열기' }}
               </button>
@@ -64,6 +65,26 @@
               <span class="meta-label">ID</span>
               <span class="meta-value mono">{{ selected.employeeId }}</span>
             </div>
+            <div v-if="selected.me" class="a2a-section">
+              <div class="a2a-title">A2A 워크스페이스</div>
+              <div class="a2a-row">
+                <span class="a2a-path" :class="{ unset: !a2aWorkspace }">
+                  {{ a2aWorkspace || '미설정 — 사내 동료와 소통하려면 워크스페이스를 지정하세요' }}
+                </span>
+                <button
+                  class="a2a-pick-btn"
+                  type="button"
+                  :disabled="workspaceBusy"
+                  @click="chooseWorkspace">
+                  {{ workspaceBusy ? '선택 중…' : '워크스페이스 지정' }}
+                </button>
+              </div>
+              <p class="a2a-hint">
+                선택한 폴더에서만 kaflix-a2a / kaflix-channel MCP 가 활성화됩니다.
+                변경 후 새로 띄우는 (me) 터미널부터 반영됩니다.
+              </p>
+            </div>
+
             <div class="skills-section">
               <div class="skills-title">스킬 ({{ selected.skills.length }})</div>
               <div v-if="selected.skills.length === 0" class="skills-empty">등록된 스킬 없음</div>
@@ -85,13 +106,60 @@ import type { ExternalAgentItem } from '~/vo/external/ExternalAgentVo';
 const list = ref<ExternalAgentItem[]>([]);
 const selected = ref<ExternalAgentItem | null>(null);
 const terminalBusy = ref(false);
+const workspaceBusy = ref(false);
+const a2aWorkspace = ref('');
 
-function openDetail(a: ExternalAgentItem): void {
+interface A2aWorkspaceRs { path: string }
+
+async function openDetail(a: ExternalAgentItem): Promise<void> {
   selected.value = a;
+  if (a.me) await fetchA2aWorkspace();
+}
+
+async function fetchA2aWorkspace(): Promise<void> {
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace');
+    if (env.result === 0 && env.data) a2aWorkspace.value = env.data.path || '';
+  } catch { /* 무시 — 모달에서 재시도 가능 */ }
+}
+
+async function chooseWorkspace(): Promise<void> {
+  if (workspaceBusy.value) return;
+  workspaceBusy.value = true;
+  try {
+    const { $api } = useNuxtApp();
+    // macOS 폴더 선택 다이얼로그 (에이전트 생성에서 쓰던 엔드포인트 재사용)
+    const pickEnv = await $api<ApiEnvelope<string>>('/api/agents/_browse-workspace', {
+      method: 'POST',
+    });
+    if (pickEnv.result !== 0) {
+      alert(pickEnv.message || '폴더 선택을 지원하지 않습니다.');
+      return;
+    }
+    const chosen = (pickEnv.data || '').trim();
+    if (!chosen) return; // 사용자 취소
+
+    const putEnv = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace', {
+      method: 'PUT',
+      body: { path: chosen },
+    });
+    if (putEnv.result !== 0) {
+      alert(putEnv.message || '워크스페이스 설정에 실패했습니다.');
+      return;
+    }
+    a2aWorkspace.value = putEnv.data?.path || chosen;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    alert(`워크스페이스 설정 중 오류가 발생했습니다.\n${msg}`);
+  } finally {
+    workspaceBusy.value = false;
+  }
 }
 
 async function openTerminal(a: ExternalAgentItem): Promise<void> {
   if (!a.me || terminalBusy.value) return;
+  if (!a2aWorkspace.value) return;
   terminalBusy.value = true;
   try {
     const { $api } = useNuxtApp();
@@ -262,6 +330,44 @@ onUnmounted(() => {
 }
 .meta-value { color: #1E293B; }
 .meta-value.mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
+
+.a2a-section {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid #F0F2F5;
+}
+.a2a-title {
+  font-size: 12px; font-weight: 700; color: #475569;
+  margin-bottom: 8px;
+}
+.a2a-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.a2a-path {
+  flex: 1; min-width: 0;
+  font-size: 12px;
+  color: #1E293B;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 6px 10px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 4px;
+}
+.a2a-path.unset { color: #94A3B8; font-family: inherit; font-style: italic; }
+.a2a-pick-btn {
+  flex-shrink: 0;
+  height: 28px; padding: 0 12px;
+  background: #fff; color: #0062ff;
+  border: 1px solid #0062ff; border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.a2a-pick-btn:hover:not(:disabled) { background: #F0F6FF; }
+.a2a-pick-btn:disabled { opacity: .55; cursor: progress; }
+.a2a-hint {
+  margin: 8px 0 0; font-size: 11px; color: #94A3B8; line-height: 1.5;
+}
 
 .skills-section {
   margin-top: 14px; padding-top: 14px;
