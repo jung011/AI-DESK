@@ -34,4 +34,11 @@ public interface AgentMapper {
      * 이후 호출에서는 부트스트랩 재주입을 건너뛴다.
      */
     int markBootstrapApplied(@Param("agentId") String agentId);
+
+    /** tmux_session 으로 (me) 에이전트를 찾는 데 사용. 소프트 삭제는 제외. */
+    AgentVo selectByTmuxSession(@Param("tmuxSession") String tmuxSession);
+
+    /** (me) 워크스페이스 변경 시 같은 에이전트 행의 workspace_dir 만 갈아끼우기 위한 단일 업데이트. */
+    int updateWorkspaceDir(@Param("agentId") String agentId,
+                           @Param("workspaceDir") String workspaceDir);
 }

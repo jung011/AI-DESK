@@ -66,4 +66,20 @@
          WHERE agent_id = #{agentId}
     </update>
 
+    <select id="selectByTmuxSession" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE tmux_session = #{tmuxSession}
+           AND deleted_at IS NULL
+         LIMIT 1
+    </select>
+
+    <update id="updateWorkspaceDir">
+        UPDATE t_ai_agent
+           SET workspace_dir = #{workspaceDir},
+               updated_at    = NOW()
+         WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
+    </update>
+
 </mapper>
