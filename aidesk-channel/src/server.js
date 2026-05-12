@@ -83,7 +83,7 @@ const TOOLS = [
   },
   {
     name: 'list_agents',
-    description: '다른 AI 에이전트 목록을 조회합니다 (자기 자신과 done 상태는 제외).',
+    description: '다른 AI 에이전트 목록을 조회합니다 (자기 자신만 제외, 상태 무관).',
     inputSchema: { type: 'object', properties: {} }
   }
 ];
@@ -146,9 +146,9 @@ async function ensureAgentId() {
 async function listAgents() {
   const me = await ensureAgentId();
   const env = await api('/api/agents');
-  return (env.data?.list || []).filter(
-    (a) => a.agentId !== me && a.status !== 'done'
-  );
+  // 자기 자신만 제외하고 모든 상태(active/idle/done) 를 그대로 반환한다.
+  // done 인 동료에게도 send_to 시도는 가능 — 백엔드/last mile 이 적절히 처리.
+  return (env.data?.list || []).filter((a) => a.agentId !== me);
 }
 
 async function resolveAgentId(target) {
