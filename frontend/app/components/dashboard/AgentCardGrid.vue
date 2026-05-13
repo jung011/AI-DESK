@@ -7,7 +7,8 @@
       v-for="agent in agents"
       :key="agent.agentId"
       :agent="agent"
-      @delete="emit('delete', $event)" />
+      @delete="emit('delete', $event)"
+      @select="emit('select', $event)" />
   </div>
 </template>
 
@@ -18,6 +19,7 @@ import AgentCard from '~/components/dashboard/AgentCard.vue';
 defineProps<{ agents: AgentItem[] }>();
 const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
+  (e: 'select', agent: AgentItem): void;
 }>();
 </script>
 

@@ -44,10 +44,10 @@
                 v-if="selected.me"
                 class="popup-action-btn"
                 type="button"
-                :disabled="terminalBusy || !a2aWorkspace"
+                :disabled="!a2aWorkspace"
                 :title="!a2aWorkspace ? '먼저 A2A 워크스페이스를 지정하세요' : ''"
                 @click="openTerminal(selected)">
-                {{ terminalBusy ? '여는 중…' : '터미널 열기' }}
+                터미널 열기
               </button>
               <button class="popup-close" type="button" @click="selected = null">×</button>
             </div>
@@ -105,7 +105,6 @@ import type { ExternalAgentItem } from '~/vo/external/ExternalAgentVo';
 
 const list = ref<ExternalAgentItem[]>([]);
 const selected = ref<ExternalAgentItem | null>(null);
-const terminalBusy = ref(false);
 const workspaceBusy = ref(false);
 const a2aWorkspace = ref('');
 
@@ -157,22 +156,16 @@ async function chooseWorkspace(): Promise<void> {
   }
 }
 
-async function openTerminal(a: ExternalAgentItem): Promise<void> {
-  if (!a.me || terminalBusy.value) return;
-  if (!a2aWorkspace.value) return;
-  terminalBusy.value = true;
-  try {
-    const { $api } = useNuxtApp();
-    await $api<ApiEnvelope<null>>(
-      `/api/external-agents/${encodeURIComponent(a.employeeId)}/open-terminal`,
-      { method: 'POST' },
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    alert(`터미널 열기에 실패했습니다.\n${msg}`);
-  } finally {
-    terminalBusy.value = false;
-  }
+const emit = defineEmits<{
+  /** (me) 카드의 [터미널 보기] 클릭 → 부모(dashboard)가 임베드 사이드 패널 오픈. */
+  (e: 'select-me', agent: ExternalAgentItem): void;
+}>();
+
+function openTerminal(a: ExternalAgentItem): void {
+  if (!a.me) return;
+  if (!a2aWorkspace.value) return; // 워크스페이스 미설정 시 비활성 (버튼 disabled 가드)
+  emit('select-me', a);
+  selected.value = null; // 모달 닫고 사이드 패널로 전환
 }
 
 const onlineCount = computed(() => list.value.filter((a) => a.online).length);

@@ -35,10 +35,19 @@
     <!-- AI 카드 그리드 -->
     <AgentCardGrid
       :agents="filteredList"
-      @delete="onDeleteRequest" />
+      @delete="onDeleteRequest"
+      @select="onAgentSelect" />
 
     <!-- 사내 동료 AI (kaflix-a2a Control Plane) -->
-    <ExternalAgentGrid />
+    <ExternalAgentGrid @select-me="onSelectMe" />
+
+    <!-- 임베드 터미널 사이드 패널 -->
+    <TerminalSidePanel
+      :open="panel.open"
+      :agent-name="panel.agentName"
+      :subtitle="panel.subtitle"
+      :tmux-session="panel.tmuxSession"
+      @close="panel.open = false" />
 
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
@@ -70,8 +79,10 @@ import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 import ExternalAgentGrid from '~/components/dashboard/ExternalAgentGrid.vue';
+import TerminalSidePanel from '~/components/dashboard/TerminalSidePanel.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
+import type { ExternalAgentItem } from '~/vo/external/ExternalAgentVo';
 
 const {
   summary,
@@ -95,6 +106,28 @@ const confirmDelete = reactive<{ open: boolean; agent: AgentItem | null; message
   message: ''
 });
 const deleting = ref(false);
+
+/** 임베드 터미널 사이드 패널 상태. agentId/employeeId 변할 때 TerminalPane 재마운트 되도록 :key 가 tmuxSession 에 묶여있음. */
+const panel = reactive<{
+  open: boolean;
+  agentName: string;
+  subtitle: string;
+  tmuxSession: string;
+}>({ open: false, agentName: '', subtitle: '', tmuxSession: '' });
+
+function onAgentSelect(agent: AgentItem): void {
+  panel.agentName = agent.agentName;
+  panel.subtitle = `${agent.model}  ·  ${agent.workspaceDir || '워크스페이스 미설정'}`;
+  panel.tmuxSession = agent.tmuxSession || `aidesk-${agent.agentId.slice(0, 8)}`;
+  panel.open = true;
+}
+
+function onSelectMe(a: ExternalAgentItem): void {
+  panel.agentName = `${a.name || a.employeeId} (me)`;
+  panel.subtitle = '본인 A2A 터미널';
+  panel.tmuxSession = `aidesk-self-${a.employeeId.toLowerCase()}`;
+  panel.open = true;
+}
 
 async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
   creating.value = true;

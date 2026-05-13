@@ -1,5 +1,5 @@
 <template>
-  <div class="ai-card" :class="statusClass">
+  <div class="ai-card" :class="statusClass" role="button" tabindex="0" @click="onSelect" @keydown.enter="onSelect" @keydown.space.prevent="onSelect">
     <div class="ai-card-header">
       <div class="ai-card-name-wrap">
         <div class="ai-avatar" :class="statusClass">{{ avatarEmoji }}</div>
@@ -26,7 +26,7 @@
           </button>
           <button type="button" class="card-menu-item" @click="onOpenTerminal">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10z"/></svg>
-            터미널 열기
+            외부 터미널 열기
           </button>
           <button type="button" class="card-menu-item" @click="onPlaceholder('브라우저 검증')">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/></svg>
@@ -48,7 +48,13 @@ import type { AgentItem } from '~/vo/agents/AgentVo';
 const props = defineProps<{ agent: AgentItem }>();
 const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
+  (e: 'select', agent: AgentItem): void;
 }>();
+
+function onSelect(): void {
+  if (menuOpen.value) return; // 메뉴 떠 있을 땐 카드 선택 무시
+  emit('select', props.agent);
+}
 
 const menuOpen = ref(false);
 const menuRoot = ref<HTMLElement | null>(null);
@@ -182,7 +188,12 @@ function formatTime(iso: string, status: string): string {
   background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
   padding: 20px; box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .12);
   position: relative;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .08s;
 }
+.ai-card:hover { border-color: #0062ff; box-shadow: 0 6px 18px rgba(0, 98, 255, .15); }
+.ai-card:active { transform: scale(.995); }
+.ai-card:focus-visible { outline: 2px solid #0062ff; outline-offset: 2px; }
 .ai-card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0;
   height: 3px; border-radius: 6px 6px 0 0;
