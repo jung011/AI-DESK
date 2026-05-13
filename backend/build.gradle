@@ -33,6 +33,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+	// WebSocket — 대시보드 임베드 터미널 (xterm.js ↔ PTY 브리지)
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.jetbrains.pty4j:pty4j:0.13.8'
+
 	// Persistence
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
 	runtimeOnly 'org.postgresql:postgresql'
