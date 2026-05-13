@@ -1,6 +1,9 @@
 package com.jsh.aidesk.serverapi.setting.service;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Service;
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 import com.jsh.aidesk.serverapi.setting.mapper.SettingMapper;
+import com.jsh.aidesk.serverapi.setting.vo.CodeServerRsVo;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,10 +48,38 @@ public class SettingService {
     @Value("${kaflix.me-employee-id:}")
     private String meEmployeeId;
 
+    @Value("${vscode.code-server-url:}")
+    private String codeServerUrl;
+
     /** A2A 워크스페이스 경로 — 없으면 빈 문자열 반환. */
     public String getA2aWorkspace() {
         String v = mapper.selectValue(KEY_A2A_WORKSPACE);
         return v == null ? "" : v;
+    }
+
+    /**
+     * 임베드용 code-server URL + 현재 살아있는지 alive 플래그.
+     * Java HTTP 클라이언트가 code-server 의 비표준 응답을 종종 잘못 파싱하므로,
+     * "포트가 열려 있는가" 만 단순 TCP 연결로 판정한다 — iframe 자체는 브라우저가 직접 띄우니
+     * 정확한 HTTP 코드 검증까지는 불필요.
+     */
+    public CodeServerRsVo getCodeServer() {
+        String url = codeServerUrl == null ? "" : codeServerUrl.trim();
+        if (url.isEmpty()) return new CodeServerRsVo("", false);
+        boolean alive = false;
+        try {
+            URI uri = URI.create(url);
+            int port = uri.getPort();
+            if (port < 0) port = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+            String host = uri.getHost() == null ? "localhost" : uri.getHost();
+            try (Socket s = new Socket()) {
+                s.connect(new InetSocketAddress(host, port), 700);
+                alive = true;
+            }
+        } catch (IOException | IllegalArgumentException e) {
+            log.debug("code-server probe failed: url={} err={}", url, e.getMessage());
+        }
+        return new CodeServerRsVo(url, alive);
     }
 
     /**

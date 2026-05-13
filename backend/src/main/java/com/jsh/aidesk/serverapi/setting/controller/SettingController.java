@@ -10,6 +10,7 @@ import com.jsh.aidesk.serverapi.common.response.ResponseJson;
 import com.jsh.aidesk.serverapi.setting.service.SettingService;
 import com.jsh.aidesk.serverapi.setting.vo.A2aWorkspaceRqVo;
 import com.jsh.aidesk.serverapi.setting.vo.A2aWorkspaceRsVo;
+import com.jsh.aidesk.serverapi.setting.vo.CodeServerRsVo;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,11 @@ public class SettingController {
     @GetMapping("/a2a-workspace")
     public ResponseJson<A2aWorkspaceRsVo> get() {
         return ResponseJson.ok(new A2aWorkspaceRsVo(settingService.getA2aWorkspace()));
+    }
+
+    @GetMapping("/code-server")
+    public ResponseJson<CodeServerRsVo> codeServer() {
+        return ResponseJson.ok(settingService.getCodeServer());
     }
 
     @PutMapping("/a2a-workspace")

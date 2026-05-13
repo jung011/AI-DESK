@@ -25,6 +25,11 @@ kaflix:
   # me=true 플래그가 붙고, 프론트는 "(me)" 표시 + [터미널 열기] 버튼 노출 처리한다.
   me-employee-id: liki
 
+# 대시보드 임베드 VSCode (code-server). start.sh 가 동일 포트로 띄운다.
+# 외부 노출 시엔 --auth password 로 바꾸고 url 도 그에 맞춰 갱신.
+vscode:
+  code-server-url: http://localhost:30082
+
 mybatis:
   mapper-locations:
     - classpath*:mybatis/**/*.xml
