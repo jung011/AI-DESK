@@ -14,35 +14,17 @@
               class="gear-btn"
               type="button"
               aria-label="터미널 설정"
+              title="터미널 설정"
               :class="{ active: settingsOpen }"
-              @click="settingsOpen = !settingsOpen">
-              ⚙
+              @click="settingsOpen = true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
             </button>
             <button class="close-btn" type="button" aria-label="닫기" @click="emit('close')">×</button>
           </div>
         </header>
-
-        <div v-if="settingsOpen" class="settings-bar">
-          <label class="settings-row">
-            <span class="lbl">폰트 크기</span>
-            <input
-              type="range" min="10" max="20" step="1"
-              v-model.number="prefs.fontSize" />
-            <span class="val">{{ prefs.fontSize }}px</span>
-          </label>
-          <label class="settings-row">
-            <span class="lbl">폰트</span>
-            <select v-model="prefs.fontFamily">
-              <option v-for="f in fontFamilies" :key="f.value" :value="f.value">{{ f.label }}</option>
-            </select>
-          </label>
-          <label class="settings-row">
-            <span class="lbl">테마</span>
-            <select v-model="prefs.themeName">
-              <option v-for="t in themes" :key="t.name" :value="t.name">{{ t.label }}</option>
-            </select>
-          </label>
-        </div>
 
         <div class="side-panel-body">
           <TerminalPane
@@ -57,6 +39,38 @@
           </div>
         </div>
       </aside>
+
+      <!-- 설정 모달 (사이드 패널 위에 떠 있는 중앙 다이얼로그) -->
+      <div v-if="settingsOpen" class="settings-modal-overlay" @click.self="settingsOpen = false">
+        <div class="settings-modal" role="dialog" aria-label="터미널 설정">
+          <header class="settings-modal-head">
+            <h3>터미널 설정</h3>
+            <button class="settings-modal-close" type="button" aria-label="닫기" @click="settingsOpen = false">×</button>
+          </header>
+          <div class="settings-modal-body">
+            <label class="settings-row">
+              <span class="lbl">폰트 크기</span>
+              <input type="range" min="10" max="20" step="1" v-model.number="prefs.fontSize" />
+              <span class="val">{{ prefs.fontSize }}px</span>
+            </label>
+            <label class="settings-row">
+              <span class="lbl">폰트</span>
+              <select v-model="prefs.fontFamily">
+                <option v-for="f in fontFamilies" :key="f.value" :value="f.value">{{ f.label }}</option>
+              </select>
+            </label>
+            <label class="settings-row">
+              <span class="lbl">테마</span>
+              <select v-model="prefs.themeName">
+                <option v-for="t in themes" :key="t.name" :value="t.name">{{ t.label }}</option>
+              </select>
+            </label>
+          </div>
+          <footer class="settings-modal-foot">
+            <button class="btn-done" type="button" @click="settingsOpen = false">완료</button>
+          </footer>
+        </div>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -128,50 +142,108 @@ const settingsOpen = ref(false);
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 11px; color: #94A3B8;
 }
-.head-actions { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.head-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .gear-btn {
-  width: 32px; height: 32px;
-  background: none; border: none;
-  font-size: 16px; color: #94A3B8;
-  cursor: pointer; line-height: 1;
-  border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0; border-radius: 8px;
+  color: #64748B; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s, transform .08s;
 }
-.gear-btn:hover { background: #F1F5F9; color: #475569; }
-.gear-btn.active { background: #EEF2FF; color: #4338CA; }
+.gear-btn:hover {
+  background: #EEF2FF; border-color: #C7D2FE; color: #4338CA;
+}
+.gear-btn:active { transform: scale(.96); }
+.gear-btn.active {
+  background: #4338CA; border-color: #4338CA; color: #fff;
+}
+.gear-btn svg { width: 18px; height: 18px; }
 
 .close-btn {
-  width: 32px; height: 32px;
+  width: 34px; height: 34px;
   background: none; border: none; font-size: 24px;
   color: #94A3B8; cursor: pointer; line-height: 1;
+  border-radius: 8px;
   flex-shrink: 0;
 }
-.close-btn:hover { color: #475569; }
+.close-btn:hover { color: #475569; background: #F1F5F9; }
 
-.settings-bar {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 12px 20px;
-  background: #F8FAFC;
+/* === 설정 모달 === */
+.settings-modal-overlay {
+  position: absolute; inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1;
+  animation: fadeIn .15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.settings-modal {
+  width: 400px; max-width: calc(100% - 40px);
+  background: #fff; border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, .25);
+  display: flex; flex-direction: column;
+  animation: slideIn .18s ease;
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.settings-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
   border-bottom: 1px solid #F0F2F5;
 }
-.settings-row {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 12px; color: #475569;
+.settings-modal-head h3 { margin: 0; font-size: 14px; font-weight: 700; color: #101010; }
+.settings-modal-close {
+  width: 28px; height: 28px;
+  background: none; border: none; font-size: 20px;
+  color: #94A3B8; cursor: pointer; line-height: 1;
+  border-radius: 6px;
 }
-.settings-row .lbl { width: 64px; font-weight: 600; flex-shrink: 0; }
-.settings-row input[type="range"] { flex: 1; min-width: 0; }
+.settings-modal-close:hover { color: #475569; background: #F1F5F9; }
+
+.settings-modal-body {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 18px;
+}
+.settings-row {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px; color: #475569;
+}
+.settings-row .lbl { width: 72px; font-weight: 600; flex-shrink: 0; color: #475569; }
+.settings-row input[type="range"] {
+  flex: 1; min-width: 0;
+  accent-color: #0062ff;
+}
 .settings-row select {
   flex: 1; min-width: 0;
-  height: 28px;
-  padding: 0 8px;
+  height: 32px; padding: 0 10px;
   border: 1px solid #CBD5E1; border-radius: 6px;
-  background: #fff;
-  font-size: 12px;
+  background: #fff; font-size: 13px; color: #1E293B;
+  cursor: pointer;
 }
+.settings-row select:focus { outline: 2px solid #0062ff; outline-offset: -1px; border-color: #0062ff; }
 .settings-row .val {
-  width: 38px; text-align: right;
+  width: 42px; text-align: right;
   font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 11px; color: #94A3B8;
+  font-size: 12px; color: #94A3B8;
 }
+
+.settings-modal-foot {
+  display: flex; justify-content: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid #F0F2F5;
+}
+.btn-done {
+  height: 32px; padding: 0 18px;
+  background: #0062ff; color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-done:hover { background: #0052d9; }
 
 .side-panel-body {
   flex: 1; min-height: 0;
