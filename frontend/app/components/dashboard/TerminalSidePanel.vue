@@ -146,19 +146,15 @@ const settingsOpen = ref(false);
 .gear-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px;
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0; border-radius: 8px;
+  background: none;
+  border: none;
   color: #64748B; cursor: pointer;
-  transition: background .15s, border-color .15s, color .15s, transform .08s;
+  transition: color .15s, transform .15s;
 }
-.gear-btn:hover {
-  background: #EEF2FF; border-color: #C7D2FE; color: #4338CA;
-}
-.gear-btn:active { transform: scale(.96); }
-.gear-btn.active {
-  background: #4338CA; border-color: #4338CA; color: #fff;
-}
-.gear-btn svg { width: 18px; height: 18px; }
+.gear-btn:hover { color: #4338CA; transform: rotate(30deg); }
+.gear-btn:active { transform: rotate(30deg) scale(.96); }
+.gear-btn.active { color: #4338CA; }
+.gear-btn svg { width: 20px; height: 20px; }
 
 .close-btn {
   width: 34px; height: 34px;
