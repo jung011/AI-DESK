@@ -26,16 +26,48 @@
           </div>
         </header>
 
+        <!-- 터미널 / VSCode 탭 스위치 -->
+        <nav class="side-panel-tabs" role="tablist">
+          <button
+            type="button" role="tab"
+            class="tab-btn"
+            :class="{ active: activeTab === 'terminal' }"
+            :aria-selected="activeTab === 'terminal'"
+            @click="activeTab = 'terminal'">
+            <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></svg>
+            터미널
+          </button>
+          <button
+            type="button" role="tab"
+            class="tab-btn"
+            :class="{ active: activeTab === 'vscode' }"
+            :aria-selected="activeTab === 'vscode'"
+            @click="activeTab = 'vscode'">
+            <svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
+            VSCode
+          </button>
+        </nav>
+
         <div class="side-panel-body">
-          <TerminalPane
-            v-if="open && tmuxSession"
-            :key="tmuxSession"
-            :session="tmuxSession"
-            :font-size="prefs.fontSize"
-            :font-family="prefs.fontFamily"
-            :theme="themeFor(prefs.themeName)" />
-          <div v-else-if="open" class="empty">
-            이 에이전트에는 연결할 tmux 세션이 없습니다.
+          <!-- 두 패널 모두 마운트 유지하고 v-show 로 토글 — 탭 전환시 WS/iframe 재연결 회피 -->
+          <div v-show="activeTab === 'terminal'" class="pane-slot">
+            <TerminalPane
+              v-if="open && tmuxSession"
+              :key="tmuxSession"
+              :session="tmuxSession"
+              :font-size="prefs.fontSize"
+              :font-family="prefs.fontFamily"
+              :theme="themeFor(prefs.themeName)" />
+            <div v-else-if="open" class="empty">
+              이 에이전트에는 연결할 tmux 세션이 없습니다.
+            </div>
+          </div>
+          <div v-show="activeTab === 'vscode'" class="pane-slot">
+            <VsCodePane
+              v-if="open"
+              :url="codeServer.url"
+              :alive="codeServer.alive"
+              :workspace="workspaceDir" />
           </div>
         </div>
       </aside>
@@ -76,11 +108,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import TerminalPane from '~/components/terminal/TerminalPane.vue';
+import VsCodePane from '~/components/terminal/VsCodePane.vue';
 import { useTerminalPrefs } from '~/composables/useTerminalPrefs';
+import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 
-defineProps<{
+const props = defineProps<{
   open: boolean;
   /** 헤더에 표시할 에이전트 이름. */
   agentName?: string;
@@ -88,11 +122,29 @@ defineProps<{
   subtitle?: string;
   /** 연결할 tmux 세션명. 없으면 빈 상태. */
   tmuxSession?: string;
+  /** VSCode iframe `?folder=` 에 들어갈 절대 경로. */
+  workspaceDir?: string;
 }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const { prefs, themes, fontFamilies, themeFor } = useTerminalPrefs();
 const settingsOpen = ref(false);
+
+const activeTab = ref<'terminal' | 'vscode'>('terminal');
+
+interface CodeServerRs { url: string; alive: boolean }
+const codeServer = ref<CodeServerRs>({ url: '', alive: false });
+
+async function fetchCodeServer(): Promise<void> {
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<ApiEnvelope<CodeServerRs>>('/api/settings/code-server');
+    if (env.result === 0 && env.data) codeServer.value = env.data;
+  } catch { /* 무시 — VsCodePane 이 빈 상태로 빠진 안내 표시 */ }
+}
+
+// 패널 열릴 때 헬스 상태 갱신 (오래 열어둔 사이 code-server 가 죽었을 수도 있어서)
+watch(() => props.open, (v) => { if (v) void fetchCodeServer(); }, { immediate: true });
 </script>
 
 <style scoped>
@@ -241,10 +293,39 @@ const settingsOpen = ref(false);
 }
 .btn-done:hover { background: #0052d9; }
 
+.side-panel-tabs {
+  display: flex; gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid #F0F2F5;
+  background: #fff;
+}
+.tab-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: none; border: none;
+  border-bottom: 2px solid transparent;
+  color: #64748B;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: #4338CA; }
+.tab-btn.active {
+  color: #0062ff;
+  border-bottom-color: #0062ff;
+}
+.tab-ico { width: 14px; height: 14px; }
+
 .side-panel-body {
   flex: 1; min-height: 0;
   padding: 12px;
+  display: flex; flex-direction: column;
 }
+.pane-slot {
+  flex: 1; min-height: 0;
+  display: flex;
+}
+.pane-slot > * { flex: 1; min-height: 0; }
 .empty {
   height: 100%;
   display: flex; align-items: center; justify-content: center;
