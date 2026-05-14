@@ -45,9 +45,6 @@ public class ExternalAgentService {
 
     private final SettingService settingService;
 
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(3))
-            .build();
     private final ObjectMapper mapper = new ObjectMapper();
 
     public List<ExternalAgentRsVo> list() {
@@ -56,11 +53,17 @@ public class ExternalAgentService {
         }
         String url = controlPlaneUrl.replaceAll("/$", "") + "/v1/agents/lite";
         try {
+            // Spring 컨텍스트의 long-lived HttpClient 인스턴스가 네트워크 변경(Mac sleep/wake 등)
+            // 이후 "No route to host" 에 갇히는 케이스를 회피하기 위해 매 호출마다 새 클라이언트를
+            // 사용한다. low-frequency 폴링(대시보드 30s 간격) 이라 비용은 무시 가능.
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(3))
+                    .build();
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> res = client.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() != 200) {
                 log.warn("external agents fetch failed: status={} url={}", res.statusCode(), url);
                 return Collections.emptyList();
