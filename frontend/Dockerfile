@@ -26,8 +26,11 @@ RUN npm run generate
 # ────────────────────────────────────────────────────────────────────────────────
 FROM nginx:1.27-alpine AS runtime
 
-# Nuxt SPA fallback (모든 미매칭 경로 → index.html). 한 줄짜리 config 라 inline.
-RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
+# Nuxt SPA fallback (모든 미매칭 경로 → index.html).
+# - absolute_redirect off  : 컨테이너 내부 포트(80) 가 Location 헤더에 박혀 외부 포트(30080) 가
+#                            증발하는 문제를 회피. 상대 redirect 로 응답해 브라우저가 현재 origin 보존.
+# - try_files $uri /index.html : 디렉토리 매칭 시도(=$uri/) 를 빼서 trailing-slash redirect 자체를 안 일으킴.
+RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  index index.html;\n  absolute_redirect off;\n  location / { try_files $uri /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
 
 COPY --from=build /workspace/.output/public /usr/share/nginx/html
 
