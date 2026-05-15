@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -27,8 +28,13 @@ import lombok.extern.slf4j.Slf4j;
  *   - claude 모델만 처리. codex / hermes 는 spec TBD 라 건너뜀.
  *   - workspace_dir 을 escape 하여 ~/.claude/projects/{escaped}/ 디렉토리 매칭.
  *   - 디렉토리 부재 / .jsonl 부재 시 갱신 스킵 (시드 데이터 보호).
+ *
+ * Phase 1 (Desktop Agent 도입) 이후엔 같은 일을 Helper 가 본인 Mac 에서 직접 스캔해서
+ * POST /api/desktop/local-info 로 보내준다. 워처는 fallback 으로 남기되 기본 비활성.
+ * 활성화하려면 application.yaml 에 `aidesk.watcher.enabled: true` 를 설정한다.
  */
 @Component
+@ConditionalOnProperty(name = "aidesk.watcher.enabled", havingValue = "true", matchIfMissing = false)
 @RequiredArgsConstructor
 @Slf4j
 public class AgentStatusWatcher {
