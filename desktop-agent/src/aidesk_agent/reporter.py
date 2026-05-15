@@ -7,6 +7,7 @@ import logging
 import httpx
 
 from .claude_scanner import scan_workspaces
+from .identity import detect_local_employee_id
 from .tmux_scanner import scan_sessions
 
 log = logging.getLogger(__name__)
@@ -15,12 +16,26 @@ log = logging.getLogger(__name__)
 DEFAULT_BACKEND_URL = "http://localhost:30081"
 DEFAULT_REPORT_INTERVAL_SEC = 30.0
 
+# 사이드카 정체는 자주 변하지 않으니 메모이즈. 시작 시 None 이었으면 다음 호출 때 재시도.
+_cached_employee_id: str | None = None
+
+
+def _resolve_owner() -> str | None:
+    global _cached_employee_id
+    if _cached_employee_id is None:
+        _cached_employee_id = detect_local_employee_id()
+    return _cached_employee_id
+
 
 def build_payload() -> dict:
-    return {
+    payload: dict = {
         "workspaces": [w.as_dict() for w in scan_workspaces()],
         "tmuxSessions": [s.as_dict() for s in scan_sessions()],
     }
+    owner = _resolve_owner()
+    if owner:
+        payload["ownerEmployeeId"] = owner
+    return payload
 
 
 async def send_once(client: httpx.AsyncClient, backend_url: str) -> dict | None:
