@@ -17,6 +17,7 @@ from .claude_scanner import scan_workspaces
 from .os_bridge import browse_workspace, open_terminal, open_vscode
 from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
+from .sse_consumer import consumer_loop
 from .tmux_scanner import scan_sessions
 
 log = logging.getLogger(__name__)
@@ -112,24 +113,26 @@ async def browse_workspace_handler(_: web.Request) -> web.Response:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-async def _start_reporter(app: web.Application) -> None:
+async def _start_background_tasks(app: web.Application) -> None:
     backend_url = os.environ.get("AIDESK_BACKEND_URL", DEFAULT_BACKEND_URL)
     interval = float(
         os.environ.get("AIDESK_REPORT_INTERVAL_SEC", DEFAULT_REPORT_INTERVAL_SEC)
     )
-    log.info("reporter starting: backend=%s interval=%.1fs", backend_url, interval)
+    log.info("background tasks starting: backend=%s interval=%.1fs", backend_url, interval)
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
+    app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
 
 
-async def _stop_reporter(app: web.Application) -> None:
-    task = app.get("reporter_task")
-    if task is None:
-        return
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+async def _stop_background_tasks(app: web.Application) -> None:
+    for key in ("reporter_task", "sse_task"):
+        task = app.get(key)
+        if task is None:
+            continue
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 def build_app() -> web.Application:
@@ -142,8 +145,8 @@ def build_app() -> web.Application:
     app.router.add_get("/api/terminal", terminal_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
-    app.on_startup.append(_start_reporter)
-    app.on_cleanup.append(_stop_reporter)
+    app.on_startup.append(_start_background_tasks)
+    app.on_cleanup.append(_stop_background_tasks)
     return app
 
 
