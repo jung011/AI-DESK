@@ -8,6 +8,7 @@ import logging
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -186,6 +187,90 @@ def open_vscode(workspace_dir: str) -> tuple[int, str]:
 # ──────────────────────────────────────────────────────────────────────────────
 # 폴더 선택 다이얼로그
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def _tmux_client_tty(session: str) -> str:
+    """tmux 세션에 attach 된 첫 번째 클라이언트의 tty 경로. 없으면 빈 문자열."""
+    if not session:
+        return ""
+    try:
+        proc = subprocess.run(
+            ["tmux", "list-clients", "-t", session, "-F", "#{client_tty}"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return ""
+    out = proc.stdout.strip()
+    if not out or out.startswith(("can't find", "no clients")):
+        return ""
+    return out.splitlines()[0].strip()
+
+
+def _tmux_kill_session(session: str) -> None:
+    if not session:
+        return
+    try:
+        proc = subprocess.run(
+            ["tmux", "kill-session", "-t", session],
+            capture_output=True,
+            timeout=3,
+        )
+        if proc.returncode == 0:
+            log.info("tmux session killed: %s", session)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.warning("tmux kill-session failed for %s: %s", session, e)
+
+
+def _close_terminal_tab_by_tty(tty: str) -> None:
+    """Terminal.app 의 윈도우 중 주어진 tty 를 갖는 것을 닫는다. 없으면 조용히 패스."""
+    if not tty:
+        return
+    # tmux 클라이언트 disconnect → zsh `; exit 0` → logout 처리 시간 확보.
+    time.sleep(0.4)
+    tty_esc = tty.replace("\\", "\\\\").replace('"', '\\"')
+    script = (
+        'tell application "Terminal"\n'
+        '  repeat with w in windows\n'
+        '    try\n'
+        '      set matched to false\n'
+        '      repeat with t in tabs of w\n'
+        '        try\n'
+        f'          if (tty of t) is "{tty_esc}" then\n'
+        '            set matched to true\n'
+        '            exit repeat\n'
+        '          end if\n'
+        '        end try\n'
+        '      end repeat\n'
+        '      if matched then\n'
+        '        close w saving no\n'
+        '      end if\n'
+        '    end try\n'
+        '  end repeat\n'
+        'end tell\n'
+    )
+    try:
+        subprocess.Popen(["osascript", "-e", script])
+        log.info("Terminal window close requested: tty=%s", tty)
+    except OSError as e:
+        log.warning("close terminal failed: %s", e)
+
+
+def cleanup_agent(tmux_session: str) -> tuple[int, str]:
+    """에이전트 삭제 시 호출 — tmux 세션 + 그에 attach 된 Terminal 윈도우 정리.
+
+    실패해도 백엔드 DB 삭제 자체엔 영향 없도록 비-치명적으로 처리.
+    """
+    if not tmux_session:
+        # 정리할 게 없을 뿐, 에러는 아님.
+        return 0, "no-op (empty tmuxSession)"
+    tty = _tmux_client_tty(tmux_session)
+    _tmux_kill_session(tmux_session)
+    if tty:
+        _close_terminal_tab_by_tty(tty)
+    log.info("cleanup_agent: session=%s tty=%s", tmux_session, tty or "(none)")
+    return 0, "ok"
 
 
 def browse_workspace() -> tuple[int, str]:

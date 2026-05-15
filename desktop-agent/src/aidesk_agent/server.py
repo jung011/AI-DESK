@@ -14,7 +14,7 @@ from aiohttp import web
 
 from . import __version__
 from .claude_scanner import scan_workspaces
-from .os_bridge import browse_workspace, open_terminal, open_vscode
+from .os_bridge import browse_workspace, cleanup_agent, open_terminal, open_vscode
 from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
@@ -108,6 +108,14 @@ async def browse_workspace_handler(_: web.Request) -> web.Response:
     return web.json_response({"rc": 0, "path": path_or_msg})
 
 
+async def cleanup_agent_handler(request: web.Request) -> web.Response:
+    """에이전트 삭제 시 프론트가 호출 — tmux 세션 + Terminal 윈도우 정리."""
+    body = await request.json()
+    tmux_session = (body.get("tmuxSession") or "").strip()
+    rc, msg = cleanup_agent(tmux_session)
+    return web.json_response({"rc": rc, "message": msg})
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Lifecycle
 # ──────────────────────────────────────────────────────────────────────────────
@@ -142,6 +150,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-terminal", open_terminal_handler)
     app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
+    app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_get("/api/terminal", terminal_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
