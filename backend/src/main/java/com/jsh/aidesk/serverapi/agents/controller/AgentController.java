@@ -53,37 +53,4 @@ public class AgentController {
         return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
     }
 
-    @PostMapping("/_browse-workspace")
-    public ResponseJson<String> browseWorkspace() {
-        String path = agentService.browseWorkspace();
-        if (path == null) {
-            return ResponseJson.<String>fail(1, "현재 백엔드 OS 에서는 폴더 선택 다이얼로그를 지원하지 않습니다 (macOS 한정).");
-        }
-        // 빈 문자열은 사용자 취소 — 정상 응답으로 내려보내고 프론트에서 무시한다.
-        return ResponseJson.ok(path);
-    }
-
-    @PostMapping("/{agentId}/open-terminal")
-    public ResponseJson<Void> openTerminal(@PathVariable("agentId") String agentId) {
-        int rc = agentService.openTerminal(agentId);
-        return switch (rc) {
-            case 0 -> ResponseJson.ok((Void) null);
-            case 1 -> ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
-            case 2 -> ResponseJson.<Void>fail(1, "워크스페이스 경로가 없습니다.");
-            case 3 -> ResponseJson.<Void>fail(1, "현재 백엔드 OS 에서는 터미널 열기를 지원하지 않습니다 (macOS 한정).");
-            default -> ResponseJson.<Void>fail(1, "터미널 실행에 실패했습니다.");
-        };
-    }
-
-    @PostMapping("/{agentId}/open-vscode")
-    public ResponseJson<Void> openVscode(@PathVariable("agentId") String agentId) {
-        int rc = agentService.openVscode(agentId);
-        return switch (rc) {
-            case 0 -> ResponseJson.ok((Void) null);
-            case 1 -> ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
-            case 2 -> ResponseJson.<Void>fail(1, "워크스페이스 경로가 없습니다.");
-            case 3 -> ResponseJson.<Void>fail(1, "현재 백엔드 OS 에서는 VSCode 열기를 지원하지 않습니다.");
-            default -> ResponseJson.<Void>fail(1, "VSCode 를 찾지 못했습니다. /Applications/Visual Studio Code.app 에 설치되어있는지, 또는 VSCode 명령 팔레트에서 ‘Shell Command: Install ‘code’ command in PATH’ 를 실행했는지 확인하세요.");
-        };
-    }
 }
