@@ -21,6 +21,11 @@ from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
 from .tmux_scanner import scan_sessions
+from .usage import (
+    auto_install_on_startup as usage_auto_install,
+    get_local_usage,
+    install_statusline_hook,
+)
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +126,24 @@ async def cleanup_agent_handler(request: web.Request) -> web.Response:
     return web.json_response({"rc": rc, "message": msg})
 
 
+async def usage_local_handler(_: web.Request) -> web.Response:
+    """프론트 LocalUsageBar 가 사용 — 호스트의 ~/.claude/aidesk-usage/ 에서 최신 사용량 노출."""
+    return web.json_response(get_local_usage())
+
+
+async def usage_install_statusline_handler(_: web.Request) -> web.Response:
+    """프론트의 [수동 설치] 버튼 — settings.json 에 statusLine 후크 주입."""
+    rc = install_statusline_hook()
+    if rc == 0:
+        return web.json_response({"rc": 0, "message": "ok"})
+    msg = (
+        "statusline 스크립트(adesk-cli/bin/aidesk-statusline.cjs)를 찾지 못했습니다."
+        if rc == 1
+        else "~/.claude/settings.json 갱신에 실패했습니다."
+    )
+    return web.json_response({"rc": rc, "message": msg}, status=500)
+
+
 async def code_server_status_handler(request: web.Request) -> web.Response:
     """대시보드의 임베드 VSCode 가 사용 — Helper 가 띄운 code-server 의 URL + alive."""
     proc = request.app.get("code_server_proc")
@@ -144,6 +167,8 @@ async def _start_background_tasks(app: web.Application) -> None:
         os.environ.get("AIDESK_REPORT_INTERVAL_SEC", DEFAULT_REPORT_INTERVAL_SEC)
     )
     log.info("background tasks starting: backend=%s interval=%.1fs", backend_url, interval)
+    # Claude Code statusLine 후크 — 미설치/옛 경로면 자동 등록. 다른 명령이 점유 중이면 보호.
+    usage_auto_install()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # code-server 도 같이 spawn — 부재 시 brew install 자동 시도. 실패해도 다른 기능엔 영향 없음.
@@ -172,6 +197,8 @@ def build_app() -> web.Application:
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
+    app.router.add_get("/api/usage/local", usage_local_handler)
+    app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
     app.router.add_get("/api/terminal", terminal_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
