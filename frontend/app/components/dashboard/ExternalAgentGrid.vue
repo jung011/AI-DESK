@@ -127,16 +127,17 @@ async function chooseWorkspace(): Promise<void> {
   if (workspaceBusy.value) return;
   workspaceBusy.value = true;
   try {
-    const { $api } = useNuxtApp();
-    // macOS 폴더 선택 다이얼로그 (에이전트 생성에서 쓰던 엔드포인트 재사용)
-    const pickEnv = await $api<ApiEnvelope<string>>('/api/agents/_browse-workspace', {
-      method: 'POST',
-    });
-    if (pickEnv.result !== 0) {
+    const { $api, $helper } = useNuxtApp();
+    // macOS 폴더 선택 다이얼로그 — 로컬 헬퍼가 처리 (백엔드가 Docker 화돼도 동작)
+    const pickEnv = await $helper<{ rc: number; message?: string; path?: string }>(
+      '/api/browse-workspace',
+      { method: 'POST' }
+    );
+    if (pickEnv.rc !== 0) {
       alert(pickEnv.message || '폴더 선택을 지원하지 않습니다.');
       return;
     }
-    const chosen = (pickEnv.data || '').trim();
+    const chosen = (pickEnv.path || '').trim();
     if (!chosen) return; // 사용자 취소
 
     const putEnv = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace', {
@@ -150,7 +151,7 @@ async function chooseWorkspace(): Promise<void> {
     a2aWorkspace.value = putEnv.data?.path || chosen;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    alert(`워크스페이스 설정 중 오류가 발생했습니다.\n${msg}`);
+    alert(`워크스페이스 설정 중 오류가 발생했습니다 (헬퍼 가동 확인).\n${msg}`);
   } finally {
     workspaceBusy.value = false;
   }

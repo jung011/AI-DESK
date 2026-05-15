@@ -104,21 +104,21 @@ async function onBrowse(): Promise<void> {
   if (browsing.value) return;
   browsing.value = true;
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; message: string; data: string | null }>(
-      '/api/agents/_browse-workspace',
+    const { $helper } = useNuxtApp();
+    const env = await $helper<{ rc: number; message?: string; path?: string }>(
+      '/api/browse-workspace',
       { method: 'POST' }
     );
-    if (env.result !== 0) {
+    if (env.rc !== 0) {
       // eslint-disable-next-line no-alert
       alert(env.message || '폴더 선택을 사용할 수 없습니다.');
       return;
     }
     // 빈 문자열 = 사용자 취소. 그대로 두고 무시한다.
-    if (env.data) form.workspaceDir = env.data;
+    if (env.path) form.workspaceDir = env.path;
   } catch (e) {
     // eslint-disable-next-line no-alert
-    alert(`폴더 선택 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+    alert(`폴더 선택 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   } finally {
     browsing.value = false;
   }

@@ -83,36 +83,46 @@ function onPlaceholder(label: string): void {
 async function onOpenVscode(): Promise<void> {
   menuOpen.value = false;
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; message: string }>(
-      `/api/agents/${encodeURIComponent(props.agent.agentId)}/open-vscode`,
-      { method: 'POST' }
+    const { $helper } = useNuxtApp();
+    const env = await $helper<{ rc: number; message: string }>(
+      '/api/open-vscode',
+      {
+        method: 'POST',
+        body: { workspaceDir: props.agent.workspaceDir },
+      }
     );
-    if (env.result !== 0) {
+    if (env.rc !== 0) {
       // eslint-disable-next-line no-alert
       alert(env.message || 'VSCode 열기에 실패했습니다.');
     }
   } catch (e) {
     // eslint-disable-next-line no-alert
-    alert(`VSCode 열기 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+    alert(`VSCode 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
 async function onOpenTerminal(): Promise<void> {
   menuOpen.value = false;
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; message: string }>(
-      `/api/agents/${encodeURIComponent(props.agent.agentId)}/open-terminal`,
-      { method: 'POST' }
+    const { $helper } = useNuxtApp();
+    const env = await $helper<{ rc: number; message: string }>(
+      '/api/open-terminal',
+      {
+        method: 'POST',
+        body: {
+          workspaceDir: props.agent.workspaceDir,
+          tmuxSession: props.agent.tmuxSession,
+          title: props.agent.agentName,
+        },
+      }
     );
-    if (env.result !== 0) {
+    if (env.rc !== 0) {
       // eslint-disable-next-line no-alert
       alert(env.message || '터미널 열기에 실패했습니다.');
     }
   } catch (e) {
     // eslint-disable-next-line no-alert
-    alert(`터미널 열기 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+    alert(`터미널 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

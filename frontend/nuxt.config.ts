@@ -36,7 +36,10 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       // 백엔드 베이스 URL — .env 의 NUXT_PUBLIC_API_BASE 로 오버라이드 가능
-      apiBase: 'http://localhost:30081'
+      apiBase: 'http://localhost:30081',
+      // 데스크톱 헬퍼 (각 사용자 PC 의 localhost) — 로컬 OS 조작 (터미널/VSCode/폴더 다이얼로그).
+      // 백엔드가 Docker 화돼도 이건 사용자 PC 그대로 가리킴.
+      helperBase: 'http://localhost:30083'
     }
   }
 })
