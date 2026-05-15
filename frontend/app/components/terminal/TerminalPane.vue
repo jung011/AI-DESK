@@ -1,10 +1,15 @@
 <template>
   <div class="terminal-pane">
     <div class="terminal-host" ref="hostRef" />
-    <div v-if="status !== 'open'" class="terminal-status" :class="status">
-      <span v-if="status === 'connecting'">연결 중…</span>
+    <div
+      v-if="status !== 'open'"
+      class="terminal-status"
+      :class="status"
+      @click="reconnect">
+      <span v-if="status === 'connecting' && reconnectAttempts === 0">연결 중…</span>
+      <span v-else-if="status === 'connecting'">재연결 중… ({{ reconnectAttempts }}/{{ MAX_RECONNECT_ATTEMPTS }})</span>
       <span v-else-if="status === 'closed'">연결 종료 — 클릭하여 재연결</span>
-      <span v-else-if="status === 'error'">연결 오류</span>
+      <span v-else-if="status === 'error'">재연결 실패 — 클릭하여 재시도</span>
     </div>
   </div>
 </template>
@@ -71,11 +76,19 @@ const emit = defineEmits<{
 
 const hostRef = ref<HTMLElement | null>(null);
 const status = ref<'connecting' | 'open' | 'closed' | 'error'>('connecting');
+const reconnectAttempts = ref(0);
+
+/** 자동 재연결 — 지수 백오프(1s, 2s, 4s, …, max 30s) 로 최대 N번 재시도. */
+const MAX_RECONNECT_ATTEMPTS = 8;
+const MAX_BACKOFF_MS = 30_000;
 
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let ws: WebSocket | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+/** 의도된 종료 플래그 — onBeforeUnmount / 세션 교체 시 set 해서 auto-reconnect 차단. */
+let intentionalClose = false;
 
 function buildWsUrl(session: string): string {
   // 임베드 터미널은 로컬 Helper(데스크톱 앱) 의 PTY 를 사용한다 — 백엔드가 Docker 화되어도
@@ -96,6 +109,7 @@ function connect(): void {
 
   ws.onopen = () => {
     status.value = 'open';
+    reconnectAttempts.value = 0; // 재연결 성공 시 카운터 리셋
     // open 직후 한 번 fit + resize 통보 — xterm 초기 size 와 PTY size 동기화
     syncSize();
     emit('connected');
@@ -104,12 +118,33 @@ function connect(): void {
     if (typeof ev.data === 'string') term?.write(ev.data);
   };
   ws.onclose = (ev) => {
-    status.value = 'closed';
     emit('disconnected', ev.reason || `code=${ev.code}`);
+    // 의도된 종료(언마운트/세션교체)면 그대로 멈춤. 그 외엔 자동 재연결 스케줄.
+    if (intentionalClose) {
+      status.value = 'closed';
+      return;
+    }
+    scheduleReconnect();
   };
   ws.onerror = () => {
-    status.value = 'error';
+    // 에러 후엔 onclose 가 따라 호출되므로 거기서 reconnect 처리. 여기선 표시만.
   };
+}
+
+function scheduleReconnect(): void {
+  if (intentionalClose) return;
+  if (reconnectAttempts.value >= MAX_RECONNECT_ATTEMPTS) {
+    status.value = 'error';
+    return;
+  }
+  // 지수 백오프: 1s, 2s, 4s, 8s, 16s, 30s, 30s, 30s
+  const delay = Math.min(1000 * 2 ** reconnectAttempts.value, MAX_BACKOFF_MS);
+  reconnectAttempts.value++;
+  status.value = 'connecting';
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
 }
 
 function syncSize(): void {
@@ -148,6 +183,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  intentionalClose = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   resizeObserver?.disconnect();
   ws?.close();
   term?.dispose();
@@ -172,13 +212,30 @@ watch(() => props.theme, (v) => {
 
 // 부모가 세션을 갈아끼우면 재연결
 watch(() => props.session, () => {
+  intentionalClose = true;          // 기존 ws 의 onclose 가 auto-reconnect 안 일으키게
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   ws?.close();
   term?.clear();
+  intentionalClose = false;
+  reconnectAttempts.value = 0;
   connect();
 });
 
+/** 사용자가 오버레이를 클릭했을 때 — backoff 대기를 건너뛰고 즉시 재시도. */
 function reconnect(): void {
-  if (status.value === 'closed' || status.value === 'error') connect();
+  // 백오프 대기 중이면 타이머 취소하고 즉시 시도
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  // max 도달했더라도 사용자 명시 의지면 다시 시작
+  if (status.value === 'closed' || status.value === 'error') {
+    reconnectAttempts.value = 0;
+    connect();
+  }
 }
 defineExpose({ reconnect });
 </script>
