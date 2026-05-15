@@ -11,12 +11,6 @@ messages:
     hop-limit: 10               # 답장 체인 최대 깊이
     context-limit-pct: 90       # 수신 AI 의 contextPct 가 이 값 이상이면 거절
 
-# 에이전트 부트스트랩 — 새 tmux 세션이 처음 만들어진 직후 claude 에 자동 주입할 첫 프롬프트.
-# 빈 문자열이면 주입 안 함. 작업 규칙 문서가 있는 위치를 명시해 두면 모든 신규 AI 가 동일 규약을 학습한다.
-agents:
-  bootstrap-prompt: |-
-    먼저 /Users/jsh/Documents/jsh/workRole/목차.md 를 읽고 거기 안내된 모든 작업 규칙 문서들을 순서대로 숙지하세요. 숙지가 끝나면 그 규칙을 따라 이후 들어오는 작업을 처리해 주세요.
-
 # 사내 협업 — kaflix-a2a Control Plane 연동. 외부 직원 에이전트 목록을 대시보드에 노출.
 # A2A 워크스페이스는 t_aidesk_setting('a2a_workspace') 에 영속화되며, 대시보드 (me) 모달에서 설정한다.
 kaflix:
