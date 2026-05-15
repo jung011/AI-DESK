@@ -103,6 +103,10 @@ async def terminal_handler(request: web.Request) -> web.WebSocketResponse:
 
     cmd = _build_command(session, workspace_dir, model)
     master_fd, slave_fd = pty.openpty()
+    # LaunchAgent 로 실행될 땐 부모 env 에 TERM 이 없거나 `dumb` 이라 claude 가
+    # "terminal does not support clear" 무한 출력. xterm.js 가 실제로 지원하는
+    # capability 로 명시 — 외부 Terminal.app 동작과 동일하게 맞춤.
+    pty_env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"}
     try:
         proc = subprocess.Popen(
             cmd,
@@ -110,7 +114,7 @@ async def terminal_handler(request: web.Request) -> web.WebSocketResponse:
             stdout=slave_fd,
             stderr=slave_fd,
             cwd=workspace_dir,
-            env=os.environ.copy(),
+            env=pty_env,
             start_new_session=True,
             close_fds=True,
         )
