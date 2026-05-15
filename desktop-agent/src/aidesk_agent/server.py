@@ -14,6 +14,8 @@ from aiohttp import web
 
 from . import __version__
 from .claude_scanner import scan_workspaces
+from .code_server import DEFAULT_PORT as CODE_SERVER_PORT
+from .code_server import start_code_server, stop_code_server
 from .os_bridge import browse_workspace, cleanup_agent, open_terminal, open_vscode
 from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
@@ -119,6 +121,18 @@ async def cleanup_agent_handler(request: web.Request) -> web.Response:
     return web.json_response({"rc": rc, "message": msg})
 
 
+async def code_server_status_handler(request: web.Request) -> web.Response:
+    """대시보드의 임베드 VSCode 가 사용 — Helper 가 띄운 code-server 의 URL + alive."""
+    proc = request.app.get("code_server_proc")
+    alive = proc is not None and proc.returncode is None
+    return web.json_response(
+        {
+            "url": f"http://localhost:{CODE_SERVER_PORT}",
+            "alive": alive,
+        }
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Lifecycle
 # ──────────────────────────────────────────────────────────────────────────────
@@ -132,6 +146,8 @@ async def _start_background_tasks(app: web.Application) -> None:
     log.info("background tasks starting: backend=%s interval=%.1fs", backend_url, interval)
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
+    # code-server 도 같이 spawn — 부재 시 brew install 자동 시도. 실패해도 다른 기능엔 영향 없음.
+    app["code_server_proc"] = await start_code_server()
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
@@ -144,6 +160,7 @@ async def _stop_background_tasks(app: web.Application) -> None:
             await task
         except asyncio.CancelledError:
             pass
+    await stop_code_server(app.get("code_server_proc"))
 
 
 def build_app() -> web.Application:
@@ -154,6 +171,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
+    app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/terminal", terminal_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
