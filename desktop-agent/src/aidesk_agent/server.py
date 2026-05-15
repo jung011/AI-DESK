@@ -25,10 +25,13 @@ log = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 30083
 
-# 대시보드 origin 화이트리스트. 중앙 호스팅 도메인 추가시 여기에 함께.
-ALLOWED_ORIGINS = {
+# 대시보드 origin 화이트리스트. 환경변수 AIDESK_EXTRA_ORIGINS (콤마 구분) 로 운영 도메인 추가.
+_DEFAULT_ORIGINS = {
     "http://localhost:30080",
     "http://127.0.0.1:30080",
+}
+ALLOWED_ORIGINS = _DEFAULT_ORIGINS | {
+    o.strip() for o in os.environ.get("AIDESK_EXTRA_ORIGINS", "").split(",") if o.strip()
 }
 
 
