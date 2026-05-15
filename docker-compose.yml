@@ -45,3 +45,7 @@ services:
     ports:
       - "30080:80"
     restart: unless-stopped
+
+# code-server (대시보드 임베드 VSCode) 는 desktop-agent (Helper) 가 직접 spawn + 라이프사이클
+# 관리한다. 본인 Mac 의 파일을 편집해야 하는 per-user 자원이라 중앙 인프라가 아닌 Helper 책임.
+# Helper 시작 시 자동 설치(brew install code-server) + 실행, 종료 시 정리.

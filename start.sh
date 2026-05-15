@@ -32,19 +32,9 @@ else
   echo "▶ frontend starting → /tmp/aidesk-frontend.log"
 fi
 
-# code-server (대시보드 임베드 VSCode, :30082)
-# --auth none 으로 로컬 사용 가정. 외부 노출하려면 password 인증 필수.
-if is_listening 30082; then
-  echo "↺ code-server already running on :30082"
-elif ! command -v code-server > /dev/null 2>&1; then
-  echo "⚠ code-server 미설치 — brew install code-server 후 다시 실행하세요 (VSCode 임베드 비활성)"
-else
-  ( code-server --auth none --bind-addr 127.0.0.1:30082 --disable-telemetry --disable-update-check \
-      > /tmp/aidesk-codeserver.log 2>&1 & )
-  echo "▶ code-server starting → /tmp/aidesk-codeserver.log"
-fi
+# code-server 는 desktop-agent (Helper) 가 자동 설치 + spawn 한다. 본 스크립트에서 더 이상 띄우지 않음.
 
 echo ""
-echo "  대시보드 : http://localhost:30080/dashboard"
-echo "  백엔드 API: http://localhost:30081/api/agents"
-echo "  code-server : http://localhost:30082/"
+echo "  대시보드      : http://localhost:30080/dashboard"
+echo "  백엔드 API    : http://localhost:30081/api/agents"
+echo "  code-server  : Helper 가 자동 관리 (http://localhost:30082/)"
