@@ -42,8 +42,12 @@ const DEFAULT_THEME: ITheme = {
 };
 
 interface Props {
-  /** 백엔드 tmux 세션명 (예: aidesk-self-liki, aidesk-b1f44444). */
+  /** tmux 세션명 (예: aidesk-self-liki, aidesk-b1f44444). */
   session: string;
+  /** 신규 세션일 때 cd 할 디렉토리. tmux 가 이미 있으면 무시. */
+  workspaceDir?: string;
+  /** claude / codex / hermes — 신규 세션일 때 자동 기동할 CLI. 기본 claude. */
+  model?: string;
   /** 1pt = 1px. 기본 14. 부모에서 사용자 설정값을 내려준다. */
   fontSize?: number;
   fontFamily?: string;
@@ -52,6 +56,8 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  workspaceDir: undefined,
+  model: undefined,
   fontSize: 14,
   fontFamily: 'JetBrains Mono, Menlo, Monaco, "D2Coding", monospace',
   // theme 의 default 는 defineProps 매크로 한계로 여기서 못 잡고, 사용 지점에서 ?? DEFAULT_THEME 로 폴백한다.
@@ -72,11 +78,15 @@ let ws: WebSocket | null = null;
 let resizeObserver: ResizeObserver | null = null;
 
 function buildWsUrl(session: string): string {
-  // 백엔드 베이스를 nuxt runtimeConfig 에서 읽되, 없으면 현재 호스트 기준으로 추론.
-  const conf = useRuntimeConfig().public as { apiBase?: string };
-  const base = conf.apiBase || `${location.protocol}//${location.hostname}:30081`;
+  // 임베드 터미널은 로컬 Helper(데스크톱 앱) 의 PTY 를 사용한다 — 백엔드가 Docker 화되어도
+  // tmux/PTY 는 사용자 Mac 의 Helper 가 그대로 띄움.
+  const conf = useRuntimeConfig().public as { helperBase?: string };
+  const base = conf.helperBase || `${location.protocol}//${location.hostname}:30083`;
   const wsBase = base.replace(/^http/, 'ws');
-  return `${wsBase}/ws/terminal?session=${encodeURIComponent(session)}`;
+  const params = new URLSearchParams({ session });
+  if (props.workspaceDir) params.set('workspaceDir', props.workspaceDir);
+  if (props.model) params.set('model', props.model);
+  return `${wsBase}/api/terminal?${params.toString()}`;
 }
 
 function connect(): void {

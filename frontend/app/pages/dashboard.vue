@@ -48,6 +48,7 @@
       :subtitle="panel.subtitle"
       :tmux-session="panel.tmuxSession"
       :workspace-dir="panel.workspaceDir"
+      :model="panel.model"
       @close="panel.open = false" />
 
     <!-- AI 생성 팝업 -->
@@ -115,13 +116,15 @@ const panel = reactive<{
   subtitle: string;
   tmuxSession: string;
   workspaceDir: string;
-}>({ open: false, agentName: '', subtitle: '', tmuxSession: '', workspaceDir: '' });
+  model: string;
+}>({ open: false, agentName: '', subtitle: '', tmuxSession: '', workspaceDir: '', model: '' });
 
 function onAgentSelect(agent: AgentItem): void {
   panel.agentName = agent.agentName;
   panel.subtitle = `${agent.model}  ·  ${agent.workspaceDir || '워크스페이스 미설정'}`;
   panel.tmuxSession = agent.tmuxSession || `aidesk-${agent.agentId.slice(0, 8)}`;
   panel.workspaceDir = agent.workspaceDir || '';
+  panel.model = agent.model || '';
   panel.open = true;
 }
 
@@ -129,6 +132,7 @@ async function onSelectMe(a: ExternalAgentItem): Promise<void> {
   panel.agentName = `${a.name || a.employeeId} (me)`;
   panel.subtitle = '본인 A2A 터미널';
   panel.tmuxSession = `aidesk-self-${a.employeeId.toLowerCase()}`;
+  panel.model = 'claude';
   // A2A 워크스페이스 경로를 가져와 VSCode 탭에서도 열 수 있게 한다.
   try {
     const { $api } = useNuxtApp();

@@ -55,6 +55,8 @@
               v-if="open && tmuxSession"
               :key="tmuxSession"
               :session="tmuxSession"
+              :workspace-dir="workspaceDir"
+              :model="model"
               :font-size="prefs.fontSize"
               :font-family="prefs.fontFamily"
               :theme="themeFor(prefs.themeName)" />
@@ -122,8 +124,10 @@ const props = defineProps<{
   subtitle?: string;
   /** 연결할 tmux 세션명. 없으면 빈 상태. */
   tmuxSession?: string;
-  /** VSCode iframe `?folder=` 에 들어갈 절대 경로. */
+  /** VSCode iframe `?folder=` 에 들어갈 절대 경로 + 신규 PTY 의 cwd. */
   workspaceDir?: string;
+  /** 신규 tmux 세션일 때 자동 기동할 CLI 선택 — claude / codex / hermes. */
+  model?: string;
 }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
