@@ -17,7 +17,9 @@ ENV NUXT_PUBLIC_HELPER_BASE=$NUXT_PUBLIC_HELPER_BASE
 # postinstall(nuxt prepare) 가 소스를 참조하므로 일괄 복사 후 install.
 COPY . .
 RUN npm install --no-audit --no-fund
-RUN npm run build
+# `nuxt generate` 가 정적 SPA shell (index.html 포함) 까지 .output/public 에 만든다.
+# `nuxt build` (default) 는 SPA 모드에서 Nitro 서버에 의존하므로 nginx 만으로 못 서빙.
+RUN npm run generate
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 정적 호스팅 (nginx)
