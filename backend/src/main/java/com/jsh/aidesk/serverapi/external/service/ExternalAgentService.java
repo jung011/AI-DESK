@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jsh.aidesk.serverapi.desktop.service.DesktopService;
 import com.jsh.aidesk.serverapi.external.vo.ExternalAgentRsVo;
 import com.jsh.aidesk.serverapi.setting.service.SettingService;
 
@@ -44,8 +45,20 @@ public class ExternalAgentService {
     private String meEmployeeId;
 
     private final SettingService settingService;
+    private final DesktopService desktopService;
 
     private final ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * me 결정 우선순위:
+     *   1) Helper 가 보고한 ownerEmployeeId (kaflix-a2a 사이드카에서 추출, 자동)
+     *   2) application.yaml 의 kaflix.me-employee-id (fallback, 정적 config)
+     */
+    private String resolveMeEmployeeId() {
+        String reported = desktopService.getReportedOwnerEmployeeId();
+        if (reported != null && !reported.isBlank()) return reported;
+        return meEmployeeId;
+    }
 
     public List<ExternalAgentRsVo> list() {
         if (controlPlaneUrl == null || controlPlaneUrl.isBlank()) {
@@ -88,8 +101,10 @@ public class ExternalAgentService {
             arr.forEach(s -> skills.add(s.asText("")));
         }
         v.setSkills(skills);
+        String me = resolveMeEmployeeId();
         v.setMe(!v.getEmployeeId().isBlank()
-                && v.getEmployeeId().equalsIgnoreCase(meEmployeeId));
+                && me != null
+                && v.getEmployeeId().equalsIgnoreCase(me));
         return v;
     }
 
