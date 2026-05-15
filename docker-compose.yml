@@ -1,0 +1,47 @@
+# AI Desk 중앙 인프라 — backend + frontend.
+# DB(PostgreSQL) 는 호스트에 이미 설치되어 있어 컨테이너에서 제외.
+# 컨테이너에서 호스트 DB 접근은 host.docker.internal (macOS/Windows Docker Desktop) 또는
+# 리눅스 환경에선 host-gateway extra_hosts 로 매핑한다.
+#
+# 빌드 + 기동:    docker compose up -d --build
+# 로그 확인:      docker compose logs -f backend
+# 종료:           docker compose down
+# 재빌드만:        docker compose build backend frontend
+#
+# 호스트의 PostgreSQL 이 외부 접속(host.docker.internal 포함) 을 허용해야 한다.
+# 평소 외부 접속 안 받는 설정이면 postgresql.conf 의 listen_addresses 와 pg_hba.conf 확인.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: aidesk-backend:dev
+    container_name: aidesk-backend
+    ports:
+      - "30081:30081"
+    environment:
+      # 호스트의 PostgreSQL 에 접근 (DB 는 컨테이너 외부)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/aidesk
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      # kaflix-a2a Control Plane — 사내 VPN 으로 도달.
+      KAFLIX_CONTROL_PLANE_URL: http://172.20.1.3:8080
+      # fallback 정체 (Helper 가 사이드카에서 자동 감지 못 했을 때만 적용)
+      KAFLIX_ME_EMPLOYEE_ID: liki
+    extra_hosts:
+      # Docker Desktop on macOS/Windows 는 자동 추가하지만 Linux 호환을 위해 명시.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # 빌드 시점에 baked-in. 변경하려면 --build-arg 또는 .env 로 override.
+        NUXT_PUBLIC_API_BASE: http://localhost:30081
+        NUXT_PUBLIC_HELPER_BASE: http://localhost:30083
+    image: aidesk-frontend:dev
+    container_name: aidesk-frontend
+    ports:
+      - "30080:80"
+    restart: unless-stopped
