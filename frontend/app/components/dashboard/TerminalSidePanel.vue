@@ -114,7 +114,6 @@ import { ref, watch } from 'vue';
 import TerminalPane from '~/components/terminal/TerminalPane.vue';
 import VsCodePane from '~/components/terminal/VsCodePane.vue';
 import { useTerminalPrefs } from '~/composables/useTerminalPrefs';
-import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 
 const props = defineProps<{
   open: boolean;
@@ -140,10 +139,12 @@ interface CodeServerRs { url: string; alive: boolean }
 const codeServer = ref<CodeServerRs>({ url: '', alive: false });
 
 async function fetchCodeServer(): Promise<void> {
+  // 헬퍼가 code-server 라이프사이클을 직접 관리 — URL+alive 도 헬퍼한테 묻는다.
+  // (백엔드는 Docker 컨테이너 안이라 code-server 의 alive 를 알 수 없음)
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<ApiEnvelope<CodeServerRs>>('/api/settings/code-server');
-    if (env.result === 0 && env.data) codeServer.value = env.data;
+    const { $helper } = useNuxtApp();
+    const rs = await $helper<CodeServerRs>('/api/code-server');
+    if (rs) codeServer.value = rs;
   } catch { /* 무시 — VsCodePane 이 빈 상태로 빠진 안내 표시 */ }
 }
 
