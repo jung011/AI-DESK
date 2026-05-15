@@ -15,6 +15,7 @@ from aiohttp import web
 from . import __version__
 from .claude_scanner import scan_workspaces
 from .os_bridge import browse_workspace, open_terminal, open_vscode
+from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .tmux_scanner import scan_sessions
 
@@ -138,6 +139,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-terminal", open_terminal_handler)
     app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
+    app.router.add_get("/api/terminal", terminal_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
     app.on_startup.append(_start_reporter)
