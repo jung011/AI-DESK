@@ -15,7 +15,7 @@ import type {
  *   onUnmounted(() => stopPolling());
  */
 export function useAgents(initialStatus: string = 'all') {
-  const { $api } = useNuxtApp();
+  const { $api, $helper } = useNuxtApp();
 
   const list = ref<AgentItem[]>([]);
   const summary = ref<AgentSummary>({ total: 0, active: 0, idle: 0, done: 0 });
@@ -88,11 +88,29 @@ export function useAgents(initialStatus: string = 'all') {
   }
 
   /**
-   * 단건 소프트 딜리트. 성공 시 즉시 목록 재조회.
+   * 단건 hard 딜리트. 백엔드 DELETE 전에 헬퍼에 tmux/Terminal 정리를 위임한다.
+   * 헬퍼 정리는 비-치명적 — 실패해도 백엔드 삭제는 그대로 진행 (사용자는 더 이상 그
+   * 에이전트의 카드가 안 보이는 게 우선이고, 떠도는 tmux 세션은 추후 청소 가능).
+   *
+   * @param agent 삭제할 에이전트. 헬퍼에 tmuxSession 을 넘기기 위해 객체 단위로 받는다.
    */
-  async function deleteAgent(agentId: string): Promise<boolean> {
+  async function deleteAgent(agent: AgentItem): Promise<boolean> {
+    // 1) 헬퍼에 OS 정리 위임 — best-effort
     try {
-      const env = await $api<ApiEnvelope<null>>(`/api/agents/${encodeURIComponent(agentId)}`, {
+      if (agent.tmuxSession) {
+        await $helper<{ rc: number; message?: string }>('/api/cleanup-agent', {
+          method: 'POST',
+          body: { tmuxSession: agent.tmuxSession },
+        });
+      }
+    } catch (e) {
+      // 헬퍼 미가동/오류여도 백엔드 삭제는 진행
+      console.warn('helper cleanup-agent failed (continuing with backend delete):', e);
+    }
+
+    // 2) 백엔드 DELETE — DB 레코드 + 메시지 cascade
+    try {
+      const env = await $api<ApiEnvelope<null>>(`/api/agents/${encodeURIComponent(agent.agentId)}`, {
         method: 'DELETE'
       });
       if (env.result === 0) {

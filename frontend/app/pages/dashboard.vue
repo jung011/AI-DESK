@@ -171,7 +171,7 @@ function closeDeleteDialog(): void {
 async function onDeleteConfirm(): Promise<void> {
   if (!confirmDelete.agent || deleting.value) return;
   deleting.value = true;
-  const ok = await deleteAgent(confirmDelete.agent.agentId);
+  const ok = await deleteAgent(confirmDelete.agent);
   deleting.value = false;
   if (ok) {
     confirmDelete.open = false;
