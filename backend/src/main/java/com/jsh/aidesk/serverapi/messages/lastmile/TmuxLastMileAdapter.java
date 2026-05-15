@@ -2,7 +2,7 @@ package com.jsh.aidesk.serverapi.messages.lastmile;
 
 import java.util.concurrent.TimeUnit;
 
-import org.springframework.context.annotation.Primary;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * 호출 자체는 동기. 비동기는 MessageService 의 Virtual Thread 가 담당.
  */
 @Component
-@Primary
+@ConditionalOnProperty(name = "aidesk.tmux.lastmile.enabled", havingValue = "true", matchIfMissing = false)
 @Slf4j
 public class TmuxLastMileAdapter implements LastMileAdapter {
 
