@@ -4,7 +4,10 @@ macOS 전용. osascript + Terminal.app + tmux + `code` 바이너리 조합으로
 """
 from __future__ import annotations
 
+import datetime as _dt
+import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -350,3 +353,101 @@ def browse_file(prompt: str = "파일을 선택하세요") -> tuple[int, str]:
     if proc.returncode != 0:
         return 0, ""  # 사용자 취소
     return 0, proc.stdout.strip()
+
+
+# kaflix-a2a / kaflix-channel MCP 서버는 (me) 가 지정한 A2A 워크스페이스에만 노출.
+# scope_workspace 가 ~/.claude.json 의 두 항목을 새 워크스페이스의 projects 엔트리로 이동.
+_SCOPED_MCP_SERVERS = ("kaflix-a2a", "kaflix-channel")
+
+
+def scope_workspace(new_workspace: str, old_workspace: str | None = None) -> tuple[int, str, str]:
+    """A2A 워크스페이스 검증 + `~/.claude.json` 의 kaflix-* MCP scope 이동.
+
+    백엔드가 도커 컨테이너에서 동작하므로 호스트 파일시스템에 접근 가능한 Helper 가 담당한다.
+
+    @return (rc, message, absolutePath)
+        rc=0  : 성공. absolutePath 는 normalize 된 새 경로
+        rc=1  : newWorkspace 가 비어 있음
+        rc=2  : 디렉토리가 존재하지 않거나 디렉토리가 아님
+        rc=3  : ~/.claude.json 처리 실패 (없거나 JSON 파싱 실패, 쓰기 실패)
+    """
+    if not new_workspace or not new_workspace.strip():
+        return 1, "newWorkspace 가 비어 있습니다.", ""
+
+    new_path = Path(new_workspace).expanduser()
+    if not new_path.is_dir():
+        return 2, "존재하지 않거나 디렉토리가 아닙니다.", str(new_path)
+
+    new_abs = str(new_path.resolve())
+
+    claude_json = Path.home() / ".claude.json"
+    if not claude_json.exists():
+        return 3, f"~/.claude.json 이 존재하지 않습니다: {claude_json}", new_abs
+
+    try:
+        with claude_json.open("r", encoding="utf-8") as f:
+            root = json.load(f)
+        if not isinstance(root, dict):
+            return 3, "~/.claude.json 루트가 객체가 아닙니다.", new_abs
+    except (OSError, json.JSONDecodeError) as e:
+        return 3, f"~/.claude.json 읽기 실패: {e}", new_abs
+
+    # 백업 — 같은 디렉토리에 timestamp 붙여서
+    stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    try:
+        shutil.copy(claude_json, claude_json.with_name(f".claude.json.{stamp}.bak"))
+    except OSError as e:
+        log.warning("scope_workspace: 백업 실패(무시): %s", e)
+
+    # 1) 글로벌 mcpServers 에서 kaflix-* 회수
+    harvested: dict = {}
+    top_servers = root.get("mcpServers")
+    if isinstance(top_servers, dict):
+        for name in _SCOPED_MCP_SERVERS:
+            if name in top_servers:
+                harvested[name] = top_servers.pop(name)
+
+    # 2) 이전 워크스페이스 projects 엔트리에서 회수 (있고 새 경로와 다를 때만)
+    if old_workspace and old_workspace.strip() and old_workspace != new_abs:
+        projects = root.get("projects")
+        if isinstance(projects, dict):
+            old_entry = projects.get(old_workspace)
+            if isinstance(old_entry, dict):
+                old_servers = old_entry.get("mcpServers")
+                if isinstance(old_servers, dict):
+                    for name in _SCOPED_MCP_SERVERS:
+                        if name in old_servers and name not in harvested:
+                            harvested[name] = old_servers.pop(name)
+
+    # 3) 새 워크스페이스 projects 엔트리에 등록 — 회수된 정의 없으면 새로 등록 안 함 (사용자 환경 이상)
+    if harvested:
+        projects = root.setdefault("projects", {})
+        new_entry = projects.setdefault(new_abs, {})
+        new_servers = new_entry.setdefault("mcpServers", {})
+        for name, defn in harvested.items():
+            new_servers[name] = defn
+    else:
+        log.warning(
+            "scope_workspace: kaflix MCP 정의가 글로벌·이전 워크스페이스 어디에도 없음 — 등록 스킵"
+        )
+
+    # 4) atomic write — 임시 파일에 쓰고 rename
+    tmp = claude_json.with_name(f".claude.json.{stamp}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(root, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, claude_json)
+    except OSError as e:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return 3, f"~/.claude.json 쓰기 실패: {e}", new_abs
+
+    log.info(
+        "scope_workspace: %s → %s (회수 %d 건)",
+        old_workspace or "(none)",
+        new_abs,
+        len(harvested),
+    )
+    return 0, "", new_abs

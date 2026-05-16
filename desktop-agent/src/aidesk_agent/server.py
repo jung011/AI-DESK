@@ -17,7 +17,14 @@ from .bootstrap import bootstrap_agent
 from .claude_scanner import scan_workspaces
 from .code_server import DEFAULT_PORT as CODE_SERVER_PORT
 from .code_server import start_code_server, stop_code_server
-from .os_bridge import browse_file, browse_workspace, cleanup_agent, open_terminal, open_vscode
+from .os_bridge import (
+    browse_file,
+    browse_workspace,
+    cleanup_agent,
+    open_terminal,
+    open_vscode,
+    scope_workspace,
+)
 from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
@@ -119,6 +126,27 @@ async def browse_workspace_handler(_: web.Request) -> web.Response:
         return web.json_response({"rc": rc, "message": path_or_msg}, status=500)
     # 빈 문자열 = 사용자 취소 (정상 응답)
     return web.json_response({"rc": 0, "path": path_or_msg})
+
+
+async def scope_workspace_handler(request: web.Request) -> web.Response:
+    """A2A 워크스페이스 검증 + ~/.claude.json 의 kaflix-* MCP scope 이동.
+
+    백엔드(도커)가 호스트 파일시스템에 접근 못 하므로 host.docker.internal:30083 으로 호출.
+    body: { "newWorkspace": "<absolute path>", "oldWorkspace": "<previous path or empty>" }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    new_workspace = (body.get("newWorkspace") or "").strip()
+    old_workspace = (body.get("oldWorkspace") or "").strip()
+    rc, msg, abs_path = scope_workspace(new_workspace, old_workspace or None)
+    status = 200 if rc == 0 else (400 if rc in (1, 2) else 500)
+    return web.json_response(
+        {"rc": rc, "message": msg, "absolutePath": abs_path}, status=status
+    )
 
 
 async def browse_file_handler(request: web.Request) -> web.Response:
@@ -264,6 +292,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-terminal", open_terminal_handler)
     app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
+    app.router.add_post("/api/scope-workspace", scope_workspace_handler)
     app.router.add_post("/api/browse-file", browse_file_handler)
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
