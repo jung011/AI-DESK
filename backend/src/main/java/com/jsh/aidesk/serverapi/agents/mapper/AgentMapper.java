@@ -29,12 +29,6 @@ public interface AgentMapper {
                                  @Param("status") String status,
                                  @Param("contextPct") Integer contextPct);
 
-    /**
-     * 부트스트랩 프롬프트 주입 완료 마킹 — 첫 [터미널 열기] 시 워크로드 학습 직후 호출.
-     * 이후 호출에서는 부트스트랩 재주입을 건너뛴다.
-     */
-    int markBootstrapApplied(@Param("agentId") String agentId);
-
     /** tmux_session 으로 (me) 에이전트를 찾는 데 사용. 소프트 삭제는 제외. */
     AgentVo selectByTmuxSession(@Param("tmuxSession") String tmuxSession);
 

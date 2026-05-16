@@ -59,12 +59,6 @@
            AND deleted_at IS NULL
     </update>
 
-    <update id="markBootstrapApplied">
-        UPDATE t_ai_agent
-           SET bootstrap_applied = TRUE,
-               updated_at = NOW()
-         WHERE agent_id = #{agentId}
-    </update>
 
     <select id="selectByTmuxSession" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
         SELECT <include refid="agentColumns"/>
