@@ -74,6 +74,15 @@
          LIMIT 1
     </select>
 
+    <select id="selectByWorkspaceDir" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE workspace_dir = #{workspaceDir}
+           AND deleted_at IS NULL
+         ORDER BY started_at DESC
+         LIMIT 1
+    </select>
+
     <update id="updateWorkspaceDir">
         UPDATE t_ai_agent
            SET workspace_dir = #{workspaceDir},

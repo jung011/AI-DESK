@@ -38,6 +38,9 @@ public interface AgentMapper {
     /** tmux_session 으로 (me) 에이전트를 찾는 데 사용. 소프트 삭제는 제외. */
     AgentVo selectByTmuxSession(@Param("tmuxSession") String tmuxSession);
 
+    /** workspace_dir 로 에이전트 매핑 — 액션 로그가 어느 에이전트 cwd 인지 식별. 소프트 삭제 제외. */
+    AgentVo selectByWorkspaceDir(@Param("workspaceDir") String workspaceDir);
+
     /** (me) 워크스페이스 변경 시 같은 에이전트 행의 workspace_dir 만 갈아끼우기 위한 단일 업데이트. */
     int updateWorkspaceDir(@Param("agentId") String agentId,
                            @Param("workspaceDir") String workspaceDir);

@@ -93,3 +93,37 @@ CREATE TABLE IF NOT EXISTS t_aidesk_setting (
 COMMENT ON TABLE  t_aidesk_setting IS 'AI Desk 런타임 단일값 설정';
 COMMENT ON COLUMN t_aidesk_setting.setting_key   IS '설정 키';
 COMMENT ON COLUMN t_aidesk_setting.setting_value IS '설정값 (NULL 가능)';
+
+-- =====================================================================
+-- t_ai_action_log — AI 가 수행한 실제 mutation 액션 (Write/Edit/Bash/DB MCP 등)
+-- 메시지(t_ai_message)와 결합해 "어떤 대화가 어떤 변경을 만들었나" 추적용.
+-- Helper 가 PostToolUse 훅에서 POST /api/action-logs 로 기록.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS t_ai_action_log (
+    log_id       VARCHAR(36)  PRIMARY KEY,
+    agent_id     VARCHAR(36),
+    agent_name   VARCHAR(50),
+    session_id   VARCHAR(80),
+    tool         VARCHAR(50)  NOT NULL,
+    category     VARCHAR(20)  NOT NULL,
+    target       VARCHAR(500),
+    summary      VARCHAR(500),
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE  t_ai_action_log IS 'AI 가 수행한 mutation 액션 감사 로그';
+COMMENT ON COLUMN t_ai_action_log.log_id      IS '액션 UUID (PK)';
+COMMENT ON COLUMN t_ai_action_log.agent_id    IS '수행 에이전트 ID (식별 안되면 NULL)';
+COMMENT ON COLUMN t_ai_action_log.agent_name  IS '비정규화 이름 (조회 성능)';
+COMMENT ON COLUMN t_ai_action_log.session_id  IS 'Claude 세션 UUID';
+COMMENT ON COLUMN t_ai_action_log.tool        IS 'Write / Edit / Bash / mcp__postgres__query 등';
+COMMENT ON COLUMN t_ai_action_log.category    IS 'code | schema | file | command';
+COMMENT ON COLUMN t_ai_action_log.target      IS '파일 경로 / 테이블 / 명령 요약';
+COMMENT ON COLUMN t_ai_action_log.summary     IS '액션 요약 (사람 가독)';
+
+CREATE INDEX IF NOT EXISTS idx_action_log_created_at
+    ON t_ai_action_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_action_log_category
+    ON t_ai_action_log (category, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_action_log_agent
+    ON t_ai_action_log (agent_id, created_at DESC);
