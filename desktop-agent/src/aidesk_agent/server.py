@@ -13,6 +13,7 @@ import os
 from aiohttp import web
 
 from . import __version__
+from .bootstrap import bootstrap_agent
 from .claude_scanner import scan_workspaces
 from .code_server import DEFAULT_PORT as CODE_SERVER_PORT
 from .code_server import start_code_server, stop_code_server
@@ -126,6 +127,23 @@ async def cleanup_agent_handler(request: web.Request) -> web.Response:
     return web.json_response({"rc": rc, "message": msg})
 
 
+async def agent_bootstrap_handler(request: web.Request) -> web.Response:
+    """신규 AI 생성 직후 프론트가 호출 — .claude/settings.local.json + headless tmux 시작.
+
+    이 둘이 끝나야 사용자가 외부/임베드 터미널을 안 열어도 다른 AI 와 즉시 통신 가능.
+    """
+    body = await request.json()
+    workspace_dir = (body.get("workspaceDir") or "").strip()
+    tmux_session = (body.get("tmuxSession") or "").strip()
+    if not workspace_dir or not tmux_session:
+        return web.json_response(
+            {"rc": 2, "message": "workspaceDir 와 tmuxSession 이 모두 필요합니다."},
+            status=400,
+        )
+    result = bootstrap_agent(workspace_dir, tmux_session)
+    return web.json_response({"rc": 0, "message": "ok", **result})
+
+
 async def usage_local_handler(_: web.Request) -> web.Response:
     """프론트 LocalUsageBar 가 사용 — 호스트의 ~/.claude/aidesk-usage/ 에서 최신 사용량 노출."""
     return web.json_response(get_local_usage())
@@ -196,6 +214,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
+    app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
