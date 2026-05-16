@@ -83,6 +83,15 @@
                 선택한 폴더에서만 kaflix-a2a / kaflix-channel MCP 가 활성화됩니다.
                 변경 후 새로 띄우는 (me) 터미널부터 반영됩니다.
               </p>
+              <label v-if="a2aWorkspace" class="purge-row">
+                <input type="checkbox" v-model="purgePreviousHistory">
+                <span>
+                  변경 시 옛 워크스페이스의 대화 기록(.jsonl) 과 (me) tmux 세션을 함께 정리
+                  <span class="purge-hint">
+                    같은 경로에 새 폴더를 만들었을 때 옛 대화가 자동 복원되는 걸 방지합니다.
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div class="skills-section">
@@ -107,6 +116,7 @@ const list = ref<ExternalAgentItem[]>([]);
 const selected = ref<ExternalAgentItem | null>(null);
 const workspaceBusy = ref(false);
 const a2aWorkspace = ref('');
+const purgePreviousHistory = ref(false);
 
 interface A2aWorkspaceRs { path: string }
 
@@ -142,13 +152,14 @@ async function chooseWorkspace(): Promise<void> {
 
     const putEnv = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace', {
       method: 'PUT',
-      body: { path: chosen },
+      body: { path: chosen, purgePreviousHistory: purgePreviousHistory.value },
     });
     if (putEnv.result !== 0) {
       alert(putEnv.message || '워크스페이스 설정에 실패했습니다.');
       return;
     }
     a2aWorkspace.value = putEnv.data?.path || chosen;
+    purgePreviousHistory.value = false; // 다음번 변경 위해 기본값 복원
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     alert(`워크스페이스 설정 중 오류가 발생했습니다 (헬퍼 가동 확인).\n${msg}`);
@@ -361,6 +372,22 @@ onUnmounted(() => {
 .a2a-pick-btn:disabled { opacity: .55; cursor: progress; }
 .a2a-hint {
   margin: 8px 0 0; font-size: 11px; color: #94A3B8; line-height: 1.5;
+}
+
+.purge-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 10px; padding: 8px 10px;
+  background: #FEF3C7; border-radius: 6px;
+  font-size: 12px; color: #78350F; line-height: 1.4;
+  cursor: pointer;
+}
+.purge-row input[type="checkbox"] {
+  appearance: auto; -webkit-appearance: auto;
+  width: 14px; height: 14px; margin-top: 2px; flex-shrink: 0;
+}
+.purge-hint {
+  display: block; margin-top: 3px;
+  font-size: 11px; color: #92400E; opacity: 0.85;
 }
 
 .skills-section {
