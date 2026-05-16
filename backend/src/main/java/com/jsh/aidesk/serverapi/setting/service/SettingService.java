@@ -4,9 +4,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -15,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
+import com.jsh.aidesk.serverapi.setting.helper.HelperScopeWorkspaceClient;
 import com.jsh.aidesk.serverapi.setting.mapper.SettingMapper;
 import com.jsh.aidesk.serverapi.setting.vo.CodeServerRsVo;
 
@@ -46,7 +44,7 @@ public class SettingService {
 
     private final SettingMapper mapper;
     private final AgentMapper agentMapper;
-    private final ClaudeJsonScopeService claudeJsonScope;
+    private final HelperScopeWorkspaceClient helperScopeClient;
 
     @Value("${kaflix.me-employee-id:}")
     private String meEmployeeId;
@@ -97,27 +95,27 @@ public class SettingService {
     }
 
     /**
-     * A2A 워크스페이스 변경. DB 저장 + `~/.claude.json` 의 kaflix-* MCP 스코프 이동 +
-     * (me) 에이전트의 workspace_dir 동기화. 세 단계 모두 성공해야 정상 종료.
+     * A2A 워크스페이스 변경.
      *
-     * @return rc 0=성공, 1=빈 경로, 2=경로 미존재/파일, 3=claude.json 갱신 실패
+     * 백엔드가 도커 컨테이너 안에서 동작하므로 호스트의 디렉토리 검증 및
+     * `~/.claude.json` 갱신은 호스트에 있는 Helper 에 위임한다. 백엔드는:
+     *   1) Helper 의 /api/scope-workspace 호출 (검증 + claude.json scope 이동)
+     *   2) Helper 가 돌려준 정규화된 absolutePath 를 DB 에 저장
+     *   3) (me) 에이전트 upsert
+     *
+     * @return rc 0=성공, 1=빈 경로, 2=디렉토리 아님, 3=claude.json 갱신 실패,
+     *            9=Helper 통신 실패
      */
     public int setA2aWorkspace(String path) {
         if (path == null || path.isBlank()) return 1;
-        Path p = Paths.get(path);
-        if (!Files.isDirectory(p)) {
-            log.warn("setA2aWorkspace: 디렉토리 아님 path={}", path);
-            return 2;
-        }
-        String absolute = p.toAbsolutePath().normalize().toString();
 
         String old = mapper.selectValue(KEY_A2A_WORKSPACE);
-        try {
-            claudeJsonScope.scopeKaflixToWorkspace(old, absolute);
-        } catch (IOException | RuntimeException e) {
-            log.warn("setA2aWorkspace: claude.json 갱신 실패 {}", e.getMessage());
-            return 3;
+        HelperScopeWorkspaceClient.Result r = helperScopeClient.scope(path, old);
+        if (r.rc() != 0) {
+            log.warn("setA2aWorkspace: helper scope 실패 rc={} message={}", r.rc(), r.message());
+            return r.rc();
         }
+        String absolute = r.absolutePath();
         mapper.upsertValue(KEY_A2A_WORKSPACE, absolute);
         upsertMeAgent(absolute);
         return 0;
