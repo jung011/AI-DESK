@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
+import signal
 
 log = logging.getLogger(__name__)
 
@@ -62,10 +64,68 @@ async def ensure_installed() -> str | None:
     return await _try_brew_install()
 
 
+async def _collect_pids(argv: list[str]) -> set[int]:
+    """argv 명령 stdout 의 정수 토큰을 PID 집합으로 수집."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+    except OSError:
+        return set()
+    pids: set[int] = set()
+    for token in stdout.decode().split():
+        try:
+            pids.add(int(token))
+        except ValueError:
+            continue
+    return pids
+
+
+async def _cleanup_stale_code_server(port: int) -> None:
+    """포트를 점유 중인 stale code-server 프로세스 정리.
+
+    Helper 가 비정상 종료(SIGKILL, launchctl bootout) 시 자식 code-server 는
+    `start_new_session=True` 라 살아남는다. 새 Helper 가 부팅하면서 이 좀비를
+    감지해 정리해야 새 code-server 가 포트 잡을 수 있다.
+
+    탐지 경로 둘:
+      1) lsof 로 포트 LISTEN PID (보통 자식 node)
+      2) pgrep 로 명령라인에 `--bind-addr=127.0.0.1:{port}` 가 있는 PID
+         (LISTEN 안 하는 부모 code-server 까지 잡음)
+    """
+    pids = await _collect_pids(["lsof", "-ti", f":{port}", "-sTCP:LISTEN"])
+    pids |= await _collect_pids(
+        ["pgrep", "-f", f"code-server.*--bind-addr=127\\.0\\.0\\.1:{port}"]
+    )
+    if not pids:
+        return
+    log.info("code-server: cleaning stale pids=%s on port %s", sorted(pids), port)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+    await asyncio.sleep(1.0)
+    for pid in pids:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+            log.warning("code-server: stale pid=%s SIGKILL (SIGTERM 미응답)", pid)
+        except ProcessLookupError:
+            pass
+
+
 async def start_code_server(port: int = DEFAULT_PORT) -> asyncio.subprocess.Process | None:
     bin_path = await ensure_installed()
     if not bin_path:
         return None
+    await _cleanup_stale_code_server(port)
     try:
         proc = await asyncio.create_subprocess_exec(
             bin_path,
