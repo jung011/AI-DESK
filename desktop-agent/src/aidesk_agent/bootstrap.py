@@ -211,6 +211,18 @@ def _fetch_workrole_file() -> str:
     return ""
 
 
+def _build_identity_prompt(agent_name: str) -> str:
+    """에이전트 자기 정체 인지 — claude 가 signed-in user (사용자 본인) 와 자기 인스턴스를
+    혼동하지 않도록 매 부트스트랩 시 명시적으로 이름을 알린다. workrole_file 미설정이어도
+    이건 항상 주입된다.
+    """
+    return (
+        f"당신은 '{agent_name}' 라는 이름의 AI 인스턴스입니다. "
+        f"다른 AI 와의 모든 통신에서 본인을 '{agent_name}' 로 소개하고, "
+        f"메시지에 응답할 때 사용자 (계정 소유자) 의 정체와 혼동하지 마세요."
+    )
+
+
 def _build_workrole_prompt(workrole_file: str) -> str:
     """workrole_file 경로를 받아 claude 에 주입할 프롬프트 문장 생성."""
     return (
@@ -241,21 +253,29 @@ def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
         log.warning("bootstrap: prompt inject failed session=%s err=%s", tmux_session, e)
 
 
-def bootstrap_agent(workspace_dir: str, tmux_session: str) -> dict:
-    """엔드포인트 본체. trust + 권한 + tmux + (선택) 프롬프트 주입 모두 시도하고 결과 dict 반환.
+def bootstrap_agent(workspace_dir: str, tmux_session: str, agent_name: str = "") -> dict:
+    """엔드포인트 본체. trust + 권한 + tmux + 프롬프트 주입 모두 시도하고 결과 dict 반환.
 
     순서가 중요: trust 마커가 tmux 시작 전에 박혀야 claude 첫 부팅 때 프롬프트가 안 뜬다.
     프롬프트 주입은 tmux 가 성공적으로 시작된 경우에만, 백그라운드 스레드에서 비동기로 수행 —
     호출자(HTTP 핸들러) 가 즉시 응답할 수 있게.
+
+    agent_name 이 주어지면 identity prompt (자기 이름 인지) 를 항상 주입하고,
+    workrole_file 이 설정되어 있으면 그 안내문을 뒤에 합쳐서 한 번에 보낸다.
     """
     trust_ok = _mark_folder_trusted(workspace_dir)
     perms_ok, perms_added = _write_default_permissions(workspace_dir)
     tmux_ok = _start_tmux_detached(tmux_session, workspace_dir)
     prompt_scheduled = False
     if tmux_ok:
+        parts: list[str] = []
+        if agent_name and agent_name.strip():
+            parts.append(_build_identity_prompt(agent_name.strip()))
         workrole_file = _fetch_workrole_file().strip()
         if workrole_file:
-            prompt = _build_workrole_prompt(workrole_file)
+            parts.append(_build_workrole_prompt(workrole_file))
+        if parts:
+            prompt = "\n\n".join(parts)
             threading.Thread(
                 target=_send_keys_after_delay,
                 args=(tmux_session, prompt),

@@ -191,12 +191,13 @@ async def agent_bootstrap_handler(request: web.Request) -> web.Response:
     body = await request.json()
     workspace_dir = (body.get("workspaceDir") or "").strip()
     tmux_session = (body.get("tmuxSession") or "").strip()
+    agent_name = (body.get("agentName") or "").strip()
     if not workspace_dir or not tmux_session:
         return web.json_response(
             {"rc": 2, "message": "workspaceDir 와 tmuxSession 이 모두 필요합니다."},
             status=400,
         )
-    result = bootstrap_agent(workspace_dir, tmux_session)
+    result = bootstrap_agent(workspace_dir, tmux_session, agent_name)
     return web.json_response({"rc": 0, "message": "ok", **result})
 
 
