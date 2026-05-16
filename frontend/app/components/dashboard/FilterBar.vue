@@ -39,10 +39,11 @@ const emit = defineEmits<{
 }>();
 
 const tabs = [
-  { label: '전체',     value: 'all' },
-  { label: '작업중',   value: 'active' },
-  { label: '쉬는 중',  value: 'idle' },
-  { label: '완료',     value: 'done' }
+  { label: '전체',      value: 'all' },
+  { label: '작업중',    value: 'active' },
+  { label: '응답 대기', value: 'waiting' },
+  { label: '쉬는 중',   value: 'idle' },
+  { label: '완료',      value: 'done' }
 ] as const;
 </script>
 

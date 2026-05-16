@@ -133,30 +133,35 @@ function onDelete(): void {
 
 const statusClass = computed(() => ({
   active: 'working',
+  waiting: 'waiting',
   idle: 'idle',
   done: 'done'
 }[props.agent.status] ?? 'working'));
 
 const statusLabel = computed(() => ({
   active: '작업중',
+  waiting: '응답 대기',
   idle: '쉬는 중',
   done: '완료'
 }[props.agent.status] ?? '작업중'));
 
 const badgeClass = computed(() => ({
   active: 'type_v5',
+  waiting: 'type_v10',
   idle: 'type_v8',
   done: 'type_v9'
 }[props.agent.status] ?? 'type_v5'));
 
 const avatarEmoji = computed(() => ({
   active: '🤖',
+  waiting: '🙋',
   idle: '📝',
   done: '✅'
 }[props.agent.status] ?? '🤖'));
 
 const metaLabel = computed(() => ({
   active: '시작',
+  waiting: '대기 시작',
   idle: '대기 시간',
   done: '완료'
 }[props.agent.status] ?? '시작'));
@@ -212,6 +217,7 @@ function formatTime(iso: string, status: string): string {
   height: 3px; border-radius: 6px 6px 0 0;
 }
 .ai-card.working::before { background: #00C853; }
+.ai-card.waiting::before { background: #0062FF; }
 .ai-card.idle::before    { background: #FFB300; }
 .ai-card.done::before    { background: #9C27B0; }
 
@@ -223,6 +229,7 @@ function formatTime(iso: string, status: string): string {
   font-size: 18px; flex-shrink: 0;
 }
 .ai-avatar.working { background: #E8F5E9; }
+.ai-avatar.waiting { background: #E3F2FD; }
 .ai-avatar.idle    { background: #FFF8E1; }
 .ai-avatar.done    { background: #F3E8FF; }
 
@@ -275,13 +282,15 @@ function formatTime(iso: string, status: string): string {
   padding: 4px 10px; border-radius: 20px;
   font-size: 11px; font-weight: 600;
 }
-.ico_badge.type_v5 { background: #E8F5E9; color: #2E7D32; }
-.ico_badge.type_v8 { background: #FFF8E1; color: #E65100; }
-.ico_badge.type_v9 { background: #F3E8FF; color: #6A1B9A; }
+.ico_badge.type_v5  { background: #E8F5E9; color: #2E7D32; }
+.ico_badge.type_v8  { background: #FFF8E1; color: #E65100; }
+.ico_badge.type_v9  { background: #F3E8FF; color: #6A1B9A; }
+.ico_badge.type_v10 { background: #E3F2FD; color: #0D47A1; }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.ico_badge.type_v5 .badge-dot { background: #00C853; }
-.ico_badge.type_v8 .badge-dot { background: #FFB300; }
-.ico_badge.type_v9 .badge-dot { background: #9C27B0; }
+.ico_badge.type_v5  .badge-dot { background: #00C853; }
+.ico_badge.type_v8  .badge-dot { background: #FFB300; }
+.ico_badge.type_v9  .badge-dot { background: #9C27B0; }
+.ico_badge.type_v10 .badge-dot { background: #0062FF; }
 
 .ai-model-tag {
   display: inline-block; padding: 2px 8px;

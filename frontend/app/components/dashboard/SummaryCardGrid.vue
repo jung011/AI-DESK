@@ -21,6 +21,16 @@
     </div>
 
     <div class="summary-card">
+      <div class="summary-icon waiting">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#0D47A1"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26A2 2 0 1010 9H8a4 4 0 118 0c0 .88-.36 1.68-.93 2.25z"/></svg>
+      </div>
+      <div class="summary-info">
+        <span class="summary-label">응답 대기</span>
+        <span class="summary-count">{{ summary.waiting ?? 0 }}</span>
+      </div>
+    </div>
+
+    <div class="summary-card">
       <div class="summary-icon idle">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="#E65100"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
       </div>
@@ -62,6 +72,7 @@ defineProps<{ summary: AgentSummary }>();
 }
 .summary-icon.total   { background: #EEF2FF; }
 .summary-icon.working { background: #E8F5E9; }
+.summary-icon.waiting { background: #E3F2FD; }
 .summary-icon.idle    { background: #FFF8E1; }
 .summary-icon.done    { background: #F3E8FF; }
 .summary-info { display: flex; flex-direction: column; gap: 2px; }

@@ -21,6 +21,7 @@ export interface AgentItem {
 export interface AgentSummary {
   total: number;
   active: number;
+  waiting: number;
   idle: number;
   done: number;
 }
