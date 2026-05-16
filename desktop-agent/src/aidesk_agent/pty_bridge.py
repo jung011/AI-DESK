@@ -154,6 +154,16 @@ async def terminal_handler(request: web.Request) -> web.WebSocketResponse:
                     if mtype == "resize":
                         cols = int(obj.get("cols") or _DEFAULT_COLS)
                         rows = int(obj.get("rows") or _DEFAULT_ROWS)
+                        # xterm.js fit-addon 이 DOM layout 전에 호출되면 cols=6~8 같은
+                        # 비정상 값이 도착함. 이대로 PTY 에 적용하면 tmux 가 그 좁은
+                        # cols 로 wrap 한 출력이 scrollback 에 영구 박힌다. 임계값
+                        # 미만이면 무시하고 첫 정상 측정까지 _DEFAULT_COLS 유지.
+                        if cols < 40 or rows < 5:
+                            log.warning(
+                                "pty_bridge: bogus resize ignored cols=%s rows=%s session=%s",
+                                cols, rows, session,
+                            )
+                            continue
                         try:
                             _set_winsize(master_fd, rows, cols)
                         except OSError:
