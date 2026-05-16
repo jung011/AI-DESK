@@ -257,20 +257,58 @@ def _close_terminal_tab_by_tty(tty: str) -> None:
         log.warning("close terminal failed: %s", e)
 
 
-def cleanup_agent(tmux_session: str) -> tuple[int, str]:
+def cleanup_agent(
+    tmux_session: str,
+    workspace_dir: str | None = None,
+    purge_history: bool = False,
+) -> tuple[int, str]:
     """에이전트 삭제 시 호출 — tmux 세션 + 그에 attach 된 Terminal 윈도우 정리.
+
+    purge_history=True + workspace_dir 가 주어지면 `~/.claude/projects/{escaped}/` 의
+    Claude 대화 jsonl 도 함께 삭제. 같은 워크스페이스 경로로 새 에이전트 생성 시 옛 대화가
+    `claude -c` 로 살아오는 걸 막는 용도.
 
     실패해도 백엔드 DB 삭제 자체엔 영향 없도록 비-치명적으로 처리.
     """
     if not tmux_session:
-        # 정리할 게 없을 뿐, 에러는 아님.
+        if workspace_dir and purge_history:
+            _purge_claude_history(workspace_dir)
+            return 0, "no tmux session; history purged"
         return 0, "no-op (empty tmuxSession)"
     tty = _tmux_client_tty(tmux_session)
     _tmux_kill_session(tmux_session)
     if tty:
         _close_terminal_tab_by_tty(tty)
-    log.info("cleanup_agent: session=%s tty=%s", tmux_session, tty or "(none)")
+    purged = False
+    if workspace_dir and purge_history:
+        purged = _purge_claude_history(workspace_dir)
+    log.info(
+        "cleanup_agent: session=%s tty=%s purgeHistory=%s purged=%s",
+        tmux_session, tty or "(none)", purge_history, purged,
+    )
     return 0, "ok"
+
+
+def _purge_claude_history(workspace_dir: str) -> bool:
+    """`~/.claude/projects/{escaped}/` 의 jsonl 대화 기록 전부 제거.
+
+    디렉토리 자체를 삭제하지 않고 jsonl 파일들만 제거 — Claude Code 가 이 폴더를
+    재생성하는 데 의존하므로 폴더 보존이 안전 (사이드카 디렉토리 정리 안 함).
+    """
+    project_dir = _encoded_project_dir(workspace_dir)
+    if not project_dir.is_dir():
+        return False
+    removed = 0
+    for p in project_dir.rglob("*.jsonl"):
+        if not p.is_file():
+            continue
+        try:
+            p.unlink()
+            removed += 1
+        except OSError as e:
+            log.warning("purge_history: failed to remove %s: %s", p, e)
+    log.info("purge_history: removed %d jsonl(s) from %s", removed, project_dir)
+    return removed > 0
 
 
 def browse_workspace() -> tuple[int, str]:

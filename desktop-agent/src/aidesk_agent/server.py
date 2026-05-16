@@ -121,10 +121,16 @@ async def browse_workspace_handler(_: web.Request) -> web.Response:
 
 
 async def cleanup_agent_handler(request: web.Request) -> web.Response:
-    """에이전트 삭제 시 프론트가 호출 — tmux 세션 + Terminal 윈도우 정리."""
+    """에이전트 삭제 시 프론트가 호출 — tmux 세션 + Terminal 윈도우 정리.
+
+    purgeHistory=true 이면 ~/.claude/projects/{escaped-cwd}/ 의 jsonl 대화 기록까지 같이 삭제 —
+    같은 워크스페이스 경로로 새 에이전트 생성했을 때 옛 대화가 살아오는 걸 차단.
+    """
     body = await request.json()
     tmux_session = (body.get("tmuxSession") or "").strip()
-    rc, msg = cleanup_agent(tmux_session)
+    workspace_dir = (body.get("workspaceDir") or "").strip()
+    purge_history = bool(body.get("purgeHistory") or False)
+    rc, msg = cleanup_agent(tmux_session, workspace_dir or None, purge_history)
     return web.json_response({"rc": rc, "message": msg})
 
 
