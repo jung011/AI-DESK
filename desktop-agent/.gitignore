@@ -4,3 +4,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# pkg 빌드 산출물
+build-pkg/build/
+build-pkg/dist/

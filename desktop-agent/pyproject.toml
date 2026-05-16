@@ -12,6 +12,11 @@ dependencies = [
 [project.scripts]
 aidesk-agent = "aidesk_agent.__main__:main"
 
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.10",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

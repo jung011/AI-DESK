@@ -1,0 +1,86 @@
+#!/bin/bash
+# .pkg 설치 직후 — 콘솔 사용자에게 LaunchAgent plist 를 생성하고 부트스트랩한다.
+#
+# 핵심: macOS Installer 는 root 로 postinstall 을 실행하므로
+#       $USER / $HOME 이 root 를 가리킨다. 실제 사용자는 콘솔에서 가져와야 한다.
+
+set -e
+
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" || "$CONSOLE_USER" == "_mbsetupuser" ]]; then
+    echo "⚠ 콘솔 사용자를 식별할 수 없습니다. 설치 후 사용자가 로그인한 상태에서:"
+    echo "    cp /usr/local/share/aidesk/templates/com.aidesk.agent.plist ~/Library/LaunchAgents/"
+    echo "    launchctl load ~/Library/LaunchAgents/com.aidesk.agent.plist"
+    exit 0
+fi
+
+USER_UID=$(id -u "$CONSOLE_USER")
+USER_HOME=$(eval echo "~$CONSOLE_USER")
+LA_DIR="$USER_HOME/Library/LaunchAgents"
+LOG_DIR="$USER_HOME/Library/Logs"
+PLIST="$LA_DIR/com.aidesk.agent.plist"
+
+# LANG 추출 — UTF-8 wide-char 처리에 필수 (한글 등).
+# 우선순위: 1) 사용자 zsh 인터랙티브 (.zshrc 의 export 까지 거침)
+#           2) macOS AppleLocale (UI 언어 설정) + ".UTF-8"
+#           3) en_US.UTF-8 (최종 폴백)
+USER_LANG=$(sudo -u "$CONSOLE_USER" -i zsh -ic 'echo "${LANG}"' 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+
+if [[ -z "$USER_LANG" || "$USER_LANG" == "C" || "$USER_LANG" == "C.UTF-8" || "$USER_LANG" == "POSIX" ]]; then
+    APPLE_LOCALE=$(sudo -u "$CONSOLE_USER" defaults read -g AppleLocale 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -n "$APPLE_LOCALE" ]] && USER_LANG="${APPLE_LOCALE}.UTF-8"
+fi
+
+[[ -z "$USER_LANG" ]] && USER_LANG="en_US.UTF-8"
+
+sudo -u "$CONSOLE_USER" mkdir -p "$LA_DIR" "$LOG_DIR" "$USER_HOME/.aidesk"
+
+# PyInstaller 바이너리를 직접 호출하는 plist 작성.
+# (기존 uv-based plist 는 사용 안 함 — 바이너리 자체가 의존성을 안고 있음)
+cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aidesk.agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/aidesk-helper</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key>
+  <string>$LOG_DIR/aidesk-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>$LOG_DIR/aidesk-agent.err</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$USER_HOME/.local/bin</string>
+    <key>HOME</key>
+    <string>$USER_HOME</string>
+    <key>LANG</key>
+    <string>$USER_LANG</string>
+    <key>LC_CTYPE</key>
+    <string>UTF-8</string>
+  </dict>
+</dict>
+</plist>
+EOF
+
+chown "$CONSOLE_USER" "$PLIST"
+chmod 644 "$PLIST"
+
+# 부트스트랩 (사용자 GUI 도메인). 이미 등록되어 있으면 먼저 bootout.
+launchctl bootout "gui/$USER_UID/com.aidesk.agent" 2>/dev/null || true
+launchctl bootstrap "gui/$USER_UID" "$PLIST"
+
+echo "✓ AI Desk Helper 설치 완료"
+echo "  - 바이너리: /usr/local/bin/aidesk-helper"
+echo "  - LaunchAgent: $PLIST"
+echo "  - 로그: $LOG_DIR/aidesk-agent.err"
+
+exit 0
