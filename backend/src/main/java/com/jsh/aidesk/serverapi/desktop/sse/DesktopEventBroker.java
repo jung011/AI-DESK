@@ -68,8 +68,4 @@ public class DesktopEventBroker {
         }
         return delivered;
     }
-
-    public int subscriberCount() {
-        return emitters.size();
-    }
 }

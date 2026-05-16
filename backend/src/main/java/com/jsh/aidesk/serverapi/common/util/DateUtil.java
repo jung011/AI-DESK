@@ -16,8 +16,4 @@ public final class DateUtil {
     public static String printCurrentTime() {
         return ZonedDateTime.now(KST).format(ISO_OFFSET);
     }
-
-    public static String getCurrentDateTime(String pattern) {
-        return ZonedDateTime.now(KST).format(DateTimeFormatter.ofPattern(pattern));
-    }
 }
