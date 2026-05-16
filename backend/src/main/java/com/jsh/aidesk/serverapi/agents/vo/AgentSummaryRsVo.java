@@ -11,6 +11,7 @@ public class AgentSummaryRsVo {
 
     private int total;
     private int active;
+    private int waiting;
     private int idle;
     private int done;
 }

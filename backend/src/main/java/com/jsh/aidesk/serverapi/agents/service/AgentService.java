@@ -103,9 +103,10 @@ public class AgentService {
         }
         AgentSummaryRsVo s = new AgentSummaryRsVo();
         s.setActive(counts.getOrDefault("active", 0));
+        s.setWaiting(counts.getOrDefault("waiting", 0));
         s.setIdle(counts.getOrDefault("idle", 0));
         s.setDone(counts.getOrDefault("done", 0));
-        s.setTotal(s.getActive() + s.getIdle() + s.getDone());
+        s.setTotal(s.getActive() + s.getWaiting() + s.getIdle() + s.getDone());
         return s;
     }
 
