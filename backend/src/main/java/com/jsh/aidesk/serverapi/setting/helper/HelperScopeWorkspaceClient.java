@@ -42,9 +42,13 @@ public class HelperScopeWorkspaceClient {
     /**
      * @param newWorkspace 새 워크스페이스 경로 (호스트 절대 경로 권장)
      * @param oldWorkspace 직전 워크스페이스 경로 (없으면 null/빈)
+     * @param purgePreviousHistory 옛 + 새 워크스페이스의 jsonl 대화 기록 삭제 + (me) tmux 세션 kill.
+     *                             claude --resume 으로 옛 대화 복원되는 케이스 끊기용.
+     * @param meTmuxSession (me) tmux 세션 이름 (purge 시 kill 대상). 없으면 null/빈.
      * @return rc=0 성공 / 1 빈 경로 / 2 디렉토리 아님 / 3 claude.json 처리 실패 / 9 helper 통신 실패
      */
-    public Result scope(String newWorkspace, String oldWorkspace) {
+    public Result scope(String newWorkspace, String oldWorkspace,
+                        boolean purgePreviousHistory, String meTmuxSession) {
         if (newWorkspace == null || newWorkspace.isBlank()) {
             return new Result(1, "newWorkspace 가 비어 있습니다.", "");
         }
@@ -52,6 +56,8 @@ public class HelperScopeWorkspaceClient {
         ObjectNode body = mapper.createObjectNode();
         body.put("newWorkspace", newWorkspace);
         body.put("oldWorkspace", oldWorkspace == null ? "" : oldWorkspace);
+        body.put("purgePreviousHistory", purgePreviousHistory);
+        body.put("meTmuxSession", meTmuxSession == null ? "" : meTmuxSession);
         try {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(5))

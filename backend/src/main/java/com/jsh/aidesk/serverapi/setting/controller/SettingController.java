@@ -36,12 +36,13 @@ public class SettingController {
 
     @PutMapping("/a2a-workspace")
     public ResponseJson<A2aWorkspaceRsVo> put(@Valid @RequestBody A2aWorkspaceRqVo body) {
-        int rc = settingService.setA2aWorkspace(body.getPath());
+        int rc = settingService.setA2aWorkspace(body.getPath(), body.isPurgePreviousHistory());
         return switch (rc) {
             case 0 -> ResponseJson.ok(new A2aWorkspaceRsVo(settingService.getA2aWorkspace()));
             case 1 -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "경로가 비어 있습니다.");
             case 2 -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "존재하지 않거나 디렉토리가 아닙니다.");
             case 3 -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "~/.claude.json 갱신에 실패했습니다.");
+            case 9 -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "Helper 와 통신할 수 없습니다.");
             default -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "설정 변경에 실패했습니다.");
         };
     }

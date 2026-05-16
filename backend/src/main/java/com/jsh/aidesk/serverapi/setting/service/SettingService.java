@@ -106,11 +106,15 @@ public class SettingService {
      * @return rc 0=성공, 1=빈 경로, 2=디렉토리 아님, 3=claude.json 갱신 실패,
      *            9=Helper 통신 실패
      */
-    public int setA2aWorkspace(String path) {
+    public int setA2aWorkspace(String path, boolean purgePreviousHistory) {
         if (path == null || path.isBlank()) return 1;
 
         String old = mapper.selectValue(KEY_A2A_WORKSPACE);
-        HelperScopeWorkspaceClient.Result r = helperScopeClient.scope(path, old);
+        String meSession = (meEmployeeId == null || meEmployeeId.isBlank())
+                ? ""
+                : ME_TMUX_PREFIX + meEmployeeId.toLowerCase(Locale.ROOT);
+        HelperScopeWorkspaceClient.Result r = helperScopeClient.scope(
+                path, old, purgePreviousHistory, meSession);
         if (r.rc() != 0) {
             log.warn("setA2aWorkspace: helper scope 실패 rc={} message={}", r.rc(), r.message());
             return r.rc();
