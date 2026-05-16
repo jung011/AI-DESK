@@ -34,13 +34,18 @@ class HookState(str, Enum):
 
 
 def _locate_script() -> Path | None:
-    """`adesk-cli/bin/aidesk-statusline.cjs` 의 절대 경로 반환.
+    """`aidesk-statusline.cjs` 의 절대 경로 반환.
 
-    Helper 자체는 `desktop-agent/src/aidesk_agent/usage.py` 에 있으므로 monorepo 루트는 parents[3].
+    우선순위: pkg 설치본 (/usr/local/share/aidesk/hooks/) → 개발 모드 monorepo 경로.
     """
-    repo_root = Path(__file__).resolve().parents[3]
-    candidate = repo_root / "adesk-cli" / "bin" / _SCRIPT_FILENAME
-    return candidate if candidate.is_file() else None
+    candidates = [
+        Path("/usr/local/share/aidesk/hooks") / _SCRIPT_FILENAME,
+        Path(__file__).resolve().parents[3] / "adesk-cli" / "bin" / _SCRIPT_FILENAME,
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
 
 
 def _read_settings() -> dict | None:

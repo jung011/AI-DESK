@@ -38,9 +38,15 @@ _HOOK_SPEC: list[tuple[str, str]] = [
 
 
 def _locate_script() -> Path | None:
-    repo_root = Path(__file__).resolve().parents[3]
-    candidate = repo_root / "desktop-agent" / "scripts" / _SCRIPT_FILENAME
-    return candidate if candidate.is_file() else None
+    # pkg 설치본 우선, 그 다음 git repo 경로 (개발 모드)
+    candidates = [
+        Path("/usr/local/share/aidesk/hooks") / _SCRIPT_FILENAME,
+        Path(__file__).resolve().parents[3] / "desktop-agent" / "scripts" / _SCRIPT_FILENAME,
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
 
 
 def _read_settings() -> dict:
