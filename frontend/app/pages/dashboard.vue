@@ -67,6 +67,8 @@
       confirm-label="삭제"
       :destructive="true"
       :busy="deleting"
+      extra-option-label="이 워크스페이스의 Claude 대화 기록도 함께 삭제"
+      :extra-option-default="true"
       @cancel="closeDeleteDialog"
       @confirm="onDeleteConfirm" />
   </div>
@@ -168,10 +170,10 @@ function closeDeleteDialog(): void {
   confirmDelete.agent = null;
 }
 
-async function onDeleteConfirm(): Promise<void> {
+async function onDeleteConfirm(payload: { extraOption: boolean }): Promise<void> {
   if (!confirmDelete.agent || deleting.value) return;
   deleting.value = true;
-  const ok = await deleteAgent(confirmDelete.agent);
+  const ok = await deleteAgent(confirmDelete.agent, { purgeHistory: payload.extraOption });
   deleting.value = false;
   if (ok) {
     confirmDelete.open = false;

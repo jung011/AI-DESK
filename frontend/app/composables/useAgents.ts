@@ -110,14 +110,23 @@ export function useAgents(initialStatus: string = 'all') {
    * 에이전트의 카드가 안 보이는 게 우선이고, 떠도는 tmux 세션은 추후 청소 가능).
    *
    * @param agent 삭제할 에이전트. 헬퍼에 tmuxSession 을 넘기기 위해 객체 단위로 받는다.
+   * @param opts.purgeHistory true 면 ~/.claude/projects/{escaped-cwd}/ 의 대화 jsonl 도 함께 삭제.
+   *   같은 워크스페이스 경로로 새 에이전트 생성 시 옛 대화가 살아오는 걸 막는 용도.
    */
-  async function deleteAgent(agent: AgentItem): Promise<boolean> {
+  async function deleteAgent(
+    agent: AgentItem,
+    opts: { purgeHistory?: boolean } = {},
+  ): Promise<boolean> {
     // 1) 헬퍼에 OS 정리 위임 — best-effort
     try {
       if (agent.tmuxSession) {
         await $helper<{ rc: number; message?: string }>('/api/cleanup-agent', {
           method: 'POST',
-          body: { tmuxSession: agent.tmuxSession },
+          body: {
+            tmuxSession: agent.tmuxSession,
+            workspaceDir: agent.workspaceDir || '',
+            purgeHistory: !!opts.purgeHistory,
+          },
         });
       }
     } catch (e) {
