@@ -170,7 +170,7 @@ watch(() => props.open, (v) => { if (v) void fetchCodeServer(); }, { immediate: 
 
 .side-panel {
   position: absolute; top: 0; right: 0; bottom: 0;
-  width: 720px; max-width: 90vw;
+  width: 1100px; max-width: 95vw;
   background: #fff;
   box-shadow: -12px 0 30px rgba(15, 23, 42, .18);
   transform: translateX(100%);
