@@ -37,6 +37,9 @@ import lombok.extern.slf4j.Slf4j;
 public class SettingService {
 
     public static final String KEY_A2A_WORKSPACE = "a2a_workspace";
+    /** 신규 AI 부트스트랩 시 읽힐 작업 규칙 문서의 절대 경로. Helper 가 이 경로를 기반으로
+     *  프롬프트 ("먼저 {path} 를 읽고...") 를 만들어 claude 에 자동 주입한다. 미설정이면 주입 생략. */
+    public static final String KEY_WORKROLE_FILE = "workrole_file";
     /** (me) 에이전트는 tmux_session 으로 식별 — 워크스페이스가 바뀌어도 같은 행을 갱신. */
     private static final String ME_TMUX_PREFIX = "aidesk-self-";
     private static final String ME_MODEL = "claude-opus-4-7";
@@ -55,6 +58,17 @@ public class SettingService {
     public String getA2aWorkspace() {
         String v = mapper.selectValue(KEY_A2A_WORKSPACE);
         return v == null ? "" : v;
+    }
+
+    /** 작업 규칙 문서 파일 경로 — 없으면 빈 문자열. Helper 가 빈값이면 주입 생략. */
+    public String getWorkroleFile() {
+        String v = mapper.selectValue(KEY_WORKROLE_FILE);
+        return v == null ? "" : v;
+    }
+
+    /** 작업 규칙 문서 파일 경로 저장. 빈 문자열 허용 ("주입 안 함"). */
+    public void setWorkroleFile(String path) {
+        mapper.upsertValue(KEY_WORKROLE_FILE, path == null ? "" : path);
     }
 
     /**

@@ -11,6 +11,8 @@ import com.jsh.aidesk.serverapi.setting.service.SettingService;
 import com.jsh.aidesk.serverapi.setting.vo.A2aWorkspaceRqVo;
 import com.jsh.aidesk.serverapi.setting.vo.A2aWorkspaceRsVo;
 import com.jsh.aidesk.serverapi.setting.vo.CodeServerRsVo;
+import com.jsh.aidesk.serverapi.setting.vo.WorkroleFileRqVo;
+import com.jsh.aidesk.serverapi.setting.vo.WorkroleFileRsVo;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -42,5 +44,17 @@ public class SettingController {
             case 3 -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "~/.claude.json 갱신에 실패했습니다.");
             default -> ResponseJson.<A2aWorkspaceRsVo>fail(1, "설정 변경에 실패했습니다.");
         };
+    }
+
+    @GetMapping("/workrole-file")
+    public ResponseJson<WorkroleFileRsVo> workroleFile() {
+        return ResponseJson.ok(new WorkroleFileRsVo(settingService.getWorkroleFile()));
+    }
+
+    @PutMapping("/workrole-file")
+    public ResponseJson<WorkroleFileRsVo> putWorkroleFile(
+            @Valid @RequestBody WorkroleFileRqVo body) {
+        settingService.setWorkroleFile(body.getPath());
+        return ResponseJson.ok(new WorkroleFileRsVo(settingService.getWorkroleFile()));
     }
 }
