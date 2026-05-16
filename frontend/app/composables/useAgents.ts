@@ -75,6 +75,23 @@ export function useAgents(initialStatus: string = 'all') {
         body: req
       });
       if (env.result === 0) {
+        // 부트스트랩 — 호스트의 .claude/settings.local.json 권한 주입 + headless tmux 시작.
+        // 이 호출이 끝나야 사용자가 터미널을 안 열어도 신규 AI 가 메시지 수신 가능.
+        // Helper 가 꺼져있어도 본문 작업은 끝났으니 에러는 콘솔 경고만, 사용자에겐 성공으로 표시.
+        if (env.data?.workspaceDir && env.data?.tmuxSession) {
+          try {
+            await $helper<{ rc: number; message?: string }>('/api/agents/bootstrap', {
+              method: 'POST',
+              body: {
+                workspaceDir: env.data.workspaceDir,
+                tmuxSession: env.data.tmuxSession,
+              },
+            });
+          } catch (bootErr) {
+            // eslint-disable-next-line no-console
+            console.warn('[createAgent] helper bootstrap 실패 — 사용자가 외부 터미널을 열어야 통신 가능:', bootErr);
+          }
+        }
         await fetchAgents();
         error.value = null;
         return env.data;
