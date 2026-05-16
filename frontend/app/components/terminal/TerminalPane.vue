@@ -151,6 +151,13 @@ function syncSize(): void {
   if (!term || !fit || !ws || ws.readyState !== WebSocket.OPEN) return;
   fit.fit();
   const { cols, rows } = term;
+  // fit-addon 이 DOM layout 전에 측정되면 cols ~6 같은 비정상 값이 나옴.
+  // 이걸 PTY 에 보내면 tmux 가 그 좁은 cols 로 wrap 해 scrollback 에 영구 박힘.
+  // 임계값 미만이면 다음 frame 에 다시 시도.
+  if (cols < 40 || rows < 5) {
+    requestAnimationFrame(() => syncSize());
+    return;
+  }
   ws.send(JSON.stringify({ type: 'resize', cols, rows }));
 }
 
