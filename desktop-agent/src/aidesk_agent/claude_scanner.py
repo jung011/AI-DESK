@@ -15,8 +15,11 @@ from pathlib import Path
 # 백엔드 AgentStatusWatcher 와 같은 임계값.
 ACTIVE_WINDOW_SEC = 120
 IDLE_WINDOW_SEC = 30 * 60
+# 응답 대기 마커가 이 시간을 넘기면 stale 로 간주 (hook 의 clear 가 실패한 케이스 대비).
+WAITING_MARKER_TTL_SEC = 60 * 60
 
 CLAUDE_PROJECTS_ROOT = Path.home() / ".claude" / "projects"
+PROMPT_MARKER_DIR = Path.home() / ".claude" / "aidesk-prompt"
 
 # 백엔드의 projectDirOf 와 동일한 escape 규칙 — 영숫자/언더스코어 외 모두 '-'.
 _ESCAPE_RE = re.compile(r"[^A-Za-z0-9_]")
@@ -58,6 +61,24 @@ def estimate_status(age_sec: int | None) -> str:
     if age_sec <= IDLE_WINDOW_SEC:
         return "idle"
     return "done"
+
+
+def _has_fresh_prompt_marker(jsonl_path: Path, now_sec: float) -> bool:
+    """jsonl 파일명의 sessionId 로 ~/.claude/aidesk-prompt/{sessionId}.json 존재 + 신선도 확인.
+
+    파일이 있어도 WAITING_MARKER_TTL_SEC 이상 오래됐으면 stale 로 간주 (hook clear 누락 대비).
+    """
+    if not PROMPT_MARKER_DIR.is_dir():
+        return False
+    session_id = jsonl_path.stem  # "{uuid}.jsonl" → "{uuid}"
+    marker = PROMPT_MARKER_DIR / f"{session_id}.json"
+    try:
+        st = marker.stat()
+    except OSError:
+        return False
+    if now_sec - st.st_mtime > WAITING_MARKER_TTL_SEC:
+        return False
+    return True
 
 
 def _find_latest_jsonl(project_dir: Path, max_depth: int = 5) -> Path | None:
@@ -133,6 +154,11 @@ def scan_workspaces() -> list[WorkspaceInfo]:
             datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat() if mtime else None
         )
         cwd = _extract_cwd(latest)
+        # 마커가 있으면 active/idle 보다 우선 — 사용자가 즉시 인지해야 할 상태.
+        # done(30분+ 침묵) 까지 갔으면 사용자가 자리 비운 것이라 굳이 waiting 으로 격상 안 함.
+        base_status = estimate_status(age_sec)
+        if base_status in ("active", "idle") and _has_fresh_prompt_marker(latest, now):
+            base_status = "waiting"
         results.append(
             WorkspaceInfo(
                 encoded_dir=entry.name,
@@ -140,7 +166,7 @@ def scan_workspaces() -> list[WorkspaceInfo]:
                 latest_jsonl=str(latest),
                 latest_mtime_iso=latest_mtime_iso,
                 age_sec=age_sec,
-                status=estimate_status(age_sec),
+                status=base_status,
             )
         )
     return results

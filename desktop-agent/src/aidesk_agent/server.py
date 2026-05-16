@@ -22,6 +22,7 @@ from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
 from .tmux_scanner import scan_sessions
+from .prompt_hook import auto_install_on_startup as prompt_hook_auto_install
 from .usage import (
     auto_install_on_startup as usage_auto_install,
     get_local_usage,
@@ -187,6 +188,8 @@ async def _start_background_tasks(app: web.Application) -> None:
     log.info("background tasks starting: backend=%s interval=%.1fs", backend_url, interval)
     # Claude Code statusLine 후크 — 미설치/옛 경로면 자동 등록. 다른 명령이 점유 중이면 보호.
     usage_auto_install()
+    # Claude Code 응답 대기 감지 훅 (AskUserQuestion / Notification / Stop 등) 자동 등록.
+    prompt_hook_auto_install()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # code-server 도 같이 spawn — 부재 시 brew install 자동 시도. 실패해도 다른 기능엔 영향 없음.
