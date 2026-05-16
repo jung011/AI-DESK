@@ -24,6 +24,7 @@ export interface AgentSummary {
   waiting: number;
   idle: number;
   done: number;
+  error: number;
 }
 
 export interface AgentListResponse {

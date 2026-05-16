@@ -49,6 +49,16 @@
         <span class="summary-count">{{ summary.done }}</span>
       </div>
     </div>
+
+    <div class="summary-card">
+      <div class="summary-icon error">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#B71C1C"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      </div>
+      <div class="summary-info">
+        <span class="summary-label">오류</span>
+        <span class="summary-count">{{ summary.error ?? 0 }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -75,6 +85,7 @@ defineProps<{ summary: AgentSummary }>();
 .summary-icon.waiting { background: #E3F2FD; }
 .summary-icon.idle    { background: #FFF8E1; }
 .summary-icon.done    { background: #F3E8FF; }
+.summary-icon.error   { background: #FFEBEE; }
 .summary-info { display: flex; flex-direction: column; gap: 2px; }
 .summary-label { font-size: 12px; color: #999; font-weight: 500; }
 .summary-count {

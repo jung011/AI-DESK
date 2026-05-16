@@ -135,35 +135,40 @@ const statusClass = computed(() => ({
   active: 'working',
   waiting: 'waiting',
   idle: 'idle',
-  done: 'done'
+  done: 'done',
+  error: 'error'
 }[props.agent.status] ?? 'working'));
 
 const statusLabel = computed(() => ({
   active: '작업중',
   waiting: '응답 대기',
   idle: '쉬는 중',
-  done: '완료'
+  done: '완료',
+  error: '오류'
 }[props.agent.status] ?? '작업중'));
 
 const badgeClass = computed(() => ({
   active: 'type_v5',
   waiting: 'type_v10',
   idle: 'type_v8',
-  done: 'type_v9'
+  done: 'type_v9',
+  error: 'type_v11'
 }[props.agent.status] ?? 'type_v5'));
 
 const avatarEmoji = computed(() => ({
   active: '🤖',
   waiting: '🙋',
   idle: '📝',
-  done: '✅'
+  done: '✅',
+  error: '⚠️'
 }[props.agent.status] ?? '🤖'));
 
 const metaLabel = computed(() => ({
   active: '시작',
   waiting: '대기 시작',
   idle: '대기 시간',
-  done: '완료'
+  done: '완료',
+  error: '오류 발생'
 }[props.agent.status] ?? '시작'));
 
 const metaValue = computed(() => formatTime(props.agent.startedAt, props.agent.status));
@@ -220,6 +225,7 @@ function formatTime(iso: string, status: string): string {
 .ai-card.waiting::before { background: #0062FF; }
 .ai-card.idle::before    { background: #FFB300; }
 .ai-card.done::before    { background: #9C27B0; }
+.ai-card.error::before   { background: #E53935; }
 
 .ai-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .ai-card-name-wrap { display: flex; align-items: center; gap: 10px; }
@@ -232,6 +238,7 @@ function formatTime(iso: string, status: string): string {
 .ai-avatar.waiting { background: #E3F2FD; }
 .ai-avatar.idle    { background: #FFF8E1; }
 .ai-avatar.done    { background: #F3E8FF; }
+.ai-avatar.error   { background: #FFEBEE; }
 
 .ai-name {
   font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
@@ -286,11 +293,13 @@ function formatTime(iso: string, status: string): string {
 .ico_badge.type_v8  { background: #FFF8E1; color: #E65100; }
 .ico_badge.type_v9  { background: #F3E8FF; color: #6A1B9A; }
 .ico_badge.type_v10 { background: #E3F2FD; color: #0D47A1; }
+.ico_badge.type_v11 { background: #FFEBEE; color: #B71C1C; }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .ico_badge.type_v5  .badge-dot { background: #00C853; }
 .ico_badge.type_v8  .badge-dot { background: #FFB300; }
 .ico_badge.type_v9  .badge-dot { background: #9C27B0; }
 .ico_badge.type_v10 .badge-dot { background: #0062FF; }
+.ico_badge.type_v11 .badge-dot { background: #E53935; }
 
 .ai-model-tag {
   display: inline-block; padding: 2px 8px;
