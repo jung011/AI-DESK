@@ -165,6 +165,32 @@ async def agent_bootstrap_handler(request: web.Request) -> web.Response:
     return web.json_response({"rc": 0, "message": "ok", **result})
 
 
+async def check_tmux_handler(request: web.Request) -> web.Response:
+    """백엔드의 메시지 pre-flight 체크용 — 지정 tmux 세션이 실제 호스트에 살아있는지 확인.
+
+    body: {tmuxSession: "aidesk-xxx"}
+    response: {alive: bool, reason: string}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    tmux_session = (body.get("tmuxSession") or "").strip() if isinstance(body, dict) else ""
+    if not tmux_session:
+        return web.json_response({"alive": False, "reason": "tmuxSession empty"})
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["tmux", "has-session", "-t", tmux_session],
+            capture_output=True, timeout=2.0,
+        )
+        if proc.returncode == 0:
+            return web.json_response({"alive": True, "reason": ""})
+        return web.json_response({"alive": False, "reason": "tmux session not found on host"})
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return web.json_response({"alive": False, "reason": f"tmux check error: {e}"})
+
+
 async def usage_local_handler(_: web.Request) -> web.Response:
     """프론트 LocalUsageBar 가 사용 — 호스트의 ~/.claude/aidesk-usage/ 에서 최신 사용량 노출."""
     return web.json_response(get_local_usage())
@@ -241,6 +267,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/browse-file", browse_file_handler)
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
+    app.router.add_post("/api/check-tmux", check_tmux_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
