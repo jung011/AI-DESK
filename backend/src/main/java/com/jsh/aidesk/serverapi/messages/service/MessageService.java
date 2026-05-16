@@ -13,6 +13,9 @@ import com.jsh.aidesk.serverapi.messages.lastmile.LastMileAdapter;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 import com.jsh.aidesk.serverapi.messages.policy.MessagePolicyChecker;
 import com.jsh.aidesk.serverapi.messages.policy.PolicyResult;
+import com.jsh.aidesk.serverapi.messages.preflight.HelperTmuxChecker;
+
+import lombok.extern.slf4j.Slf4j;
 import java.util.List;
 
 import java.util.ArrayList;
@@ -32,6 +35,7 @@ import com.jsh.aidesk.serverapi.messages.vo.UnreadCountRsVo;
 import lombok.RequiredArgsConstructor;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class MessageService {
 
@@ -39,6 +43,7 @@ public class MessageService {
     private final AgentMapper agentMapper;
     private final MessagePolicyChecker policy;
     private final LastMileAdapter lastMile;
+    private final HelperTmuxChecker tmuxChecker;
 
     /**
      * 메시지 발신.
@@ -84,6 +89,26 @@ public class MessageService {
             entity.setHopCount(0);
         }
 
+        // 4-pre) Pre-flight — 수신자 tmux 세션이 실제 호스트에 살아있는지 Helper 에게 확인.
+        //   불가능 상태면: agent.status='error' 마킹 + 메시지는 failed 로 insert + 응답에 status='failed'.
+        //   예외를 던지면 동일 트랜잭션이 rollback 되어 status update 와 audit insert 가 모두 사라짐.
+        //   대신 정책 위반과 동일하게 failed 응답으로 처리해 송신자가 status+errorReason 으로 인지.
+        HelperTmuxChecker.Result preflight = tmuxChecker.check(to.getTmuxSession());
+        if (!preflight.alive()) {
+            String reason = "수신 AI 통신 불가: " + preflight.reason();
+            log.warn("[message-preflight] FAIL from={}({}) to={}({}) tmux={} reason={} content={}",
+                    from.getAgentName(), from.getAgentId(),
+                    to.getAgentName(), to.getAgentId(),
+                    to.getTmuxSession(), preflight.reason(),
+                    truncate(req.getContent(), 200));
+            // 수신자 상태를 error 로 마킹 (contextPct 는 그대로 유지 — null 넘기면 미변경)
+            agentMapper.updateStatusFromWatcher(to.getAgentId(), "error", null);
+            entity.setStatus("failed");
+            entity.setErrorReason(reason);
+            messageMapper.insert(entity);
+            return messageMapper.selectItemById(entity.getMessageId());
+        }
+
         // 4. 정책 검사
         PolicyResult result = policy.check(from, to, parent);
         if (!result.accepted()) {
@@ -94,6 +119,12 @@ public class MessageService {
         }
 
         // 5. INSERT + last mile (virtual thread 로 비동기)
+        // pre-flight 통과 → 이전에 'error' 로 박혀있던 수신자라면 'active' 로 자동 복귀.
+        if ("error".equals(to.getStatus())) {
+            agentMapper.updateStatusFromWatcher(to.getAgentId(), "active", null);
+            log.info("[message-preflight] cleared 'error' status for to={}({}) — send unblocked",
+                    to.getAgentName(), to.getAgentId());
+        }
         entity.setStatus("sent");
         messageMapper.insert(entity);
 
@@ -233,6 +264,11 @@ public class MessageService {
         rs.setFailed(fail);
         rs.setNotFound(notFound);
         return rs;
+    }
+
+    private static String truncate(String s, int n) {
+        if (s == null) return "";
+        return s.length() > n ? s.substring(0, n) + "…" : s;
     }
 
     /**

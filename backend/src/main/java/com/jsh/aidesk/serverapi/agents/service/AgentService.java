@@ -106,7 +106,8 @@ public class AgentService {
         s.setWaiting(counts.getOrDefault("waiting", 0));
         s.setIdle(counts.getOrDefault("idle", 0));
         s.setDone(counts.getOrDefault("done", 0));
-        s.setTotal(s.getActive() + s.getWaiting() + s.getIdle() + s.getDone());
+        s.setError(counts.getOrDefault("error", 0));
+        s.setTotal(s.getActive() + s.getWaiting() + s.getIdle() + s.getDone() + s.getError());
         return s;
     }
 

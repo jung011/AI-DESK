@@ -14,4 +14,5 @@ public class AgentSummaryRsVo {
     private int waiting;
     private int idle;
     private int done;
+    private int error;
 }
