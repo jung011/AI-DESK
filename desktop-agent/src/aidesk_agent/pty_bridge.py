@@ -106,7 +106,15 @@ async def terminal_handler(request: web.Request) -> web.WebSocketResponse:
     # LaunchAgent 로 실행될 땐 부모 env 에 TERM 이 없거나 `dumb` 이라 claude 가
     # "terminal does not support clear" 무한 출력. xterm.js 가 실제로 지원하는
     # capability 로 명시 — 외부 Terminal.app 동작과 동일하게 맞춤.
-    pty_env = {**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"}
+    # LANG 누락 시 한글 wide-char 처리 실패 → 임베디드 터미널이 깨짐. plist 가
+    # LANG 박지 못한 환경(예: 옛 .pkg) 에서도 폴백으로 ko_KR.UTF-8 또는 en_US.UTF-8 보장.
+    pty_env = {
+        **os.environ,
+        "TERM": "xterm-256color",
+        "COLORTERM": "truecolor",
+        "LANG": os.environ.get("LANG") or "en_US.UTF-8",
+        "LC_CTYPE": os.environ.get("LC_CTYPE") or "UTF-8",
+    }
     try:
         proc = subprocess.Popen(
             cmd,
