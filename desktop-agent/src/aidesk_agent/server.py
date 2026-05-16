@@ -142,7 +142,14 @@ async def scope_workspace_handler(request: web.Request) -> web.Response:
         body = {}
     new_workspace = (body.get("newWorkspace") or "").strip()
     old_workspace = (body.get("oldWorkspace") or "").strip()
-    rc, msg, abs_path = scope_workspace(new_workspace, old_workspace or None)
+    purge_previous_history = bool(body.get("purgePreviousHistory", False))
+    me_tmux_session = (body.get("meTmuxSession") or "").strip() or None
+    rc, msg, abs_path = scope_workspace(
+        new_workspace,
+        old_workspace or None,
+        purge_previous_history,
+        me_tmux_session,
+    )
     status = 200 if rc == 0 else (400 if rc in (1, 2) else 500)
     return web.json_response(
         {"rc": rc, "message": msg, "absolutePath": abs_path}, status=status

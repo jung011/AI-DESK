@@ -360,10 +360,20 @@ def browse_file(prompt: str = "파일을 선택하세요") -> tuple[int, str]:
 _SCOPED_MCP_SERVERS = ("kaflix-a2a", "kaflix-channel")
 
 
-def scope_workspace(new_workspace: str, old_workspace: str | None = None) -> tuple[int, str, str]:
+def scope_workspace(
+    new_workspace: str,
+    old_workspace: str | None = None,
+    purge_previous_history: bool = False,
+    me_tmux_session: str | None = None,
+) -> tuple[int, str, str]:
     """A2A 워크스페이스 검증 + `~/.claude.json` 의 kaflix-* MCP scope 이동.
 
     백엔드가 도커 컨테이너에서 동작하므로 호스트 파일시스템에 접근 가능한 Helper 가 담당한다.
+
+    purge_previous_history=True 면 추가로 옛 + 새 워크스페이스의 escape 디렉토리에 있는
+    .jsonl 대화 기록을 모두 삭제하고, me_tmux_session 이 주어지면 그 tmux 세션도 kill.
+    옛 워크스페이스를 같은 경로로 재생성한 뒤 claude --resume 으로 옛 대화가 살아오는
+    케이스를 끊기 위해 사용.
 
     @return (rc, message, absolutePath)
         rc=0  : 성공. absolutePath 는 normalize 된 새 경로
@@ -450,4 +460,17 @@ def scope_workspace(new_workspace: str, old_workspace: str | None = None) -> tup
         new_abs,
         len(harvested),
     )
+
+    if purge_previous_history:
+        targets = {new_abs}
+        if old_workspace and old_workspace.strip():
+            targets.add(old_workspace)
+        for t in targets:
+            try:
+                _purge_claude_history(t)
+            except OSError as e:
+                log.warning("scope_workspace: purge failed for %s: %s", t, e)
+        if me_tmux_session and me_tmux_session.strip():
+            _tmux_kill_session(me_tmux_session.strip())
+
     return 0, "", new_abs
