@@ -17,7 +17,7 @@ from .bootstrap import bootstrap_agent
 from .claude_scanner import scan_workspaces
 from .code_server import DEFAULT_PORT as CODE_SERVER_PORT
 from .code_server import start_code_server, stop_code_server
-from .os_bridge import browse_workspace, cleanup_agent, open_terminal, open_vscode
+from .os_bridge import browse_file, browse_workspace, cleanup_agent, open_terminal, open_vscode
 from .pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
@@ -117,6 +117,19 @@ async def browse_workspace_handler(_: web.Request) -> web.Response:
     if rc != 0:
         return web.json_response({"rc": rc, "message": path_or_msg}, status=500)
     # 빈 문자열 = 사용자 취소 (정상 응답)
+    return web.json_response({"rc": 0, "path": path_or_msg})
+
+
+async def browse_file_handler(request: web.Request) -> web.Response:
+    """파일 선택 다이얼로그 — body.prompt 로 프롬프트 텍스트 커스터마이즈 가능."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    prompt = (body.get("prompt") if isinstance(body, dict) else None) or "파일을 선택하세요"
+    rc, path_or_msg = browse_file(prompt)
+    if rc != 0:
+        return web.json_response({"rc": rc, "message": path_or_msg}, status=500)
     return web.json_response({"rc": 0, "path": path_or_msg})
 
 
@@ -222,6 +235,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/open-terminal", open_terminal_handler)
     app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
+    app.router.add_post("/api/browse-file", browse_file_handler)
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)

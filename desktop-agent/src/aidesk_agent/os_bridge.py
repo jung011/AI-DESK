@@ -331,3 +331,22 @@ def browse_workspace() -> tuple[int, str]:
     if path.endswith("/") and len(path) > 1:
         path = path.rstrip("/")
     return 0, path
+
+
+def browse_file(prompt: str = "파일을 선택하세요") -> tuple[int, str]:
+    """macOS 파일 선택 다이얼로그. 사용자 취소시 빈 문자열 반환."""
+    # `choose file` 은 폴더가 아닌 파일을 고름. type filter 없이 모든 파일 허용.
+    prompt_escaped = prompt.replace('"', '\\"')
+    script = f'POSIX path of (choose file with prompt "{prompt_escaped}")'
+    try:
+        proc = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return 4, f"파일 다이얼로그 실행 실패: {e}"
+    if proc.returncode != 0:
+        return 0, ""  # 사용자 취소
+    return 0, proc.stdout.strip()

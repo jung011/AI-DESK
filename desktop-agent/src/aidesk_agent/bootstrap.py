@@ -1,10 +1,12 @@
 """신규 에이전트 부트스트랩 — 사용자가 터미널을 안 열어도 즉시 통신 가능하게.
 
-두 가지를 처리:
+세 가지를 처리:
   1) {workspaceDir}/.claude/settings.local.json 에 aidesk-channel MCP 권한 미리 부여
      → claude 시작 시 "Always allow" 프롬프트 자체가 안 뜸.
   2) `tmux new-session -d` 로 백그라운드 세션 시작 + claude 띄움
      → TmuxLastMileAdapter 의 last-mile delivery 가 바로 도달 가능.
+  3) 백엔드 설정의 `bootstrap_prompt` 텍스트를 claude 가 입력 준비된 시점에 send-keys 로 주입
+     → 모든 신규 AI 가 공통 작업 규칙 문서 등을 자동 학습.
 
 Helper 가 호스트 사용자 권한으로 도니까 ~/.claude/* 및 사용자 워크스페이스에 자유롭게 쓸 수 있다.
 """
@@ -15,11 +17,20 @@ import logging
 import os
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
+
+import httpx
 
 from .os_bridge import _has_past_session
 
 log = logging.getLogger(__name__)
+
+# Helper → 백엔드 호출 시 사용. reporter 와 같은 기본값.
+_DEFAULT_BACKEND_URL = "http://localhost:30081"
+# claude 가 첫 프롬프트를 그릴 때까지의 대기 — 너무 짧으면 send-keys 가 이전 출력에 묻힘.
+_BOOTSTRAP_PROMPT_DELAY_SEC = 2.5
 
 # Claude Code 가 워크스페이스 단위 trust 결정을 저장하는 글로벌 파일.
 # projects[workspace_path] 객체에 hasTrustDialogAccepted=true 를 박아두면
@@ -183,17 +194,78 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str) -> bool:
         return False
 
 
+def _fetch_workrole_file() -> str:
+    """백엔드 설정의 workrole_file 경로 조회. 실패/미설정이면 빈 문자열."""
+    backend_url = os.environ.get("AIDESK_BACKEND_URL", _DEFAULT_BACKEND_URL).rstrip("/")
+    try:
+        resp = httpx.get(f"{backend_url}/api/settings/workrole-file", timeout=3.0)
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("result") == 0:
+            data = body.get("data") or {}
+            path = data.get("path")
+            if isinstance(path, str):
+                return path
+    except (httpx.HTTPError, ValueError) as e:
+        log.warning("workrole_file fetch failed: %s", e)
+    return ""
+
+
+def _build_workrole_prompt(workrole_file: str) -> str:
+    """workrole_file 경로를 받아 claude 에 주입할 프롬프트 문장 생성."""
+    return (
+        f"먼저 {workrole_file} 를 읽고 거기 안내된 모든 작업 규칙 문서들을 순서대로 숙지하세요. "
+        "숙지가 끝나면 그 규칙을 따라 이후 들어오는 작업을 처리해 주세요."
+    )
+
+
+def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
+    """claude 가 입력 받을 준비될 때까지 잠시 기다린 뒤 send-keys 로 텍스트 + Enter 주입.
+
+    `-l` literal 모드 + 별도 Enter 분리는 paste-detect 가 Enter 를 흡수하지 않게 하기 위함
+    (옛 AgentService.sendBootstrapPrompt 와 같은 패턴).
+    """
+    try:
+        time.sleep(_BOOTSTRAP_PROMPT_DELAY_SEC)
+        subprocess.run(
+            ["tmux", "send-keys", "-l", "-t", tmux_session, prompt],
+            check=True, capture_output=True,
+        )
+        time.sleep(0.2)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+            check=True, capture_output=True,
+        )
+        log.info("bootstrap: prompt injected session=%s chars=%d", tmux_session, len(prompt))
+    except (subprocess.CalledProcessError, OSError) as e:
+        log.warning("bootstrap: prompt inject failed session=%s err=%s", tmux_session, e)
+
+
 def bootstrap_agent(workspace_dir: str, tmux_session: str) -> dict:
-    """엔드포인트 본체. trust + 권한 + tmux 세 가지 모두 시도하고 결과 dict 반환.
+    """엔드포인트 본체. trust + 권한 + tmux + (선택) 프롬프트 주입 모두 시도하고 결과 dict 반환.
 
     순서가 중요: trust 마커가 tmux 시작 전에 박혀야 claude 첫 부팅 때 프롬프트가 안 뜬다.
+    프롬프트 주입은 tmux 가 성공적으로 시작된 경우에만, 백그라운드 스레드에서 비동기로 수행 —
+    호출자(HTTP 핸들러) 가 즉시 응답할 수 있게.
     """
     trust_ok = _mark_folder_trusted(workspace_dir)
     perms_ok, perms_added = _write_default_permissions(workspace_dir)
     tmux_ok = _start_tmux_detached(tmux_session, workspace_dir)
+    prompt_scheduled = False
+    if tmux_ok:
+        workrole_file = _fetch_workrole_file().strip()
+        if workrole_file:
+            prompt = _build_workrole_prompt(workrole_file)
+            threading.Thread(
+                target=_send_keys_after_delay,
+                args=(tmux_session, prompt),
+                daemon=True,
+            ).start()
+            prompt_scheduled = True
     return {
         "trustMarked": trust_ok,
         "permissionsWritten": perms_ok,
         "permissionsAdded": perms_added,
         "tmuxStarted": tmux_ok,
+        "promptScheduled": prompt_scheduled,
     }
