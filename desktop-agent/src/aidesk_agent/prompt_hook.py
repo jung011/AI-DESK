@@ -28,7 +28,7 @@ _HOOK_SPEC: list[tuple[str, str | None, str]] = [
     # AI 가 응답을 기다리기 시작 → mark
     ("PreToolUse", _MARK_TOOL_MATCHER, "mark"),
     ("Notification", None, "mark"),
-    # 답변 받음 / 턴 종료 → clear
+    # 답변 받음 / 턴 종료 → clear (Stop 은 안전망 — 누락된 clear 흡수)
     ("PostToolUse", _MARK_TOOL_MATCHER, "clear"),
     ("UserPromptSubmit", None, "clear"),
     ("Stop", None, "clear"),
@@ -138,7 +138,7 @@ def _current_hooks_match_script() -> bool:
     if not isinstance(hooks_root, dict):
         return False
     expected = str(target.resolve())
-    counts = {"mark": 0, "clear": 0}
+    counts = {"mark": 0, "clear": 0, "stop": 0}
     for blocks in hooks_root.values():
         if not isinstance(blocks, list):
             continue
@@ -155,8 +155,11 @@ def _current_hooks_match_script() -> bool:
                     counts["mark"] += 1
                 elif cmd.endswith(" clear"):
                     counts["clear"] += 1
-    # spec: mark 2개 (PreToolUse + Notification) + clear 3개 (PostToolUse + UserPromptSubmit + Stop)
-    return counts["mark"] >= 2 and counts["clear"] >= 3
+                elif cmd.endswith(" stop"):
+                    counts["stop"] += 1
+    # 현재 spec: mark 2개 (PreToolUse + Notification) + clear 3개 (PostToolUse + UserPromptSubmit + Stop)
+    # stop 모드는 더 이상 사용 안 함 — 발견되면 마이그레이션 (re-install) 필요.
+    return counts["mark"] >= 2 and counts["clear"] >= 3 and counts["stop"] == 0
 
 
 def auto_install_on_startup() -> None:
