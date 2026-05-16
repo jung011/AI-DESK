@@ -85,6 +85,7 @@ export function useAgents(initialStatus: string = 'all') {
               body: {
                 workspaceDir: env.data.workspaceDir,
                 tmuxSession: env.data.tmuxSession,
+                agentName: env.data.agentName,
               },
             });
           } catch (bootErr) {
