@@ -1,5 +1,5 @@
 <template>
-  <div class="ai-card" :class="statusClass" role="button" tabindex="0" @click="onSelect" @keydown.enter="onSelect" @keydown.space.prevent="onSelect">
+  <div class="ai-card" :class="[statusClass, { 'menu-open': menuOpen }]" role="button" tabindex="0" @click="onSelect" @keydown.enter="onSelect" @keydown.space.prevent="onSelect">
     <div class="ai-card-header">
       <div class="ai-card-name-wrap">
         <div class="ai-avatar" :class="statusClass">{{ avatarEmoji }}</div>
@@ -204,6 +204,9 @@ function formatTime(iso: string, status: string): string {
 .ai-card:hover { border-color: #0062ff; box-shadow: 0 6px 18px rgba(0, 98, 255, .15); }
 .ai-card:active { transform: scale(.995); }
 .ai-card:focus-visible { outline: 2px solid #0062ff; outline-offset: 2px; }
+/* 메뉴 열렸을 때 — 드롭다운이 다음 행 카드 뒤에 깔리지 않도록 카드 자체를 위로 끌어올림.
+ * (.ai-card 가 position:relative + z-index:auto 라 형제 카드와 DOM 순서로 쌓이는 문제 보정) */
+.ai-card.menu-open { z-index: 100; }
 .ai-card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0;
   height: 3px; border-radius: 6px 6px 0 0;
