@@ -16,6 +16,15 @@
         </NuxtLink>
       </li>
 
+      <li class="side-menu-item" :class="{ active: route.path.startsWith('/logs') }">
+        <NuxtLink class="side-menu-link" to="/logs">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.89 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+          </svg>
+          로그
+        </NuxtLink>
+      </li>
+
       <li class="side-menu-divider" />
 
       <li class="side-menu-section-label">관리</li>
