@@ -16,6 +16,15 @@
         </NuxtLink>
       </li>
 
+      <li class="side-menu-item" :class="{ active: route.path.startsWith('/chat') }">
+        <NuxtLink class="side-menu-link" to="/chat">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-3 11H7v-2h10v2zm0-3H7V8h10v2zm0-3H7V5h10v2z" />
+          </svg>
+          채팅
+        </NuxtLink>
+      </li>
+
       <li class="side-menu-item" :class="{ active: route.path.startsWith('/logs') }">
         <NuxtLink class="side-menu-link" to="/logs">
           <svg class="menu-icon" viewBox="0 0 24 24" fill="currentColor">
