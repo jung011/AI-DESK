@@ -127,19 +127,23 @@ public class MessageService {
         }
         entity.setStatus("sent");
         messageMapper.insert(entity);
+        log.info("[message-insert] msg={} from={}({}) to={}({}) tmux={}",
+                entity.getMessageId(), from.getAgentName(), from.getAgentId(),
+                to.getAgentName(), to.getAgentId(), to.getTmuxSession());
+        // 부모 'replied' 마킹은 publish 결과와 무관 — INSERT 가 곧 "부모에 답이 옴" 의 확정.
+        if (parent != null) {
+            messageMapper.updateParentReplied(parent.getMessageId());
+        }
 
         final String messageId = entity.getMessageId();
-        final String parentId = parent != null ? parent.getMessageId() : null;
         final AgentVo fromAgent = from;
         final AgentVo toAgent = to;
         Thread.startVirtualThread(() -> {
             lastMile.deliver(entity, fromAgent, toAgent, new LastMileAdapter.DeliveryCallback() {
                 @Override
                 public void onDelivered() {
-                    messageMapper.updateStatus(messageId, "delivered", null);
-                    if (parentId != null) {
-                        messageMapper.updateParentReplied(parentId);
-                    }
+                    // SseLastMileAdapter 는 publish 성공만으로 onDelivered 호출 안 함.
+                    // 실제 'delivered' 마킹은 Helper 의 ACK 가 도착해서 markDelivered() 가 불릴 때.
                 }
                 @Override
                 public void onFailed(String reason) {
@@ -157,6 +161,20 @@ public class MessageService {
     @Transactional
     public boolean markRead(String messageId, String agentId) {
         return messageMapper.updateRead(messageId, agentId) > 0;
+    }
+
+    /**
+     * Helper 의 ACK 처리 — send-keys 가 실제 tmux 에 도달했음을 의미.
+     * status='sent' 인 경우만 'delivered' + delivered_at = NOW() 로 마킹.
+     * 이미 'delivered'/'replied'/'failed' 면 idempotent.
+     */
+    @Transactional
+    public boolean ackDelivered(String messageId) {
+        int n = messageMapper.markDelivered(messageId);
+        if (n > 0) {
+            log.info("[message-ack] delivered msg={}", messageId);
+        }
+        return n > 0;
     }
 
     /**

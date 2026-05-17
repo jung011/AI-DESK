@@ -32,15 +32,16 @@ public class DesktopEventBroker {
         emitters.add(emitter);
         emitter.onCompletion(() -> {
             emitters.remove(emitter);
-            log.debug("SSE emitter completed (subscribers={})", emitters.size());
+            log.info("[sse-emitter] completed — helper SSE 정상 종료 (subscribers={})", emitters.size());
         });
         emitter.onTimeout(() -> {
             emitters.remove(emitter);
-            log.debug("SSE emitter timeout (subscribers={})", emitters.size());
+            log.warn("[sse-emitter] TIMEOUT — helper 미응답 / half-open 가능성 (subscribers={})", emitters.size());
         });
         emitter.onError(t -> {
             emitters.remove(emitter);
-            log.debug("SSE emitter error: {} (subscribers={})", t.getMessage(), emitters.size());
+            log.warn("[sse-emitter] ERROR — helper 연결 끊김: {} (subscribers={})",
+                    t.getMessage(), emitters.size());
         });
         // 응답 헤더를 즉시 flush 하기 위한 초기 이벤트.
         // 없으면 첫 진짜 이벤트가 발행될 때까지 클라이언트가 connecting 상태에 갇힘.
@@ -63,7 +64,8 @@ public class DesktopEventBroker {
                 delivered++;
             } catch (IOException ex) {
                 emitters.remove(emitter);
-                log.debug("SSE publish drop (subscribers={}): {}", emitters.size(), ex.getMessage());
+                log.warn("[sse-publish] DROP — emitter 끊김, subscriber 제거 (남은={}): {}",
+                        emitters.size(), ex.getMessage());
             }
         }
         return delivered;

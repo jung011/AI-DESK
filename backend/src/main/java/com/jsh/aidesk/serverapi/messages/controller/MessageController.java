@@ -88,4 +88,14 @@ public class MessageController {
         boolean ok = messageService.markRead(messageId, agentId);
         return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
     }
+
+    /**
+     * Helper 의 last-mile ACK. tmux send-keys 가 실제 도달했음을 알려 'delivered' 마킹.
+     * 멱등 — 이미 다른 status 면 200 + 변화 없음.
+     */
+    @PostMapping("/{messageId}/ack")
+    public ResponseJson<Void> ack(@PathVariable("messageId") String messageId) {
+        messageService.ackDelivered(messageId);
+        return ResponseJson.ok((Void) null);
+    }
 }

@@ -22,25 +22,20 @@ import lombok.extern.slf4j.Slf4j;
  * 페이로드:
  *   { "messageId", "fromAgentName", "toTmuxSession", "content" }
  *
- * Helper 가 한 명이라도 구독 중이면 onDelivered, 아니면 onFailed.
- * 실제 tmux 도달 여부는 별도 ACK(Phase 6 이후) 로 받기로 하고 PoC 단계에선 낙관 처리.
+ * 동작 정책:
+ *   - publish 성공 (subscriber >= 1)  → 콜백 호출 없음. status='sent' 유지하고 Helper 의 ACK 를 기다린다.
+ *                                       ACK 가 일정 시간 안에 안 오면 RetryScheduler 가 재발행.
+ *   - publish 실패 (subscriber = 0)  → onFailed("Helper 미연결").
+ *
+ * 이전엔 publish 성공 = onDelivered() 호출이었는데, SSE 의 emitter.send() 성공은
+ * 단지 TCP buffer 까지 전달된 것이라 helper 가 실제 받았다는 보장이 아님 (half-open 등).
+ * 그래서 false-positive delivered 마킹이 발생 → 메시지 손실. End-to-end ACK 로 전환.
  */
 @Component
 @Primary
 @Slf4j
 @RequiredArgsConstructor
 public class SseLastMileAdapter implements LastMileAdapter {
-
-    /**
-     * 발신 트랜잭션(INSERT) 이 commit 되기 전에 onDelivered 의 UPDATE 가 먼저 돌면
-     * 0 rows update 가 되어 status 가 sent 에 그대로 머문다. SSE 발행은 in-memory 라
-     * 즉시 끝나므로 commit race 가 쉽게 노출된다.
-     *
-     * 짧은 가드 슬립으로 회피. 100~150ms 면 일반 INSERT 트랜잭션 commit 시간을 충분히 덮음.
-     * 더 견고한 해결은 MessageService 단에서 TransactionSynchronization.afterCommit 으로
-     * 디스패치를 옮기는 것 (Phase 6 이후 정리 후보).
-     */
-    private static final long COMMIT_RACE_GUARD_MS = 150L;
 
     private final DesktopEventBroker broker;
 
@@ -64,13 +59,8 @@ public class SseLastMileAdapter implements LastMileAdapter {
             callback.onFailed("Helper 미연결 (SSE 구독자 없음)");
             return;
         }
-        log.debug("message.deliver published → {} subscribers (msg={} to={})",
-                n, message.getMessageId(), to.getAgentName());
-        try {
-            Thread.sleep(COMMIT_RACE_GUARD_MS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        callback.onDelivered();
+        log.info("[message-publish] msg={} to={}({}) subscribers={} — awaiting helper ACK",
+                message.getMessageId(), to.getAgentName(), to.getTmuxSession(), n);
+        // 의도적으로 onDelivered() 호출 안 함. Helper 의 ACK 가 도착해야 status='delivered'.
     }
 }
