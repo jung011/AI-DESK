@@ -64,10 +64,20 @@
          WHERE m.message_id = #{messageId}
     </select>
 
+    <!--
+      contact-centric view: withId 가 지정되면 *withId 가 관여한 모든 메시지* 를 반환.
+      즉 (me)↔withId 페어뿐 아니라 다른AI↔withId 메시지도 모두 포함.
+      → 사용자가 partner=test1 채팅창에서 test4 가 test1 한테 한 메시지도 볼 수 있게.
+      withId 가 없으면 agentId 발신/수신 메시지 — 감사/inbox/outbox 용.
+    -->
     <select id="selectByAgent" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
         <include refid="itemSelectClause"/>
          WHERE 1 = 1
         <choose>
+            <when test="withId != null and withId != ''">
+                <!-- withId 시점: 그 agent 가 관여한 모든 메시지 -->
+                AND (m.from_agent_id = #{withId} OR m.to_agent_id = #{withId})
+            </when>
             <when test="direction == 'inbox'">
                AND m.to_agent_id = #{agentId}
             </when>
@@ -78,10 +88,6 @@
                AND (m.from_agent_id = #{agentId} OR m.to_agent_id = #{agentId})
             </otherwise>
         </choose>
-        <if test="withId != null and withId != ''">
-           AND ((m.from_agent_id = #{agentId} AND m.to_agent_id = #{withId})
-             OR (m.from_agent_id = #{withId}  AND m.to_agent_id = #{agentId}))
-        </if>
         <if test="status != null and status != ''">
            AND m.status = #{status}
         </if>

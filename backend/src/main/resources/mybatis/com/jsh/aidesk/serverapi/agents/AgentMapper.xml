@@ -19,10 +19,12 @@
          ORDER BY started_at DESC
     </select>
 
+    <!-- 대시보드 통계용. model='human' 인 휴먼 entity 는 AI 가 아니므로 통계에서 제외. -->
     <select id="selectStatusCounts" resultType="java.util.Map">
         SELECT status, COUNT(*) AS cnt
           FROM t_ai_agent
          WHERE deleted_at IS NULL
+           AND model &lt;&gt; 'human'
          GROUP BY status
     </select>
 

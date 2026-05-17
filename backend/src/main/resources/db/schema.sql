@@ -38,6 +38,13 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_deleted
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_agent_tmux_session
     ON t_ai_agent (tmux_session) WHERE deleted_at IS NULL;
 
+-- 사용자(인간) entity — 채팅에서 AI 들과 별개 발신자/수신자로 동작.
+-- tmux_session = '__human__' sentinel: backend/helper 가 이걸 만나면 send-keys skip + 즉시 delivered.
+-- model = 'human' 으로 일반 AI agent 와 구분.
+INSERT INTO t_ai_agent (agent_id, agent_name, workspace_dir, tmux_session, status, model, bootstrap_applied)
+VALUES ('00000000-0000-0000-0000-000000000001', '휴먼', '', '__human__', 'active', 'human', TRUE)
+ON CONFLICT (agent_id) DO NOTHING;
+
 -- =====================================================================
 -- t_ai_message — AI 협업 메시지
 -- =====================================================================

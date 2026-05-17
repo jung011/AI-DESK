@@ -89,11 +89,17 @@ public class MessageService {
             entity.setHopCount(0);
         }
 
+        // 휴먼(인간 사용자) entity 는 tmux 가 없음 — preflight/last-mile 우회.
+        // 채팅 UI 가 폴링으로 가져가서 사용자에게 표시하면 됨. 즉시 status='delivered' 마킹.
+        boolean toIsHuman = "human".equalsIgnoreCase(to.getModel());
+
         // 4-pre) Pre-flight — 수신자 tmux 세션이 실제 호스트에 살아있는지 Helper 에게 확인.
         //   불가능 상태면: agent.status='error' 마킹 + 메시지는 failed 로 insert + 응답에 status='failed'.
         //   예외를 던지면 동일 트랜잭션이 rollback 되어 status update 와 audit insert 가 모두 사라짐.
         //   대신 정책 위반과 동일하게 failed 응답으로 처리해 송신자가 status+errorReason 으로 인지.
-        HelperTmuxChecker.Result preflight = tmuxChecker.check(to.getTmuxSession());
+        HelperTmuxChecker.Result preflight = toIsHuman
+                ? new HelperTmuxChecker.Result(true, "human entity — skip")
+                : tmuxChecker.check(to.getTmuxSession());
         if (!preflight.alive()) {
             String reason = "수신 AI 통신 불가: " + preflight.reason();
             log.warn("[message-preflight] FAIL from={}({}) to={}({}) tmux={} reason={} content={}",
@@ -120,7 +126,7 @@ public class MessageService {
 
         // 5. INSERT + last mile (virtual thread 로 비동기)
         // pre-flight 통과 → 이전에 'error' 로 박혀있던 수신자라면 'active' 로 자동 복귀.
-        if ("error".equals(to.getStatus())) {
+        if (!toIsHuman && "error".equals(to.getStatus())) {
             agentMapper.updateStatusFromWatcher(to.getAgentId(), "active", null);
             log.info("[message-preflight] cleared 'error' status for to={}({}) — send unblocked",
                     to.getAgentName(), to.getAgentId());
@@ -136,21 +142,28 @@ public class MessageService {
         }
 
         final String messageId = entity.getMessageId();
-        final AgentVo fromAgent = from;
-        final AgentVo toAgent = to;
-        Thread.startVirtualThread(() -> {
-            lastMile.deliver(entity, fromAgent, toAgent, new LastMileAdapter.DeliveryCallback() {
-                @Override
-                public void onDelivered() {
-                    // SseLastMileAdapter 는 publish 성공만으로 onDelivered 호출 안 함.
-                    // 실제 'delivered' 마킹은 Helper 의 ACK 가 도착해서 markDelivered() 가 불릴 때.
-                }
-                @Override
-                public void onFailed(String reason) {
-                    messageMapper.updateStatus(messageId, "failed", reason);
-                }
+        if (toIsHuman) {
+            // 휴먼 수신자: tmux send-keys 의미 없음 → 즉시 delivered 마킹. 채팅 UI 폴링이 가져감.
+            messageMapper.markDelivered(messageId);
+            log.info("[message-deliver-skip] to={}({}) is human — marked delivered immediately",
+                    to.getAgentName(), to.getAgentId());
+        } else {
+            final AgentVo fromAgent = from;
+            final AgentVo toAgent = to;
+            Thread.startVirtualThread(() -> {
+                lastMile.deliver(entity, fromAgent, toAgent, new LastMileAdapter.DeliveryCallback() {
+                    @Override
+                    public void onDelivered() {
+                        // SseLastMileAdapter 는 publish 성공만으로 onDelivered 호출 안 함.
+                        // 실제 'delivered' 마킹은 Helper 의 ACK 가 도착해서 markDelivered() 가 불릴 때.
+                    }
+                    @Override
+                    public void onFailed(String reason) {
+                        messageMapper.updateStatus(messageId, "failed", reason);
+                    }
+                });
             });
-        });
+        }
 
         return messageMapper.selectItemById(messageId);
     }
