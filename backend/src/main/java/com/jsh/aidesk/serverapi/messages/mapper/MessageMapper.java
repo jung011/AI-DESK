@@ -84,4 +84,30 @@ public interface MessageMapper {
      * 에이전트가 보내거나 받은 모든 메시지를 삭제 — 에이전트 hard delete cascade.
      */
     int deleteByAgent(@Param("agentId") String agentId);
+
+    /**
+     * Helper 의 ACK 도착 시 호출 — status='sent' 인 메시지만 'delivered' 로 마킹 + delivered_at = NOW().
+     * 이미 'delivered'/'replied'/'failed' 인 메시지는 0 rows update.
+     * @return 1 = 정상 마킹, 0 = 매치 없음 (이미 다른 status 또는 잘못된 messageId)
+     */
+    int markDelivered(@Param("messageId") String messageId);
+
+    /**
+     * Retry scheduler 가 호출 — status='sent' 이면서 last_attempt_at 이 timeoutSec 초 이상 오래된 메시지 select.
+     * 이 메시지들은 helper ACK 가 안 와서 재발행 대상.
+     */
+    List<MessageVo> selectStaleSent(@Param("timeoutSec") int timeoutSec,
+                                     @Param("maxRetries") int maxRetries,
+                                     @Param("limit") int limit);
+
+    /**
+     * retry_count++ + last_attempt_at = NOW(). 재발행 직전 호출.
+     */
+    int bumpRetry(@Param("messageId") String messageId);
+
+    /**
+     * retry_count 가 max 도달했고 ACK 안 옴 → status='failed' + error_reason.
+     */
+    int markFailed(@Param("messageId") String messageId,
+                   @Param("errorReason") String errorReason);
 }

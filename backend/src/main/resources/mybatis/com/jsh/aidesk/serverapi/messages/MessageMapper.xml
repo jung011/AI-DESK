@@ -6,7 +6,7 @@
     <sql id="messageBaseColumns">
         message_id, from_agent_id, to_agent_id, content,
         reply_to_message_id, root_message_id, hop_count,
-        status, error_reason,
+        status, error_reason, retry_count, last_attempt_at,
         created_at, delivered_at, read_at, replied_at
     </sql>
 
@@ -34,12 +34,13 @@
         INSERT INTO t_ai_message (
             message_id, from_agent_id, to_agent_id, content,
             reply_to_message_id, root_message_id, hop_count,
-            status, error_reason
+            status, error_reason, last_attempt_at
         ) VALUES (
             #{messageId}, #{fromAgentId}, #{toAgentId}, #{content},
             #{replyToMessageId}, #{rootMessageId},
             <choose><when test="hopCount != null">#{hopCount}</when><otherwise>0</otherwise></choose>,
-            #{status}, #{errorReason}
+            #{status}, #{errorReason},
+            CASE WHEN #{status} = 'sent' THEN NOW() ELSE NULL END
         )
     </insert>
 
@@ -109,6 +110,43 @@
                replied_at = NOW()
          WHERE message_id = #{messageId}
            AND status IN ('sent', 'delivered')
+    </update>
+
+    <!-- Helper 의 ACK 수신 시 — sent → delivered 마킹. 이미 다른 status 면 변경 없음. -->
+    <update id="markDelivered">
+        UPDATE t_ai_message
+           SET status = 'delivered',
+               delivered_at = NOW()
+         WHERE message_id = #{messageId}
+           AND status = 'sent'
+    </update>
+
+    <!-- Retry scheduler — status='sent' + last_attempt_at 이 timeoutSec 초 이상 오래된 메시지. -->
+    <select id="selectStaleSent" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageVo">
+        SELECT <include refid="messageBaseColumns"/>
+          FROM t_ai_message
+         WHERE status = 'sent'
+           AND last_attempt_at IS NOT NULL
+           AND last_attempt_at &lt; NOW() - (#{timeoutSec} || ' seconds')::INTERVAL
+           AND retry_count &lt; #{maxRetries}
+         ORDER BY last_attempt_at ASC
+         LIMIT #{limit}
+    </select>
+
+    <update id="bumpRetry">
+        UPDATE t_ai_message
+           SET retry_count = retry_count + 1,
+               last_attempt_at = NOW()
+         WHERE message_id = #{messageId}
+           AND status = 'sent'
+    </update>
+
+    <update id="markFailed">
+        UPDATE t_ai_message
+           SET status = 'failed',
+               error_reason = #{errorReason}
+         WHERE message_id = #{messageId}
+           AND status = 'sent'
     </update>
 
     <select id="selectConversations"

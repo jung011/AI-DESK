@@ -51,11 +51,16 @@ CREATE TABLE IF NOT EXISTS t_ai_message (
     hop_count            INTEGER       NOT NULL DEFAULT 0,
     status               VARCHAR(15)   NOT NULL,
     error_reason         VARCHAR(200),
+    retry_count          INTEGER       NOT NULL DEFAULT 0,
+    last_attempt_at      TIMESTAMPTZ,
     created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     delivered_at         TIMESTAMPTZ,
     read_at              TIMESTAMPTZ,
     replied_at           TIMESTAMPTZ
 );
+-- 기존 DB 호환 (이미 만들어진 테이블에 column 추가)
+ALTER TABLE t_ai_message ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE t_ai_message ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMPTZ;
 
 COMMENT ON TABLE  t_ai_message IS 'AI 에이전트 간 메시지';
 COMMENT ON COLUMN t_ai_message.message_id           IS '메시지 UUID (PK)';
@@ -67,6 +72,8 @@ COMMENT ON COLUMN t_ai_message.root_message_id      IS '체인 루트 메시지 
 COMMENT ON COLUMN t_ai_message.hop_count            IS '위임 깊이 (기본 0, 답장이면 부모+1)';
 COMMENT ON COLUMN t_ai_message.status               IS 'sent / delivered / replied / failed';
 COMMENT ON COLUMN t_ai_message.error_reason         IS 'failed 사유';
+COMMENT ON COLUMN t_ai_message.retry_count          IS 'last-mile 재시도 횟수 (0 = 초회)';
+COMMENT ON COLUMN t_ai_message.last_attempt_at      IS '마지막 last-mile publish 시각 — retry scheduler 가 timeout 판정에 사용';
 
 CREATE INDEX IF NOT EXISTS idx_ai_message_from
     ON t_ai_message (from_agent_id, created_at DESC);
@@ -78,6 +85,8 @@ CREATE INDEX IF NOT EXISTS idx_ai_message_status
     ON t_ai_message (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_message_root
     ON t_ai_message (root_message_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_message_retry
+    ON t_ai_message (status, last_attempt_at) WHERE status = 'sent';
 
 -- =====================================================================
 -- t_aidesk_setting — 런타임 변경 가능한 앱 단일 설정 (key-value)
