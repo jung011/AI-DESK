@@ -104,10 +104,12 @@ public class AgentService {
         AgentSummaryRsVo s = new AgentSummaryRsVo();
         s.setActive(counts.getOrDefault("active", 0));
         s.setWaiting(counts.getOrDefault("waiting", 0));
-        s.setIdle(counts.getOrDefault("idle", 0));
-        s.setDone(counts.getOrDefault("done", 0));
+        // 옛 'done' row 가 DB 에 잔존하면 idle 로 합산 (마이그레이션 시점까지의 안전망)
+        // 옛 'done' row 가 DB 에 잔존하면 idle 로 합산 (마이그레이션 시점까지의 안전망)
+        int idle = counts.getOrDefault("idle", 0) + counts.getOrDefault("done", 0);
+        s.setIdle(idle);
         s.setError(counts.getOrDefault("error", 0));
-        s.setTotal(s.getActive() + s.getWaiting() + s.getIdle() + s.getDone() + s.getError());
+        s.setTotal(s.getActive() + s.getWaiting() + idle + s.getError());
         return s;
     }
 

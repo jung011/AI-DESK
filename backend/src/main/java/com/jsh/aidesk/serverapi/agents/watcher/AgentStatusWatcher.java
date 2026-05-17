@@ -117,7 +117,7 @@ public class AgentStatusWatcher {
 
     private static String estimateStatus(long ageSec) {
         if (ageSec <= ACTIVE_WINDOW_SEC) return "active";
-        if (ageSec <= IDLE_WINDOW_SEC) return "idle";
-        return "done";
+        // IDLE_WINDOW_SEC 초과해도 동일 idle — 'done' 상태 없음 (오래 idle 한 거지 죽은 게 아님)
+        return "idle";
     }
 }
