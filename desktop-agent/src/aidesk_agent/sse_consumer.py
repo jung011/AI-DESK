@@ -22,6 +22,16 @@ _HEADER_TEMPLATE = (
 # Claude TUI 가 bracketed-paste 로 Enter 를 흡수하지 않도록 분리 송신 사이 짧은 지연.
 _ENTER_DELAY_SEC = 0.2
 
+# 같은 tmux 세션으로 가는 메시지를 직렬 처리하기 위한 큐.
+# 여러 발신자가 동시에 같은 수신자로 보낼 때 tmux send-keys 가 race 해서
+# 텍스트가 interleave 되거나 한 turn 에 묻혀 일부 메시지에 reply 가 안 가는 문제를 막는다.
+_session_queues: dict[str, asyncio.Queue] = {}
+_session_workers: dict[str, asyncio.Task] = {}
+# send-keys 직후 다음 메시지를 보내기까지의 grace — claude 가 첫 입력을 prompt 로
+# 인식하고 처리 시작할 시간. 너무 짧으면 두 번째 메시지가 현재 turn 의 추가 input 으로
+# 묻힘. 0.5s 면 일반 케이스 충분.
+_QUEUE_GRACE_SEC = 0.5
+
 
 def _render_message(payload: dict) -> str:
     return _HEADER_TEMPLATE.format(
@@ -85,6 +95,34 @@ async def _send_ack(backend_url: str, message_id: str) -> None:
         log.warning("[message-ack] FAILED msg=%s err=%s — backend retry 가 처리할 것", message_id, e)
 
 
+async def _session_worker(session: str, backend_url: str) -> None:
+    """session 별 worker — 큐의 메시지를 직렬 처리.
+
+    다음 메시지를 보내기 전 짧은 grace 를 두어 claude 가 첫 입력을 처리 시작할
+    시간을 확보. 그래야 후속 메시지가 *현재 turn 의 추가 input* 으로 묻히지 않음.
+    """
+    q = _session_queues[session]
+    while True:
+        payload = await q.get()
+        try:
+            await _handle_message_deliver(payload, backend_url)
+        except Exception as e:
+            log.exception("[session-queue] handler crashed session=%s err=%s", session, e)
+        await asyncio.sleep(_QUEUE_GRACE_SEC)
+        q.task_done()
+
+
+async def _enqueue_for_session(session: str, payload: dict, backend_url: str) -> None:
+    """같은 tmux session 향 메시지는 큐로 직렬화. 새 session 발견 시 worker spawn."""
+    if session not in _session_queues:
+        _session_queues[session] = asyncio.Queue()
+        _session_workers[session] = asyncio.create_task(
+            _session_worker(session, backend_url)
+        )
+        log.info("[session-queue] worker spawned session=%s", session)
+    await _session_queues[session].put(payload)
+
+
 async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
     session = (payload.get("toTmuxSession") or "").strip()
     message_id = payload.get("messageId") or ""
@@ -122,8 +160,15 @@ async def _consume_once(backend_url: str) -> None:
                 except json.JSONDecodeError:
                     log.warning("SSE payload not JSON: %r", sse.data[:200])
                     continue
-                # blocking 안 되게 별도 태스크로
-                asyncio.create_task(_handle_message_deliver(payload, backend_url))
+                # 같은 tmux session 으로 가는 메시지는 직렬 처리 — race + interleave 방지.
+                # 빈 session 이면 _handle_message_deliver 가 알아서 drop 하니까 그쪽으로 직접 넘김.
+                target_session = (payload.get("toTmuxSession") or "").strip()
+                if target_session:
+                    asyncio.create_task(
+                        _enqueue_for_session(target_session, payload, backend_url)
+                    )
+                else:
+                    asyncio.create_task(_handle_message_deliver(payload, backend_url))
 
 
 async def consumer_loop(backend_url: str) -> None:
