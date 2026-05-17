@@ -22,6 +22,21 @@
           class="cv-msg"
           :class="{ mine: m.fromAgentId === meId, theirs: m.fromAgentId !== meId }">
           <div class="cv-bubble">
+            <!--
+              발신자 이름 라벨 — contact-centric view 에서는 partner 와의 1:1 페어 외에도
+              다른 AI 들이 partner 한테 보낸/받은 메시지가 섞이므로 누가 보낸지 명시.
+              본인(휴먼) 발신 메시지는 라벨 생략.
+            -->
+            <div
+              v-if="m.fromAgentId !== meId && partner && m.fromAgentId !== partner.agentId"
+              class="cv-sender">
+              {{ m.fromAgentName }} → {{ m.toAgentName }}
+            </div>
+            <div
+              v-else-if="m.fromAgentId !== meId"
+              class="cv-sender">
+              {{ m.fromAgentName }}
+            </div>
             <div class="cv-content">{{ m.content }}</div>
             <div class="cv-foot">
               <span class="cv-time">{{ formatTime(m.createdAt) }}</span>
@@ -159,6 +174,10 @@ function formatTime(iso: string): string {
 }
 .cv-msg.mine .cv-bubble { background: #DBEAFE; color: #1E3A8A; }
 .cv-msg.theirs .cv-bubble { background: #fff; color: #101010; border: 1px solid #E5E9EF; }
+.cv-sender {
+  font-size: 11px; color: #64748B; font-weight: 600;
+  margin-bottom: 3px;
+}
 .cv-content { font-size: 14px; line-height: 1.5; }
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #64748B; }
 .cv-status.sent     { color: #94A3B8; }

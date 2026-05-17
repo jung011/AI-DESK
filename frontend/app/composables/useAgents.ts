@@ -40,7 +40,8 @@ export function useAgents(initialStatus: string = 'all') {
       if (status.value && status.value !== 'all') params.status = status.value;
 
       const env = await $api<ApiEnvelope<AgentListResponse>>('/api/agents', { params });
-      list.value = env.data.list ?? [];
+      // 휴먼(model='human') 은 사용자 본인 entity. 대시보드는 AI 만 보여주므로 제외.
+      list.value = (env.data.list ?? []).filter(a => a.model !== 'human');
       summary.value = env.data.summary ?? { total: 0, active: 0, waiting: 0, idle: 0, error: 0 };
       error.value = null;
     } catch (e) {

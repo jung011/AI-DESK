@@ -2,7 +2,7 @@
   <div class="chat-page">
     <header class="chat-header">
       <h1>채팅</h1>
-      <span class="chat-subtitle">사용자(나) ↔ 내부 AI</span>
+      <span class="chat-subtitle">휴먼(나) ↔ 내부 AI · (me) 리키 포함</span>
     </header>
 
     <div class="chat-layout" :class="{ 'show-conv-mobile': showConvMobile }">
@@ -18,7 +18,7 @@
         <ConversationView
           :partner="activePartner"
           :messages="messages"
-          :me-id="meAgent?.agentId ?? ''"
+          :me-id="currentUser?.agentId ?? ''"
           :loading="loadingMessages"
           :sending="sending"
           :show-back="true"
@@ -37,14 +37,14 @@ import AgentList from '~/components/chat/AgentList.vue';
 import ConversationView from '~/components/chat/ConversationView.vue';
 
 const {
-  agents, meAgent, partnerId, messages,
+  agents, currentUser, partnerId, messages,
   loadingAgents, loadingMessages, sending, error,
-  fetchAgents, selectPartner, send, startPolling, stopPolling,
+  fetchAgents, fetchMessages, selectPartner, send, startPolling, stopPolling,
 } = useChat();
 
-// 본인 (me) 제외한 채팅 가능한 AI 들만 노출
+// 휴먼(사용자 본인)만 제외 — (me) 리키도 채팅 가능한 partner 로 노출.
 const partners = computed(() =>
-  agents.value.filter((a) => a.agentId !== meAgent.value?.agentId)
+  agents.value.filter((a) => a.agentId !== currentUser.value?.agentId)
 );
 
 const activePartner = computed(() =>
@@ -79,6 +79,30 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   if (agentPoll) clearInterval(agentPoll);
+});
+
+// 모바일 PWA 가 백그라운드 가면 OS 가 setInterval 을 멈춤.
+// 화면이 다시 보이는 순간 즉시 최신 메시지/에이전트를 한번 가져오고 polling 재시작.
+// (이 핸들러가 없으면 모바일에서 잠금 후 복귀 시 한참 동안 새 메시지 안 보임)
+function onVisibilityChange(): void {
+  if (typeof document === 'undefined') return;
+  if (document.visibilityState === 'visible') {
+    void fetchAgents();
+    void fetchMessages();
+    startPolling();
+  } else {
+    stopPolling();
+  }
+}
+onMounted(() => {
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  }
+});
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+  }
 });
 </script>
 

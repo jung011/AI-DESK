@@ -1,8 +1,12 @@
 /**
- * 채팅 페이지의 데이터 흐름 — AI 목록 + 1:1 대화 + 발신.
+ * 채팅 페이지의 데이터 흐름 — 휴먼(사용자) ↔ AI 들.
  *
- * 사용자 = (me) liki 에이전트로 동일시. 즉 사용자가 입력 = (me) 가 보낸 거.
- * 받는 측 AI 들은 backend 의 메시지 시스템 그대로 활용 (preflight + ACK + retry).
+ * 휴먼 entity (model='human') 는 사용자 본인을 시스템 안에 표현하는 별도 agent row.
+ * 사용자 입력 = 휴먼 → 상대 AI 메시지로 INSERT 됨. (me) liki 는 별도 독립 AI.
+ *
+ * Contact-centric view: partner 채팅창에는 *그 partner 가 관여한 모든 메시지* 가 보임.
+ * 즉 (me) ↔ partner 페어 뿐 아니라 다른AI ↔ partner 메시지까지 통합.
+ * → 위임된 일도 partner 채팅창에서 흔적 확인 가능 (= 임베디드 터미널과 유사한 시야).
  *
  * 메시지 수신은 polling 5초. SSE/WebSocket 으로 격상은 후속.
  */
@@ -14,8 +18,8 @@ const POLL_INTERVAL_MS = 5000;
 
 export function useChat() {
   const agents = ref<AgentItem[]>([]);
-  const meAgent = ref<AgentItem | null>(null);
-  const partnerId = ref<string>('');         // 선택된 상대 AI
+  const currentUser = ref<AgentItem | null>(null);  // 휴먼 entity
+  const partnerId = ref<string>('');                // 선택된 상대 AI
   const messages = ref<MessageItem[]>([]);
   const loadingAgents = ref(false);
   const loadingMessages = ref(false);
@@ -31,7 +35,8 @@ export function useChat() {
       const env = await $api<ApiEnvelope<AgentListResponse>>('/api/agents');
       if (env.result === 0 && env.data) {
         agents.value = env.data.list;
-        meAgent.value = env.data.list.find((a) => a.agentName.endsWith('(me)')) ?? null;
+        currentUser.value =
+          env.data.list.find((a) => a.model === 'human') ?? null;
       }
     } catch (e) {
       error.value = `에이전트 조회 실패: ${e instanceof Error ? e.message : String(e)}`;
@@ -41,15 +46,17 @@ export function useChat() {
   }
 
   async function fetchMessages(): Promise<void> {
-    if (!meAgent.value || !partnerId.value) {
+    if (!currentUser.value || !partnerId.value) {
       messages.value = [];
       return;
     }
     loadingMessages.value = true;
     try {
       const { $api } = useNuxtApp();
+      // contact-centric: withId=partner 면 backend 가 partner 가 관여한 모든 메시지 반환.
+      // agentId 는 안 쓰지만 API 시그니처상 필요 — currentUser 로 채움.
       const params = new URLSearchParams({
-        agentId: meAgent.value.agentId,
+        agentId: currentUser.value.agentId,
         withId: partnerId.value,
         direction: 'all',
         limit: '100',
@@ -74,13 +81,13 @@ export function useChat() {
   }
 
   async function send(content: string): Promise<boolean> {
-    if (!meAgent.value || !partnerId.value || !content.trim()) return false;
+    if (!currentUser.value || !partnerId.value || !content.trim()) return false;
     sending.value = true;
     error.value = null;
     try {
       const { $api } = useNuxtApp();
       const body: MessageCreateRequest = {
-        fromAgentId: meAgent.value.agentId,
+        fromAgentId: currentUser.value.agentId,
         toAgentId: partnerId.value,
         content: content.trim(),
       };
@@ -119,7 +126,7 @@ export function useChat() {
 
   return {
     agents,
-    meAgent,
+    currentUser,
     partnerId,
     messages,
     loadingAgents,
