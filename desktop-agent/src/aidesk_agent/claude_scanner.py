@@ -58,9 +58,9 @@ def estimate_status(age_sec: int | None) -> str:
         return "unknown"
     if age_sec <= ACTIVE_WINDOW_SEC:
         return "active"
-    if age_sec <= IDLE_WINDOW_SEC:
-        return "idle"
-    return "done"
+    # IDLE_WINDOW_SEC 초과해도 동일하게 idle — 별도 'done' 상태 없음.
+    # 30분+ 침묵은 그냥 오래 idle 한 거고 인스턴스 자체는 여전히 살아있다.
+    return "idle"
 
 
 def _has_fresh_prompt_marker(jsonl_path: Path, now_sec: float) -> bool:
