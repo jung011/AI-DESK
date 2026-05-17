@@ -135,15 +135,13 @@ const statusClass = computed(() => ({
   active: 'working',
   waiting: 'waiting',
   idle: 'idle',
-  done: 'done',
   error: 'error'
 }[props.agent.status] ?? 'working'));
 
 const statusLabel = computed(() => ({
   active: '작업중',
   waiting: '응답 대기',
-  idle: '쉬는 중',
-  done: '완료',
+  idle: '대기중',
   error: '오류'
 }[props.agent.status] ?? '작업중'));
 
@@ -151,7 +149,6 @@ const badgeClass = computed(() => ({
   active: 'type_v5',
   waiting: 'type_v10',
   idle: 'type_v8',
-  done: 'type_v9',
   error: 'type_v11'
 }[props.agent.status] ?? 'type_v5'));
 
@@ -159,7 +156,6 @@ const avatarEmoji = computed(() => ({
   active: '🤖',
   waiting: '🙋',
   idle: '📝',
-  done: '✅',
   error: '⚠️'
 }[props.agent.status] ?? '🤖'));
 
@@ -167,7 +163,6 @@ const metaLabel = computed(() => ({
   active: '시작',
   waiting: '대기 시작',
   idle: '대기 시간',
-  done: '완료',
   error: '오류 발생'
 }[props.agent.status] ?? '시작'));
 
@@ -224,7 +219,6 @@ function formatTime(iso: string, status: string): string {
 .ai-card.working::before { background: #00C853; }
 .ai-card.waiting::before { background: #0062FF; }
 .ai-card.idle::before    { background: #FFB300; }
-.ai-card.done::before    { background: #9C27B0; }
 .ai-card.error::before   { background: #E53935; }
 
 .ai-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
@@ -237,7 +231,6 @@ function formatTime(iso: string, status: string): string {
 .ai-avatar.working { background: #E8F5E9; }
 .ai-avatar.waiting { background: #E3F2FD; }
 .ai-avatar.idle    { background: #FFF8E1; }
-.ai-avatar.done    { background: #F3E8FF; }
 .ai-avatar.error   { background: #FFEBEE; }
 
 .ai-name {

@@ -3,7 +3,7 @@
  * 응답 envelope (ResponseJson<T>) 의 data 필드 타입.
  */
 
-export type AgentStatus = 'active' | 'idle' | 'done';
+export type AgentStatus = 'active' | 'idle' | 'waiting' | 'error';
 
 export interface AgentItem {
   agentId: string;
@@ -23,7 +23,6 @@ export interface AgentSummary {
   active: number;
   waiting: number;
   idle: number;
-  done: number;
   error: number;
 }
 

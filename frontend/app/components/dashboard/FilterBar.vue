@@ -42,8 +42,7 @@ const tabs = [
   { label: '전체',      value: 'all' },
   { label: '작업중',    value: 'active' },
   { label: '응답 대기', value: 'waiting' },
-  { label: '쉬는 중',   value: 'idle' },
-  { label: '완료',      value: 'done' },
+  { label: '대기중',    value: 'idle' },
   { label: '오류',      value: 'error' }
 ] as const;
 </script>

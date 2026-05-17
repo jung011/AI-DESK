@@ -18,7 +18,7 @@ export function useAgents(initialStatus: string = 'all') {
   const { $api, $helper } = useNuxtApp();
 
   const list = ref<AgentItem[]>([]);
-  const summary = ref<AgentSummary>({ total: 0, active: 0, idle: 0, done: 0 });
+  const summary = ref<AgentSummary>({ total: 0, active: 0, waiting: 0, idle: 0, error: 0 });
   const status = ref<string>(initialStatus);
   const query = ref<string>('');
   const loading = ref<boolean>(false);
@@ -41,7 +41,7 @@ export function useAgents(initialStatus: string = 'all') {
 
       const env = await $api<ApiEnvelope<AgentListResponse>>('/api/agents', { params });
       list.value = env.data.list ?? [];
-      summary.value = env.data.summary ?? { total: 0, active: 0, idle: 0, done: 0 };
+      summary.value = env.data.summary ?? { total: 0, active: 0, waiting: 0, idle: 0, error: 0 };
       error.value = null;
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e);
