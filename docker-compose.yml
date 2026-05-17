@@ -41,10 +41,12 @@ services:
       context: ./frontend
       args:
         # 빌드 시점에 baked-in. 변경하려면 --build-arg 또는 .env 로 override.
-        # 모바일/외부망 wifi 에서 같은 빌드를 쓰려면 Mac LAN IP 로 박는다.
+        # API 는 모바일/외부 wifi 에서도 접근 가능해야 하므로 Mac LAN IP 로 박음.
+        # HELPER 는 127.0.0.1 only 로 LISTEN (보안) — 모바일에선 helper 의존 기능
+        # (임베디드 터미널 / 워크스페이스 다이얼로그) 어차피 불가. PC localhost 만.
         # 정석: Phase B 에서 nginx proxy 로 same-origin 으로 정비 예정.
         NUXT_PUBLIC_API_BASE: http://172.30.1.23:30081
-        NUXT_PUBLIC_HELPER_BASE: http://172.30.1.23:30083
+        NUXT_PUBLIC_HELPER_BASE: http://localhost:30083
     image: aidesk-frontend:dev
     container_name: aidesk-frontend
     ports:
