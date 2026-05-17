@@ -71,8 +71,23 @@ async def _tmux_send(session: str, text: str) -> bool:
         return False
 
 
-async def _handle_message_deliver(payload: dict) -> None:
+async def _send_ack(backend_url: str, message_id: str) -> None:
+    """tmux send-keys 가 도달했음을 backend 에 통보 — end-to-end ACK.
+    backend 는 이걸 받아야 status='delivered' 마킹. 실패해도 메시지 흐름엔 영향 X (retry 가 처리)."""
+    if not message_id:
+        return
+    url = f"{backend_url.rstrip('/')}/api/messages/{message_id}/ack"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.post(url)
+            log.info("[message-ack] sent msg=%s http=%s", message_id, r.status_code)
+    except (httpx.HTTPError, OSError) as e:
+        log.warning("[message-ack] FAILED msg=%s err=%s — backend retry 가 처리할 것", message_id, e)
+
+
+async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
     session = (payload.get("toTmuxSession") or "").strip()
+    message_id = payload.get("messageId") or ""
     if not session:
         log.warning("message.deliver: empty toTmuxSession, dropping")
         return
@@ -84,9 +99,12 @@ async def _handle_message_deliver(payload: dict) -> None:
     log.info(
         "message.deliver: session=%s msg=%s ok=%s",
         session,
-        payload.get("messageId"),
+        message_id,
         ok,
     )
+    # send-keys 성공일 때만 ACK — 실패면 backend retry 가 다시 발행하게 둠.
+    if ok:
+        await _send_ack(backend_url, message_id)
 
 
 async def _consume_once(backend_url: str) -> None:
@@ -105,7 +123,7 @@ async def _consume_once(backend_url: str) -> None:
                     log.warning("SSE payload not JSON: %r", sse.data[:200])
                     continue
                 # blocking 안 되게 별도 태스크로
-                asyncio.create_task(_handle_message_deliver(payload))
+                asyncio.create_task(_handle_message_deliver(payload, backend_url))
 
 
 async def consumer_loop(backend_url: str) -> None:
