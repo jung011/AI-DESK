@@ -1,0 +1,18 @@
+{
+  "name": "AI 사무실",
+  "short_name": "AI Desk",
+  "description": "내부 AI 들과 대화 — 모바일 친화 PWA",
+  "start_url": "/chat",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#3B5BDB",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "any",
+      "type": "image/x-icon"
+    }
+  ]
+}
