@@ -28,6 +28,9 @@ services:
       KAFLIX_CONTROL_PLANE_URL: http://172.20.1.3:8080
       # fallback 정체 (Helper 가 사이드카에서 자동 감지 못 했을 때만 적용)
       KAFLIX_ME_EMPLOYEE_ID: liki
+      # 모바일/LAN 접근을 위한 추가 origin — Mac LAN IP 까지 허용.
+      # Phase B 에서 nginx proxy 로 same-origin 화하면 이 설정 자체 불필요.
+      CORS_ALLOWED_ORIGINS: "http://localhost:30080,http://0.0.0.0:30080,http://172.30.1.23:30080"
     extra_hosts:
       # Docker Desktop on macOS/Windows 는 자동 추가하지만 Linux 호환을 위해 명시.
       - "host.docker.internal:host-gateway"
@@ -38,8 +41,10 @@ services:
       context: ./frontend
       args:
         # 빌드 시점에 baked-in. 변경하려면 --build-arg 또는 .env 로 override.
-        NUXT_PUBLIC_API_BASE: http://localhost:30081
-        NUXT_PUBLIC_HELPER_BASE: http://localhost:30083
+        # 모바일/외부망 wifi 에서 같은 빌드를 쓰려면 Mac LAN IP 로 박는다.
+        # 정석: Phase B 에서 nginx proxy 로 same-origin 으로 정비 예정.
+        NUXT_PUBLIC_API_BASE: http://172.30.1.23:30081
+        NUXT_PUBLIC_HELPER_BASE: http://172.30.1.23:30083
     image: aidesk-frontend:dev
     container_name: aidesk-frontend
     ports:
