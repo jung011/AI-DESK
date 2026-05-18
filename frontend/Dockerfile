@@ -1,15 +1,18 @@
 # syntax=docker/dockerfile:1.7
 # Frontend (Nuxt, SPA 모드) — multi-stage 빌드.
 #
-# Nuxt 의 runtimeConfig.public 값은 빌드 시점에 환경변수로 baked-in 된다:
-#   NUXT_PUBLIC_API_BASE     — 백엔드 베이스 URL
-#   NUXT_PUBLIC_HELPER_BASE  — 헬퍼 베이스 URL (사용자 PC 의 http://localhost:30083)
+# same-origin proxy 패턴:
+#   NUXT_PUBLIC_API_BASE 는 빈 문자열로 baked-in → 브라우저가 상대 경로(/api/...)로 호출.
+#   nginx 가 같은 origin 안에서 /api/* 를 backend 컨테이너로 reverse proxy.
+#   → 어떤 호스트(localhost / LAN IP / 모바일) 로 접속해도 동작. CORS 도 불필요.
+#
+# Helper 베이스만 baked-in (사용자 PC 의 http://localhost:30083). 모바일에선 helper 의존 기능 X.
 
 FROM node:22-alpine AS build
 WORKDIR /workspace
 
-# 빌드 시점에 baked-in 될 runtime config
-ARG NUXT_PUBLIC_API_BASE=http://localhost:30081
+# API base 는 빈 문자열 → 상대 경로로 호출 → nginx 가 /api/* 를 backend 로 proxy.
+ARG NUXT_PUBLIC_API_BASE=
 ARG NUXT_PUBLIC_HELPER_BASE=http://localhost:30083
 ENV NUXT_PUBLIC_API_BASE=$NUXT_PUBLIC_API_BASE
 ENV NUXT_PUBLIC_HELPER_BASE=$NUXT_PUBLIC_HELPER_BASE
@@ -22,16 +25,11 @@ RUN npm install --no-audit --no-fund
 RUN npm run generate
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 정적 호스팅 (nginx)
+# 정적 호스팅 (nginx) + /api/* same-origin reverse proxy
 # ────────────────────────────────────────────────────────────────────────────────
 FROM nginx:1.27-alpine AS runtime
 
-# Nuxt SPA fallback (모든 미매칭 경로 → index.html).
-# - absolute_redirect off  : 컨테이너 내부 포트(80) 가 Location 헤더에 박혀 외부 포트(30080) 가
-#                            증발하는 문제를 회피. 상대 redirect 로 응답해 브라우저가 현재 origin 보존.
-# - try_files $uri /index.html : 디렉토리 매칭 시도(=$uri/) 를 빼서 trailing-slash redirect 자체를 안 일으킴.
-RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  index index.html;\n  absolute_redirect off;\n  location / { try_files $uri /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf
-
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/.output/public /usr/share/nginx/html
 
 EXPOSE 80
