@@ -17,6 +17,7 @@ services:
       context: ./backend
     image: aidesk-backend:dev
     container_name: aidesk-backend
+    # 외부 직접 노출은 디버깅 편의를 위해 유지. 운영 접속은 frontend(:30080) 의 same-origin proxy 통해.
     ports:
       - "30081:30081"
     environment:
@@ -28,9 +29,9 @@ services:
       KAFLIX_CONTROL_PLANE_URL: http://172.20.1.3:8080
       # fallback 정체 (Helper 가 사이드카에서 자동 감지 못 했을 때만 적용)
       KAFLIX_ME_EMPLOYEE_ID: liki
-      # 모바일/LAN 접근을 위한 추가 origin — Mac LAN IP 까지 허용.
-      # Phase B 에서 nginx proxy 로 same-origin 화하면 이 설정 자체 불필요.
-      CORS_ALLOWED_ORIGINS: "http://localhost:30080,http://0.0.0.0:30080,http://172.30.1.23:30080"
+      # CORS — same-origin proxy 적용으로 브라우저가 항상 frontend(:30080) 와 같은 origin 으로 호출하므로
+      # 일반 사용 케이스엔 불필요. helper(:30083) 가 별도 origin 으로 backend 직접 호출하는 경우 대비해서만 유지.
+      CORS_ALLOWED_ORIGINS: "http://localhost:30080,http://localhost:30083"
     extra_hosts:
       # Docker Desktop on macOS/Windows 는 자동 추가하지만 Linux 호환을 위해 명시.
       - "host.docker.internal:host-gateway"
@@ -39,18 +40,17 @@ services:
   frontend:
     build:
       context: ./frontend
+      # API base 는 빈 문자열로 baked-in (Dockerfile default). 브라우저가 상대경로(/api/...)로 호출하면
+      # nginx 가 same-origin 안에서 backend 컨테이너로 reverse proxy → 어떤 호스트에서 접속해도 동작.
+      # HELPER 만 사용자 PC localhost 로 박음 (보안상 helper 는 127.0.0.1 only LISTEN).
       args:
-        # 빌드 시점에 baked-in. 변경하려면 --build-arg 또는 .env 로 override.
-        # API 는 모바일/외부 wifi 에서도 접근 가능해야 하므로 Mac LAN IP 로 박음.
-        # HELPER 는 127.0.0.1 only 로 LISTEN (보안) — 모바일에선 helper 의존 기능
-        # (임베디드 터미널 / 워크스페이스 다이얼로그) 어차피 불가. PC localhost 만.
-        # 정석: Phase B 에서 nginx proxy 로 same-origin 으로 정비 예정.
-        NUXT_PUBLIC_API_BASE: http://172.30.1.23:30081
         NUXT_PUBLIC_HELPER_BASE: http://localhost:30083
     image: aidesk-frontend:dev
     container_name: aidesk-frontend
     ports:
       - "30080:80"
+    depends_on:
+      - backend
     restart: unless-stopped
 
 # code-server (대시보드 임베드 VSCode) 는 desktop-agent (Helper) 가 직접 spawn + 라이프사이클
