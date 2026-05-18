@@ -26,6 +26,7 @@ from .os_bridge import (
     scope_workspace,
 )
 from .pty_bridge import terminal_handler
+from .kaflix_inbox_pump import pump_loop as kaflix_pump_loop
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
 from .tmux_scanner import scan_sessions
@@ -276,12 +277,15 @@ async def _start_background_tasks(app: web.Application) -> None:
     action_hook_auto_install()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
+    # 사내 동료(kaflix-channel) 메시지를 (me) liki tmux 로 자동 푸시 — 사이드카 SSE 구독.
+    # 사이드카가 안 떠있거나 (me) 워크스페이스에 token 이 없으면 자체 비활성, 다른 기능엔 영향 X.
+    app["kaflix_pump_task"] = asyncio.create_task(kaflix_pump_loop(backend_url))
     # code-server 도 같이 spawn — 부재 시 brew install 자동 시도. 실패해도 다른 기능엔 영향 없음.
     app["code_server_proc"] = await start_code_server()
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
-    for key in ("reporter_task", "sse_task"):
+    for key in ("reporter_task", "sse_task", "kaflix_pump_task"):
         task = app.get(key)
         if task is None:
             continue

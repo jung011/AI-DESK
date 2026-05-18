@@ -50,6 +50,23 @@ chmod 755 "$PAYLOAD/usr/local/bin/aidesk-helper"
 cp "$DESKTOP_AGENT/scripts/aidesk-action-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 cp "$DESKTOP_AGENT/scripts/aidesk-prompt-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 
+# aidesk-channel mcp 서버 — Node.js 패키지. helper 와 같이 묶어 배포하면
+# 신규 PC 마다 별도 배포 + ~/.claude.json 수동 편집 불필요. postinstall 이 자동 등록.
+AIDESK_CHANNEL_SRC="$(cd "$DESKTOP_AGENT/.." && pwd)/aidesk-channel"
+if [[ -d "$AIDESK_CHANNEL_SRC" ]]; then
+    mkdir -p "$PAYLOAD/usr/local/share/aidesk/aidesk-channel"
+    # node_modules 포함 — mac arm64 끼리는 그대로 동작.
+    cp -R "$AIDESK_CHANNEL_SRC/bin" \
+          "$AIDESK_CHANNEL_SRC/src" \
+          "$AIDESK_CHANNEL_SRC/node_modules" \
+          "$AIDESK_CHANNEL_SRC/package.json" \
+          "$AIDESK_CHANNEL_SRC/package-lock.json" \
+          "$PAYLOAD/usr/local/share/aidesk/aidesk-channel/"
+    chmod 755 "$PAYLOAD/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
+else
+    echo "⚠ aidesk-channel 소스 없음 — 건너뜀: $AIDESK_CHANNEL_SRC"
+fi
+
 # statusline 은 adesk-cli/bin 에 있는 별도 패키지 — monorepo 형제 디렉토리에서 복사
 STATUSLINE_SRC="$(cd "$DESKTOP_AGENT/.." && pwd)/adesk-cli/bin/aidesk-statusline.cjs"
 if [[ -f "$STATUSLINE_SRC" ]]; then
