@@ -21,6 +21,7 @@ from .os_bridge import (
     browse_file,
     browse_workspace,
     cleanup_agent,
+    ensure_iterm_dynamic_profile,
     open_terminal,
     open_vscode,
     scope_workspace,
@@ -269,6 +270,10 @@ async def _start_background_tasks(app: web.Application) -> None:
         os.environ.get("AIDESK_REPORT_INTERVAL_SEC", DEFAULT_REPORT_INTERVAL_SEC)
     )
     log.info("background tasks starting: backend=%s interval=%.1fs", backend_url, interval)
+    # iTerm Dynamic Profile 'AI Desk' 자동 생성 — Title Components 만 Session Name 으로
+    # override 한 derivative profile. 외부 터미널 열기 시 이 profile 사용 → AI 이름이
+    # title bar 에 표시됨. iTerm 미설치 환경이면 noop.
+    ensure_iterm_dynamic_profile()
     # Claude Code statusLine 후크 — 미설치/옛 경로면 자동 등록. 다른 명령이 점유 중이면 보호.
     usage_auto_install()
     # Claude Code 응답 대기 감지 훅 (AskUserQuestion / Notification / Stop 등) 자동 등록.
