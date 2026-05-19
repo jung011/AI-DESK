@@ -39,8 +39,87 @@ def _applescript_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _iterm_installed() -> bool:
+    """iTerm.app 설치 여부 — 우선 사용할 대상 결정에 사용."""
+    return Path("/Applications/iTerm.app").exists()
+
+
+def _build_open_iterm_script(workspace_dir: str, tmux_session: str, title: str, claude_cmd: str) -> str:
+    """iTerm (iTerm2) 용 AppleScript.
+
+    iTerm 의 native 우클릭 메뉴 / mouse handling 이 Terminal.app 보다 풍부해서
+    tmux mouse 옵션과 무관하게 사용자가 편하게 복사·붙여넣기 가능.
+
+    동작 우선순위:
+      1) 같은 tmux 세션에 이미 attach 된 iTerm session 이 있으면 그 윈도우/탭 활성화
+         (tmux list-clients 의 client_tty 와 iTerm session 의 tty 매칭)
+      2) 없으면 새 *윈도우* 생성 (AI 별 분리 워크플로)
+      3) current session 에 cd + tmux 명령 write + 탭 제목 set
+    """
+    dir_esc = _applescript_escape(workspace_dir)
+    title_esc = _applescript_escape(title or tmux_session)
+    return (
+        f'set sessionName to "{tmux_session}"\n'
+        f'set wsQuoted to quoted form of "{dir_esc}"\n'
+        f'set tabTitle to "{title_esc}"\n'
+        f'set shellCmd to "cd " & wsQuoted & " && tmux new-session -A -s " & sessionName & " \'{claude_cmd}\'; exit 0"\n'
+        'set clientTty to ""\n'
+        'try\n'
+        '  set clientTty to do shell script "tmux list-clients -t " & sessionName & " -F \'#{client_tty}\' 2>/dev/null | head -n 1"\n'
+        'end try\n'
+        'tell application "iTerm"\n'
+        '  activate\n'
+        '  set foundIt to false\n'
+        '  if clientTty is not "" then\n'
+        '    repeat with w in windows\n'
+        '      repeat with t in tabs of w\n'
+        '        repeat with s in sessions of t\n'
+        '          try\n'
+        '            if tty of s is clientTty then\n'
+        '              select w\n'
+        '              select t\n'
+        '              select s\n'
+        '              set foundIt to true\n'
+        '              exit repeat\n'
+        '            end if\n'
+        '          end try\n'
+        '        end repeat\n'
+        '        if foundIt then exit repeat\n'
+        '      end repeat\n'
+        '      if foundIt then exit repeat\n'
+        '    end repeat\n'
+        '  end if\n'
+        '  if not foundIt then\n'
+        '    create window with default profile\n'
+        '    tell current session of current window\n'
+        '      write text shellCmd\n'
+        '    end tell\n'
+        '    -- iTerm Profile 의 Title 정책에 따라 set name 이 무시되는 케이스가 있어서\n'
+        '    -- OSC 0 escape sequence (ESC ]0; TITLE BEL) 를 직접 send 해 title bar 강제 갱신.\n'
+        '    -- tmux 의 set-titles 가 default off 라 attach 후에도 우리 값 유지됨.\n'
+        '    delay 1.0\n'
+        '    try\n'
+        '      set ESC to character id 27\n'
+        '      set BEL to character id 7\n'
+        '      tell current session of current window\n'
+        '        write text (ESC & "]0;" & tabTitle & BEL) without newline\n'
+        '      end tell\n'
+        '    end try\n'
+        '    try\n'
+        '      set name of current session of current window to tabTitle\n'
+        '    end try\n'
+        '    try\n'
+        '      set name of current tab of current window to tabTitle\n'
+        '    end try\n'
+        '  end if\n'
+        'end tell\n'
+    )
+
+
 def _build_open_terminal_script(workspace_dir: str, tmux_session: str, title: str, claude_cmd: str) -> str:
-    """백엔드 AgentService.openTerminal 의 AppleScript 를 그대로 옮긴 것.
+    """백엔드 AgentService.openTerminal 의 AppleScript 를 그대로 옮긴 것 (Terminal.app fallback).
+
+    iTerm 미설치 환경에서만 사용. iTerm 이 있으면 _build_open_iterm_script 가 우선.
 
     동작 우선순위:
       1) 같은 tmux 세션에 attach 된 Terminal tab 이 있으면 그 윈도우/탭 활성화
@@ -122,13 +201,22 @@ def open_terminal(workspace_dir: str, tmux_session: str, title: str = "") -> tup
         return 2, "tmuxSession 이 비어있습니다."
     has_past = _has_past_session(workspace_dir)
     claude_cmd = "claude -c" if has_past else "claude"
-    script = _build_open_terminal_script(workspace_dir, tmux_session, title, claude_cmd)
+    # iTerm 우선 — 사용자가 명시적으로 AIDESK_TERMINAL_APP=Terminal 로 강제 지정 가능.
+    forced = os.environ.get("AIDESK_TERMINAL_APP", "").strip().lower()
+    use_iterm = (forced == "iterm") or (forced == "" and _iterm_installed())
+    if use_iterm:
+        script = _build_open_iterm_script(workspace_dir, tmux_session, title, claude_cmd)
+        app_name = "iTerm"
+    else:
+        script = _build_open_terminal_script(workspace_dir, tmux_session, title, claude_cmd)
+        app_name = "Terminal"
     try:
         subprocess.Popen(["osascript", "-e", script])
     except OSError as e:
         log.warning("open_terminal failed: %s", e)
         return 4, f"osascript 실행 실패: {e}"
-    log.info("open_terminal: dir=%s session=%s past=%s", workspace_dir, tmux_session, has_past)
+    log.info("open_terminal: app=%s dir=%s session=%s past=%s",
+             app_name, workspace_dir, tmux_session, has_past)
     return 0, "ok"
 
 
