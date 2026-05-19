@@ -81,12 +81,15 @@ const reconnectAttempts = ref(0);
 /** 자동 재연결 — 지수 백오프(1s, 2s, 4s, …, max 30s) 로 최대 N번 재시도. */
 const MAX_RECONNECT_ATTEMPTS = 8;
 const MAX_BACKOFF_MS = 30_000;
+/** 연결이 *진짜 안정* 됐다고 판단하는 시간. open 후 이 시간 안 끊겨야 attempts 리셋. */
+const STABLE_CONNECTION_MS = 5_000;
 
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
 let ws: WebSocket | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let stabilityTimer: ReturnType<typeof setTimeout> | null = null;
 /** 의도된 종료 플래그 — onBeforeUnmount / 세션 교체 시 set 해서 auto-reconnect 차단. */
 let intentionalClose = false;
 
@@ -109,7 +112,13 @@ function connect(): void {
 
   ws.onopen = () => {
     status.value = 'open';
-    reconnectAttempts.value = 0; // 재연결 성공 시 카운터 리셋
+    // 카운터 즉시 리셋하면 open → 즉시 close 패턴이 backoff 폭주 (매번 1s) 를 일으킴.
+    // 대신 STABLE_CONNECTION_MS 동안 안 끊겨야 *진짜 안정* 으로 보고 리셋.
+    if (stabilityTimer) clearTimeout(stabilityTimer);
+    stabilityTimer = setTimeout(() => {
+      reconnectAttempts.value = 0;
+      stabilityTimer = null;
+    }, STABLE_CONNECTION_MS);
     // open 직후 한 번 fit + resize 통보 — xterm 초기 size 와 PTY size 동기화
     syncSize();
     emit('connected');
@@ -119,6 +128,11 @@ function connect(): void {
   };
   ws.onclose = (ev) => {
     emit('disconnected', ev.reason || `code=${ev.code}`);
+    // stability timer 가 살아있으면 = open 후 5초 안 끊긴 거 → 카운터 리셋 취소
+    if (stabilityTimer) {
+      clearTimeout(stabilityTimer);
+      stabilityTimer = null;
+    }
     // 의도된 종료(언마운트/세션교체)면 그대로 멈춤. 그 외엔 자동 재연결 스케줄.
     if (intentionalClose) {
       status.value = 'closed';
@@ -194,6 +208,10 @@ onBeforeUnmount(() => {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
+  }
+  if (stabilityTimer) {
+    clearTimeout(stabilityTimer);
+    stabilityTimer = null;
   }
   resizeObserver?.disconnect();
   ws?.close();
