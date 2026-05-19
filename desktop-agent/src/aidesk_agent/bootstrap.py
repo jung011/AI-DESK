@@ -29,8 +29,11 @@ log = logging.getLogger(__name__)
 
 # Helper → 백엔드 호출 시 사용. reporter 와 같은 기본값.
 _DEFAULT_BACKEND_URL = "http://localhost:30081"
-# claude 가 첫 프롬프트를 그릴 때까지의 대기 — 너무 짧으면 send-keys 가 이전 출력에 묻힘.
+# claude 가 첫 프롬프트를 그릴 때까지의 *초기* 대기 — 너무 짧으면 send-keys 가 이전 출력에 묻힘.
+# cold start (인증 / 모델 로딩) 가 길어지는 케이스를 위해 _MAX_WAIT_SEC 안에서 polling 으로 재시도.
 _BOOTSTRAP_PROMPT_DELAY_SEC = 2.5
+_BOOTSTRAP_PROMPT_MAX_WAIT_SEC = 30.0
+_BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC = 1.5
 
 # Claude Code 가 워크스페이스 단위 trust 결정을 저장하는 글로벌 파일.
 # projects[workspace_path] 객체에 hasTrustDialogAccepted=true 를 박아두면
@@ -240,23 +243,49 @@ def _build_workrole_prompt(workrole_file: str) -> str:
 def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
     """claude 가 입력 받을 준비될 때까지 잠시 기다린 뒤 send-keys 로 텍스트 + Enter 주입.
 
-    `-l` literal 모드 + 별도 Enter 분리는 paste-detect 가 Enter 를 흡수하지 않게 하기 위함
-    (옛 AgentService.sendBootstrapPrompt 와 같은 패턴).
+    `-l` literal 모드 + 별도 Enter 분리는 paste-detect 가 Enter 를 흡수하지 않게 하기 위함.
+
+    cold start (claude 첫 실행, 인증/모델 로딩) 가 _BOOTSTRAP_PROMPT_DELAY_SEC 보다 오래
+    걸리면 send-keys 가 너무 일찍 실행돼 exit 1 또는 출력에 묻힘 → 무한 WS 재연결로 이어짐.
+    그래서 *세션 alive 확인 + send-keys 재시도* 패턴으로 _MAX_WAIT_SEC 안에서 polling.
     """
-    try:
-        time.sleep(_BOOTSTRAP_PROMPT_DELAY_SEC)
-        subprocess.run(
-            ["tmux", "send-keys", "-l", "-t", tmux_session, prompt],
-            check=True, capture_output=True,
+    time.sleep(_BOOTSTRAP_PROMPT_DELAY_SEC)
+    deadline = time.monotonic() + _BOOTSTRAP_PROMPT_MAX_WAIT_SEC
+    last_err = ""
+    while time.monotonic() < deadline:
+        # 1) tmux 세션 alive 확인 — claude 가 죽었거나 세션 종료된 상태면 send-keys 가 exit 1
+        check = subprocess.run(
+            ["tmux", "has-session", "-t", tmux_session],
+            capture_output=True,
         )
-        time.sleep(0.2)
-        subprocess.run(
-            ["tmux", "send-keys", "-t", tmux_session, "Enter"],
-            check=True, capture_output=True,
-        )
-        log.info("bootstrap: prompt injected session=%s chars=%d", tmux_session, len(prompt))
-    except (subprocess.CalledProcessError, OSError) as e:
-        log.warning("bootstrap: prompt inject failed session=%s err=%s", tmux_session, e)
+        if check.returncode != 0:
+            last_err = "session not found yet"
+            time.sleep(_BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC)
+            continue
+        # 2) send-keys 시도
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-l", "-t", tmux_session, prompt],
+                check=True, capture_output=True,
+            )
+            time.sleep(0.2)
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                check=True, capture_output=True,
+            )
+            log.info("bootstrap: prompt injected session=%s chars=%d", tmux_session, len(prompt))
+            return
+        except subprocess.CalledProcessError as e:
+            last_err = f"rc={e.returncode} stderr={(e.stderr or b'').decode('utf-8', 'replace').strip()}"
+            log.info("bootstrap: prompt inject pending session=%s (%s) — retrying", tmux_session, last_err)
+            time.sleep(_BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC)
+        except OSError as e:
+            last_err = str(e)
+            time.sleep(_BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC)
+    log.warning(
+        "bootstrap: prompt inject gave up session=%s after %.0fs (last err: %s)",
+        tmux_session, _BOOTSTRAP_PROMPT_MAX_WAIT_SEC, last_err,
+    )
 
 
 def bootstrap_agent(workspace_dir: str, tmux_session: str, agent_name: str = "") -> dict:
