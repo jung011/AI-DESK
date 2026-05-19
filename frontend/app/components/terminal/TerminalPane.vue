@@ -197,6 +197,17 @@ onMounted(() => {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(data);
   });
 
+  // copy-on-select: 드래그 선택 즉시 클립보드 복사. xterm 의 selection 은 PTY redraw 나
+  // size 재조정 시 풀려서 사용자가 Cmd+C 눌 틈을 놓치는 경우가 많음 (특히 claude TUI 의
+  // spinner 가 도는 동안). 선택 변경 이벤트 시점에 자동 복사해 둬서 풀려도 클립보드는 살아있게.
+  term.onSelectionChange(() => {
+    const sel = term?.getSelection();
+    if (sel && sel.length > 0 && navigator.clipboard) {
+      // 권한 거부나 비-secure context 면 조용히 fallback — 사용자가 Cmd+C 로 재시도 가능.
+      void navigator.clipboard.writeText(sel).catch(() => {});
+    }
+  });
+
   resizeObserver = new ResizeObserver(() => syncSize());
   resizeObserver.observe(hostRef.value);
 
