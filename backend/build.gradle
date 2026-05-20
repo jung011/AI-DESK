@@ -37,6 +37,13 @@ dependencies {
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
 	runtimeOnly 'org.postgresql:postgresql'
 
+	// Security + JWT (멀티유저 인증 — sample/backend_spring 패턴 동일)
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.security:spring-security-crypto'
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
 	// API doc
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.6'
 

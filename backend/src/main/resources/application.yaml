@@ -24,6 +24,17 @@ kaflix:
 vscode:
   code-server-url: http://localhost:30082
 
+# JWT — sample/backend_spring 패턴 동일.
+# JWT_SECRET_KEY 환경변수 미설정 시 부팅 실패 (운영 안전장치). dev 는 .env / IDE 에 32B+ 임시값 세팅.
+jwt:
+  secret-key: ${JWT_SECRET_KEY:dev-only-32-byte-or-longer-secret-replace-in-prod!}
+  access-expiration-seconds: 3600       # 1h
+  refresh-expiration-seconds: 604800    # 7d
+
+# 인증 쿠키 — prod HTTPS 환경에서는 true 로 (.env 또는 profile 별 override).
+cookie:
+  secure: false
+
 mybatis:
   mapper-locations:
     - classpath*:mybatis/**/*.xml
