@@ -29,7 +29,7 @@ from .os_bridge import (
 # 임베드 터미널 사이드 패널 비활성화에 맞춰 pty WebSocket handler 도 보류.
 # 복원하려면 이 import 와 아래의 라우터 등록 두 곳을 같이 주석 해제.
 # from .pty_bridge import terminal_handler
-from .kaflix_inbox_pump import pump_loop as kaflix_pump_loop
+from .kaflix import pump_loop as kaflix_pump_loop
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
 from .tmux_scanner import scan_sessions
