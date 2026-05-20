@@ -26,7 +26,9 @@ from .os_bridge import (
     open_vscode,
     scope_workspace,
 )
-from .pty_bridge import terminal_handler
+# 임베드 터미널 사이드 패널 비활성화에 맞춰 pty WebSocket handler 도 보류.
+# 복원하려면 이 import 와 아래의 라우터 등록 두 곳을 같이 주석 해제.
+# from .pty_bridge import terminal_handler
 from .kaflix_inbox_pump import pump_loop as kaflix_pump_loop
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .sse_consumer import consumer_loop
@@ -285,8 +287,9 @@ async def _start_background_tasks(app: web.Application) -> None:
     # 사내 동료(kaflix-channel) 메시지를 (me) liki tmux 로 자동 푸시 — 사이드카 SSE 구독.
     # 사이드카가 안 떠있거나 (me) 워크스페이스에 token 이 없으면 자체 비활성, 다른 기능엔 영향 X.
     app["kaflix_pump_task"] = asyncio.create_task(kaflix_pump_loop(backend_url))
-    # code-server 도 같이 spawn — 부재 시 brew install 자동 시도. 실패해도 다른 기능엔 영향 없음.
-    app["code_server_proc"] = await start_code_server()
+    # 임베드 VSCode (code-server) — 대시보드의 사이드 패널이 비활성된 상태라 spawn 도 보류.
+    # 30082 포트 + brew install 단계 비용 절감. 복원하려면 아래 한 줄 주석만 해제.
+    # app["code_server_proc"] = await start_code_server()
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
@@ -299,7 +302,8 @@ async def _stop_background_tasks(app: web.Application) -> None:
             await task
         except asyncio.CancelledError:
             pass
-    await stop_code_server(app.get("code_server_proc"))
+    # code-server 자동 spawn 비활성 상태 — 정리할 proc 도 없음. 복원 시 같이 풀기.
+    # await stop_code_server(app.get("code_server_proc"))
 
 
 def build_app() -> web.Application:
@@ -317,7 +321,7 @@ def build_app() -> web.Application:
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
-    app.router.add_get("/api/terminal", terminal_handler)
+    # app.router.add_get("/api/terminal", terminal_handler)  # 임베드 터미널 비활성
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
     app.on_startup.append(_start_background_tasks)
