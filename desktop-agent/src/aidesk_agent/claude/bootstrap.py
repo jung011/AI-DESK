@@ -41,18 +41,15 @@ _BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC = 1.5
 _CLAUDE_JSON_PATH = Path.home() / ".claude.json"
 
 # 신규 AI 가 즉시 쓸 수 있게 하는 최소 권한 집합.
-# - aidesk-channel: 사내 AI 간 협업 (내부)
-# - kaflix-channel: 사내 동료(외부 PC) 와 협업 — (me) liki 가 inbox pump 받은 메시지에 자동 응답
+# - aidesk-channel: 사내 AI 간 협업 (내부) — 모든 AI 가 공유
+# kaflix-* (사내 동료 외부 PC 통신) 는 (me) 전용 정책이라 의도적으로 포함 X.
+# (me) 워크스페이스에는 scope_workspace 가 호출되어 추가 권한이 박힘.
 # 사용자가 추가로 도구 (Bash, Read 등) 를 쓰려면 그때 "Always allow" 로 누적된다.
 DEFAULT_ALLOW = (
     "mcp__aidesk-channel__list_agents",
     "mcp__aidesk-channel__send_to",
     "mcp__aidesk-channel__reply",
     "mcp__aidesk-channel__check_inbox",
-    "mcp__kaflix-channel__reply",
-    "mcp__kaflix-channel__send_to",
-    "mcp__kaflix-channel__check_inbox",
-    "mcp__kaflix-channel__list_agents",
 )
 
 
