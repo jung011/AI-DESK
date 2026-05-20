@@ -20,7 +20,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
-from .os_bridge import _has_past_session
+from .._shared import has_past_session
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _resolve_cli_command(workspace_dir: str | None, model: str | None) -> str | 
 
 
 def _claude_with_resume(workspace_dir: str | None) -> str:
-    if workspace_dir and _has_past_session(workspace_dir):
+    if workspace_dir and has_past_session(workspace_dir):
         return "claude -c"
     return "claude"
 

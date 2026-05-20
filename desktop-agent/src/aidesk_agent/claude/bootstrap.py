@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 
-from .os_bridge import _has_past_session
+from .._shared import has_past_session
 
 log = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str) -> bool:
         return True
 
     # 신규 AI 라도 사용자가 같은 워크스페이스로 재생성하는 케이스가 있을 수 있어 jsonl 체크.
-    claude_cmd = "claude -c" if _has_past_session(workspace_dir) else "claude"
+    claude_cmd = "claude -c" if has_past_session(workspace_dir) else "claude"
 
     # tmux new-session -d  → detached (사용자 화면에 안 뜸)
     # -A 와 함께 쓰면 안 됨 (-A 는 attach 의도) — -d 만 쓰면 새로 만들고 안 붙음

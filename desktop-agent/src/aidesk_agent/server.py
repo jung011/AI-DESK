@@ -13,29 +13,22 @@ import os
 from aiohttp import web
 
 from . import __version__
-from .bootstrap import bootstrap_agent
-from .claude_scanner import scan_workspaces
-from .code_server import DEFAULT_PORT as CODE_SERVER_PORT
-from .code_server import start_code_server, stop_code_server
-from .os_bridge import (
-    browse_file,
-    browse_workspace,
-    cleanup_agent,
-    ensure_iterm_dynamic_profile,
-    open_terminal,
-    open_vscode,
-    scope_workspace,
-)
+from .claude.bootstrap import bootstrap_agent
+from .claude.scanner import scan_workspaces
+from .vscode.code_server import DEFAULT_PORT as CODE_SERVER_PORT
+from .vscode.code_server import start_code_server, stop_code_server
+from .vscode import open_vscode
+from .terminal import ensure_iterm_dynamic_profile, open_terminal
+from .workspace import browse_file, browse_workspace, cleanup_agent, scope_workspace
 # 임베드 터미널 사이드 패널 비활성화에 맞춰 pty WebSocket handler 도 보류.
 # 복원하려면 이 import 와 아래의 라우터 등록 두 곳을 같이 주석 해제.
-# from .pty_bridge import terminal_handler
+# from .tmux.pty_bridge import terminal_handler
 from .kaflix import pump_loop as kaflix_pump_loop
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
-from .sse_consumer import consumer_loop
-from .tmux_scanner import scan_sessions
-from .action_hook import auto_install_on_startup as action_hook_auto_install
-from .prompt_hook import auto_install_on_startup as prompt_hook_auto_install
-from .usage import (
+from .tmux import consumer_loop, scan_sessions
+from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
+from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
+from .claude.usage import (
     auto_install_on_startup as usage_auto_install,
     get_local_usage,
     install_statusline_hook,

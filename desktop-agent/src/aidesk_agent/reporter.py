@@ -6,9 +6,9 @@ import logging
 
 import httpx
 
-from .claude_scanner import scan_workspaces
+from .claude import scan_workspaces
 from .kaflix import detect_local_employee_id
-from .tmux_scanner import scan_sessions
+from .tmux import scan_sessions
 
 log = logging.getLogger(__name__)
 
