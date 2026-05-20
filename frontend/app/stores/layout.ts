@@ -2,21 +2,20 @@ import { defineStore } from 'pinia';
 
 interface LayoutState {
   sideMenuOpen: boolean;
-  user: { name: string };
 }
 
+/**
+ * UI 레이아웃 상태 — 사이드메뉴 open/close.
+ * 사용자 식별 정보는 ~/stores/auth.ts 의 useAuthStore() 사용.
+ */
 export const useLayoutStore = defineStore('layout', {
   state: (): LayoutState => ({
-    // 시작 시 닫힘 — 사용자가 햄버거를 눌러 열도록 (sample 패턴과 동일)
+    // 시작 시 닫힘 — 사용자가 햄버거를 눌러 연다.
     sideMenuOpen: false,
-    user: { name: 'admin' }
   }),
   actions: {
     toggleSideMenu() {
       this.sideMenuOpen = !this.sideMenuOpen;
     },
-    setUser(name: string) {
-      this.user.name = name;
-    }
-  }
+  },
 });

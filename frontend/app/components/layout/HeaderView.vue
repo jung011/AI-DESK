@@ -25,23 +25,41 @@
       <button type="button" class="header-burger" @click="layout.toggleSideMenu()" />
     </div>
     <div class="header-bottom-right">
-      <span class="header-user">{{ layout.user.name }}</span>
-      <!-- 로그인 시스템이 없으므로 로그아웃 버튼 숨김. 필요해지면 복원.
-      <button type="button" class="header-logout" @click="onLogout">로그아웃</button>
-      -->
+      <span class="header-user" :title="auth.loginId">{{ auth.displayName || '게스트' }}</span>
+      <button
+        type="button"
+        class="header-logout"
+        :disabled="signingOut"
+        @click="onLogout">
+        {{ signingOut ? '로그아웃 중…' : '로그아웃' }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useLayoutStore } from '~/stores/layout';
+import { useAuthStore } from '~/stores/auth';
+import { useAuth } from '~/composables/useAuth';
 
 const layout = useLayoutStore();
+const auth = useAuthStore();
+const { signOut } = useAuth();
+const router = useRouter();
 
-// 로그인 시스템이 도입되면 로그아웃 핸들러를 다시 살린다.
-// function onLogout() {
-//   alert('1단계는 로그인 시스템이 없습니다.');
-// }
+const signingOut = ref(false);
+
+async function onLogout() {
+  if (signingOut.value) return;
+  signingOut.value = true;
+  try {
+    await signOut();
+  } finally {
+    signingOut.value = false;
+    await router.replace('/login');
+  }
+}
 </script>
 
 <style scoped>
