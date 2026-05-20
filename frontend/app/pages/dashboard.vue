@@ -41,7 +41,9 @@
     <!-- 사내 동료 AI (kaflix-a2a Control Plane) -->
     <ExternalAgentGrid @select-me="onSelectMe" />
 
-    <!-- 임베드 터미널 사이드 패널 -->
+    <!-- 임베드 터미널 + VSCode 사이드 패널 — 사용 빈도 낮아 잠시 비활성.
+         외부 터미널 열기 / 외부 VSCode 열기 (AgentCard 안 버튼) 흐름은 그대로 동작.
+         복원하려면 아래 블록의 주석만 풀면 됨.
     <TerminalSidePanel
       :open="panel.open"
       :agent-name="panel.agentName"
@@ -50,6 +52,8 @@
       :workspace-dir="panel.workspaceDir"
       :model="panel.model"
       @close="panel.open = false" />
+    -->
+
 
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
@@ -83,7 +87,10 @@ import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 import ExternalAgentGrid from '~/components/dashboard/ExternalAgentGrid.vue';
-import TerminalSidePanel from '~/components/dashboard/TerminalSidePanel.vue';
+// 임베드 터미널 + 임베드 VSCode 사이드 패널 비활성 — TerminalSidePanel + 하위
+// TerminalPane / VsCodePane 까지 함께 bundle 에서 빠지도록 import 도 같이 주석.
+// 복원하려면 이 import 와 template 안의 <TerminalSidePanel> 블록 주석 해제.
+// import TerminalSidePanel from '~/components/dashboard/TerminalSidePanel.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
 import type { ExternalAgentItem } from '~/vo/external/ExternalAgentVo';
