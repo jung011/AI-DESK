@@ -35,41 +35,36 @@ fi
 
 sudo -u "$CONSOLE_USER" mkdir -p "$LA_DIR" "$LOG_DIR" "$USER_HOME/.aidesk"
 
-# PyInstaller 바이너리를 직접 호출하는 plist 작성.
-# (기존 uv-based plist 는 사용 안 함 — 바이너리 자체가 의존성을 안고 있음)
-cat > "$PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.aidesk.agent</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/local/bin/aidesk-helper</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>10</integer>
-  <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key>
-  <string>$LOG_DIR/aidesk-agent.log</string>
-  <key>StandardErrorPath</key>
-  <string>$LOG_DIR/aidesk-agent.err</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$USER_HOME/.local/bin</string>
-    <key>HOME</key>
-    <string>$USER_HOME</string>
-    <key>LANG</key>
-    <string>$USER_LANG</string>
-    <key>LC_CTYPE</key>
-    <string>UTF-8</string>
-  </dict>
-</dict>
-</plist>
-EOF
+# plist 작성 — 기존 plist 의 EnvironmentVariables 는 *보존* (재설치 시
+# AIDESK_BACKEND_URL/EXTRA_ORIGINS 등 동료의 setup 환경값을 잃지 않게).
+# 핵심 시스템 env (PATH/HOME/LANG/LC_CTYPE) 만 항상 덮어쓴다.
+sudo -u "$CONSOLE_USER" python3 - "$PLIST" "$LOG_DIR" "$USER_HOME" "$USER_LANG" <<'PYEOF'
+import sys, plistlib
+plist_path, log_dir, user_home, user_lang = sys.argv[1:]
+try:
+    with open(plist_path, 'rb') as f:
+        existing = plistlib.load(f)
+    existing_env = existing.get('EnvironmentVariables', {}) or {}
+except (OSError, plistlib.InvalidFileException):
+    existing_env = {}
+existing_env['PATH'] = f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{user_home}/.local/bin"
+existing_env['HOME'] = user_home
+existing_env['LANG'] = user_lang
+existing_env['LC_CTYPE'] = 'UTF-8'
+plist = {
+    'Label': 'com.aidesk.agent',
+    'ProgramArguments': ['/usr/local/bin/aidesk-helper'],
+    'RunAtLoad': True,
+    'KeepAlive': True,
+    'ThrottleInterval': 10,
+    'ProcessType': 'Background',
+    'StandardOutPath': f'{log_dir}/aidesk-agent.log',
+    'StandardErrorPath': f'{log_dir}/aidesk-agent.err',
+    'EnvironmentVariables': existing_env,
+}
+with open(plist_path, 'wb') as f:
+    plistlib.dump(plist, f)
+PYEOF
 
 chown "$CONSOLE_USER" "$PLIST"
 chmod 644 "$PLIST"
@@ -104,9 +99,10 @@ servers["aidesk-channel"] = {
     "command": "node",
     "args": ["$AIDESK_CHANNEL_BIN"],
     "env": {
-        # 기존 env 보존, 없는 키만 default 채움.
+        # 기존 env 보존, 없는 키만 default 채움. AIDESK_API_URL 은 *비워둠* —
+        # 첫 brower 진입 시 HelperSetupDialog 가 helper /api/setup 으로 채움.
         "AIDESK_AGENT_ID": existing_env.get("AIDESK_AGENT_ID", "a1b2c3d4-0000-0000-0000-000000000001"),
-        "AIDESK_API_URL":  existing_env.get("AIDESK_API_URL", "http://localhost:30081"),
+        "AIDESK_API_URL":  existing_env.get("AIDESK_API_URL", ""),
     },
 }
 with open(path, "w") as f:

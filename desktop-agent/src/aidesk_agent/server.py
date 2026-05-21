@@ -7,8 +7,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import plistlib
+import re
+import subprocess
+from pathlib import Path
 
 from aiohttp import web
 
@@ -47,6 +52,15 @@ ALLOWED_ORIGINS = _DEFAULT_ORIGINS | {
     o.strip() for o in os.environ.get("AIDESK_EXTRA_ORIGINS", "").split(",") if o.strip()
 }
 
+# 중앙서버 IP 가 바뀌면 동료 brower 가 *새 IP origin* 으로 helper 를 호출해 setup 을 다시 잡아야 한다.
+# 그 첫 호출은 정의상 ALLOWED_ORIGINS 에 없는 origin 이므로, setup/local-info 두 endpoint 만은
+# 화이트리스트 우회로 *모든 origin* 을 허용한다. 다른 endpoint 는 기존 정책 유지.
+_OPEN_ORIGIN_PATHS = {"/api/setup", "/api/local-info"}
+
+_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / "com.aidesk.agent.plist"
+_CLAUDE_JSON_PATH = Path.home() / ".claude.json"
+_HUB_URL_RE = re.compile(r"^https?://[\w\.\-]+(?::\d+)?/?$")
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CORS 미들웨어
@@ -63,7 +77,8 @@ async def cors_middleware(request: web.Request, handler):
     else:
         resp = await handler(request)
 
-    if origin in ALLOWED_ORIGINS:
+    allow = origin in ALLOWED_ORIGINS or request.path in _OPEN_ORIGIN_PATHS
+    if allow and origin:
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
@@ -94,8 +109,114 @@ async def local_info(_: web.Request) -> web.Response:
         {
             "workspaces": workspaces,
             "tmuxSessions": tmux,
+            # 현재 helper 가 가리키는 중앙서버 — frontend HelperSetupDialog 가 brower origin 과 비교해
+            # mismatch 면 setup 모달 자동 노출.
+            "currentBackendUrl": os.environ.get("AIDESK_BACKEND_URL", DEFAULT_BACKEND_URL),
+            "currentExtraOrigins": sorted(o for o in ALLOWED_ORIGINS if o not in _DEFAULT_ORIGINS),
         }
     )
+
+
+def _derive_hub_origin(hub_url: str) -> str:
+    """`http://IP:30081` -> `http://IP:30080` 같이 backend(:30081) URL 에서 frontend(:30080) origin 추출.
+    이미 :30080 또는 다른 form 이면 그대로 통과."""
+    # 가장 단순한 규칙 — 30081 -> 30080 치환. 옛 사용자 환경 보장.
+    if hub_url.rstrip("/").endswith(":30081"):
+        return hub_url.rstrip("/")[:-len(":30081")] + ":30080"
+    return hub_url.rstrip("/")
+
+
+def _apply_setup(hub_url: str) -> tuple[int, str]:
+    """plist + ~/.claude.json 갱신. helper 자신 재로드는 응답 후 별도 task 에서."""
+    hub_url = hub_url.rstrip("/")
+    if not _HUB_URL_RE.match(hub_url + "/"):
+        return 1, "hubUrl 형식이 올바르지 않습니다 (예: http://10.0.0.1:30080)"
+    # 30080 (frontend) URL 받아서 30081 (backend) 로 자동 매핑.
+    frontend_origin = _derive_hub_origin(hub_url) if hub_url.endswith(":30081") else hub_url
+    backend_url = (
+        hub_url
+        if hub_url.endswith(":30081")
+        else (frontend_origin[:-len(":30080")] + ":30081" if frontend_origin.endswith(":30080") else frontend_origin)
+    )
+
+    # 1) plist 갱신
+    if not _PLIST_PATH.exists():
+        return 2, f"LaunchAgent plist 가 없습니다: {_PLIST_PATH}"
+    try:
+        with open(_PLIST_PATH, "rb") as f:
+            plist = plistlib.load(f)
+        env = plist.setdefault("EnvironmentVariables", {})
+        env["AIDESK_BACKEND_URL"] = backend_url
+        env["AIDESK_EXTRA_ORIGINS"] = frontend_origin
+        with open(_PLIST_PATH, "wb") as f:
+            plistlib.dump(plist, f)
+    except (OSError, plistlib.InvalidFileException) as e:
+        return 3, f"plist 갱신 실패: {e}"
+
+    # 2) ~/.claude.json 의 aidesk-channel mcp env.AIDESK_API_URL 갱신
+    try:
+        with open(_CLAUDE_JSON_PATH) as f:
+            cdata = json.load(f)
+        servers = cdata.setdefault("mcpServers", {})
+        ac = servers.setdefault("aidesk-channel", {})
+        ac_env = ac.setdefault("env", {})
+        ac_env["AIDESK_API_URL"] = backend_url
+        with open(_CLAUDE_JSON_PATH, "w") as f:
+            json.dump(cdata, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    except (OSError, json.JSONDecodeError) as e:
+        return 4, f"~/.claude.json 갱신 실패: {e}"
+
+    return 0, backend_url
+
+
+def _spawn_detached_reload() -> None:
+    """plist 갱신 후 launchctl bootout + bootstrap 으로 새 env 로 재기동.
+    helper 자기 자신을 죽이는 작업이므로 *detached subprocess* 로 띄워야 한다 —
+    self-bootout 후에도 그 sh 가 살아남아 bootstrap 까지 완수."""
+    uid = os.getuid()
+    label = f"gui/{uid}/com.aidesk.agent"
+    plist_path = str(_PLIST_PATH)
+    try:
+        subprocess.Popen(
+            [
+                "/bin/sh", "-c",
+                f"sleep 1; launchctl bootout {label} 2>/dev/null; "
+                f"sleep 1; launchctl bootstrap gui/{uid} {plist_path}",
+            ],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as e:
+        log.warning("setup reload: spawn failed: %s", e)
+
+
+async def setup_handler(request: web.Request) -> web.Response:
+    """동료가 brower 에서 *중앙서버 URL* 입력 → helper 가 plist + ~/.claude.json 자동 갱신 + 재로드.
+
+    body: { hubUrl: "http://<IP>:30080" or "http://<IP>:30081" }
+    응답:  { rc, message, currentBackendUrl, currentExtraOrigins }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"rc": 1, "message": "JSON body required"}, status=400)
+    hub_url = (body.get("hubUrl") or "").strip() if isinstance(body, dict) else ""
+    if not hub_url:
+        return web.json_response({"rc": 1, "message": "hubUrl required"}, status=400)
+    rc, msg_or_backend = _apply_setup(hub_url)
+    if rc != 0:
+        return web.json_response({"rc": rc, "message": msg_or_backend}, status=400)
+    backend_url = msg_or_backend
+    # 응답 후 detached sh 가 launchctl bootout + bootstrap — helper 가 죽어도 sh 가 살아남음.
+    _spawn_detached_reload()
+    return web.json_response({
+        "rc": 0,
+        "message": "ok",
+        "currentBackendUrl": backend_url,
+        "currentExtraOrigins": [_derive_hub_origin(hub_url) if hub_url.endswith(":30081") else hub_url],
+    })
 
 
 async def open_terminal_handler(request: web.Request) -> web.Response:
@@ -309,6 +430,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
     app.router.add_post("/api/check-tmux", check_tmux_handler)
+    app.router.add_post("/api/setup", setup_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
