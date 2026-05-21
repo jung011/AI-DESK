@@ -14,8 +14,16 @@ WORKDIR /workspace
 # API base 는 빈 문자열 → 상대 경로로 호출 → nginx 가 /api/* 를 backend 로 proxy.
 ARG NUXT_PUBLIC_API_BASE=
 ARG NUXT_PUBLIC_HELPER_BASE=http://localhost:30083
+# subpath 배포 (예: ingress 가 https://도메인/ai-desk 로 노출) 지원.
+# - app.baseURL 이 박혀서 모든 chunk/route 가 그 prefix 로 생성.
+# - NUXT_PUBLIC_API_BASE 도 같은 prefix (예: /ai-desk) 로 주입 → $api 가 자동으로 prefix.
+# - 기본값 '/' = root path 배포 (옛 동작).
+# 빌드 예: docker build --build-arg NUXT_APP_BASE_URL=/ai-desk/ \
+#                       --build-arg NUXT_PUBLIC_API_BASE=/ai-desk ...
+ARG NUXT_APP_BASE_URL=/
 ENV NUXT_PUBLIC_API_BASE=$NUXT_PUBLIC_API_BASE
 ENV NUXT_PUBLIC_HELPER_BASE=$NUXT_PUBLIC_HELPER_BASE
+ENV NUXT_APP_BASE_URL=$NUXT_APP_BASE_URL
 
 # postinstall(nuxt prepare) 가 소스를 참조하므로 일괄 복사 후 install.
 COPY . .

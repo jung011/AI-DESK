@@ -17,6 +17,9 @@ export default defineNuxtConfig({
   ],
 
   app: {
+    // K8s 등에서 subpath (예: /ai-desk/) 로 노출할 때 build 시점에 NUXT_APP_BASE_URL 로
+    // 주입. router 와 asset 모두 그 prefix 가 박힌 채 생성된다. 기본값 '/' = root.
+    baseURL: process.env.NUXT_APP_BASE_URL || '/',
     head: {
       title: 'AI 사무실',
       htmlAttrs: { lang: 'ko' },

@@ -138,18 +138,28 @@ const helperBackendUrl = ref('');
 const pageOrigin = ref('');
 
 /** helper 의 backend URL host 와 brower origin host 가 다르면 setup 모달.
- *  같은 host 면 port 차이는 무시 (frontend:30080 vs backend:30081). */
+ *  같은 host 면 port 차이는 무시 (frontend:30080 vs backend:30081).
+ *
+ *  subpath 배포 (예: https://도메인/ai-desk) 의 경우 hubUrl 에 baseURL 도 포함해서
+ *  helper 에 전달해야 helper 가 /api/* 호출 시 그 prefix 를 자동으로 붙인다. */
 async function checkHelperSetup(): Promise<void> {
   if (typeof window === 'undefined') return;
-  pageOrigin.value = window.location.origin;
+  const runtime = useRuntimeConfig();
+  const baseURL = (runtime.app?.baseURL || '/').replace(/\/+$/, '');
+  pageOrigin.value = window.location.origin + baseURL;
   try {
     const { $helper } = useNuxtApp();
     const info = await $helper<HelperLocalInfoRs>('/api/local-info');
     helperBackendUrl.value = info.currentBackendUrl || '';
     if (!helperBackendUrl.value) return; // 옛 helper (0.6.7-) 호환 — 모달 안 띄움
-    const helperHost = new URL(helperBackendUrl.value).hostname;
-    const pageHost = new URL(pageOrigin.value).hostname;
-    if (helperHost !== pageHost) helperSetupOpen.value = true;
+    const helperUrl = new URL(helperBackendUrl.value);
+    const pageUrl = new URL(pageOrigin.value || window.location.origin);
+    const helperPath = helperUrl.pathname.replace(/\/+$/, '');
+    const pagePath = pageUrl.pathname.replace(/\/+$/, '');
+    // host 또는 path prefix 가 다르면 mismatch → setup 모달.
+    if (helperUrl.hostname !== pageUrl.hostname || helperPath !== pagePath) {
+      helperSetupOpen.value = true;
+    }
   } catch {
     // helper 미가동 등 — 무시. (me) 모달 단계의 폴더 선택에서 어차피 에러로 안내됨.
   }
