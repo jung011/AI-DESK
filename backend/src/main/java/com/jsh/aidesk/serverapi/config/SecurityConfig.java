@@ -54,6 +54,10 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
                         "/",
+                        // Spring Boot 가 controller 의 ResponseStatusException 을 /error 로 forward.
+                        // 비인증 호출(/api/messages 의 cross-user 403 등) 이 여기로 들어와 401 NA
+                        // 로 변환되지 않도록 permitAll.
+                        "/error",
                         "/api/auth/authenticate",
                         "/api/auth/refresh",
                         "/api/auth/signup",
@@ -62,9 +66,12 @@ public class SecurityConfig {
                         "/v3/api-docs/**"
                 ).permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                // helper 보고용 endpoint — 본 패키지에선 임시 비인증 허용.
-                // 후속 helper-user binding 단계에서 별도 인증 도입.
+                // helper 보고용 endpoint — 임시 비인증 허용. 후속 helper-user binding 단계에서 별도 인증.
                 .requestMatchers("/api/desktop/**").permitAll()
+                // aidesk-channel mcp 가 외부 터미널의 claude 안에서 호출 — 쿠키/토큰 없이 fetch.
+                // 비인증 허용 + service 가 sender_agent_id 의 owner 로 user 컨텍스트 fallback.
+                .requestMatchers("/api/agents/**").permitAll()
+                .requestMatchers("/api/messages/**").permitAll()
                 .requestMatchers("/api/auth/sign-out").authenticated()
                 .anyRequest().authenticated()
             )

@@ -64,8 +64,14 @@ public class MessageService {
         }
         // 권한: sender 와 receiver 가 모두 같은 사용자 소유여야 한다. 외부 동료 메시지는 별도
         // 라우팅(kaflix-channel) 으로 가므로 본 endpoint 는 *같은 user 내 통신* 전용.
-        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
-        if (!me.equals(from.getOwnerAccountSn()) || !me.equals(to.getOwnerAccountSn())) {
+        //
+        // actor 결정:
+        //   - 인증된 호출 (브라우저 cookie) → SecurityContext.accountSn 으로 검증
+        //   - 비인증 호출 (외부 터미널의 aidesk-channel mcp) → sender 의 owner 로 user 추정.
+        //     mcp 는 본인의 self_agent 만 sender 로 사용하므로 자기 user 외 발신은 일어나지 않음.
+        var authedUser = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentUserOrNull();
+        Long actor = (authedUser != null) ? authedUser.getAccountSn() : from.getOwnerAccountSn();
+        if (!actor.equals(from.getOwnerAccountSn()) || !actor.equals(to.getOwnerAccountSn())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다른 사용자의 에이전트로는 메시지 못 보냄");
         }
         if (from.getAgentId().equals(to.getAgentId())) {

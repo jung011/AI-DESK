@@ -44,13 +44,20 @@ public class AgentService {
 
     @Transactional(readOnly = true)
     public AgentListRsVo getList(String status) {
-        Long me = AuthContext.currentAccountSn();
-        List<AgentVo> rows = agentMapper.selectList(me, status);
+        Long me = AuthContext.currentUserOrNull() != null
+                ? AuthContext.currentAccountSn()
+                : null;
+        // 비인증 호출 (aidesk-channel mcp 등) 은 자기 self_agent 를 cwd 매칭으로 찾기 위해 전체 list 가 필요.
+        // 인증된 사용자는 본인 user 의 agent 만.
+        List<AgentVo> rows = (me == null)
+                ? agentMapper.selectAllForSystem()
+                : agentMapper.selectList(me, status);
         List<AgentItemRsVo> list = rows.stream().map(this::toItem).toList();
 
         AgentListRsVo rs = new AgentListRsVo();
         rs.setList(list);
-        rs.setSummary(buildSummary(me));
+        // summary 는 본인 user 의 통계 — 비인증이면 0 (mcp 에선 summary 안 봄)
+        rs.setSummary(me == null ? new AgentSummaryRsVo() : buildSummary(me));
         return rs;
     }
 
@@ -92,12 +99,18 @@ public class AgentService {
 
     @Transactional(readOnly = true)
     public AgentVo findById(String agentId) {
+        // 비인증 (mcp) 호출은 owner 격리 없이 단건 조회. caller 가 본인 user 인지 검증 책임.
+        if (AuthContext.currentUserOrNull() == null) {
+            return agentMapper.selectByIdAnyOwner(agentId);
+        }
         return agentMapper.selectById(agentId, AuthContext.currentAccountSn());
     }
 
     @Transactional(readOnly = true)
     public AgentItemRsVo detail(String agentId) {
-        AgentVo v = agentMapper.selectById(agentId, AuthContext.currentAccountSn());
+        AgentVo v = (AuthContext.currentUserOrNull() == null)
+                ? agentMapper.selectByIdAnyOwner(agentId)
+                : agentMapper.selectById(agentId, AuthContext.currentAccountSn());
         return v == null ? null : toItem(v);
     }
 
