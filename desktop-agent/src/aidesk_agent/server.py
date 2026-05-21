@@ -309,12 +309,15 @@ async def agent_bootstrap_handler(request: web.Request) -> web.Response:
     workspace_dir = (body.get("workspaceDir") or "").strip()
     tmux_session = (body.get("tmuxSession") or "").strip()
     agent_name = (body.get("agentName") or "").strip()
+    # workroleFile 은 옛엔 helper 가 backend 에 인증 없이 GET 했지만 그 endpoint 가 인증 가드 안에
+    # 있어 항상 빈 응답 → 프롬프트 누락. frontend 가 인증 cookie 로 미리 조회해서 같이 넘긴다.
+    workrole_file = (body.get("workroleFile") or "").strip()
     if not workspace_dir or not tmux_session:
         return web.json_response(
             {"rc": 2, "message": "workspaceDir 와 tmuxSession 이 모두 필요합니다."},
             status=400,
         )
-    result = bootstrap_agent(workspace_dir, tmux_session, agent_name)
+    result = bootstrap_agent(workspace_dir, tmux_session, agent_name, workrole_file)
     return web.json_response({"rc": 0, "message": "ok", **result})
 
 

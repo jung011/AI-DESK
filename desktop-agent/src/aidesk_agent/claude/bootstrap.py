@@ -285,7 +285,12 @@ def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
     )
 
 
-def bootstrap_agent(workspace_dir: str, tmux_session: str, agent_name: str = "") -> dict:
+def bootstrap_agent(
+    workspace_dir: str,
+    tmux_session: str,
+    agent_name: str = "",
+    workrole_file: str = "",
+) -> dict:
     """엔드포인트 본체. trust + 권한 + tmux + 프롬프트 주입 모두 시도하고 결과 dict 반환.
 
     순서가 중요: trust 마커가 tmux 시작 전에 박혀야 claude 첫 부팅 때 프롬프트가 안 뜬다.
@@ -294,6 +299,9 @@ def bootstrap_agent(workspace_dir: str, tmux_session: str, agent_name: str = "")
 
     agent_name 이 주어지면 identity prompt (자기 이름 인지) 를 항상 주입하고,
     workrole_file 이 설정되어 있으면 그 안내문을 뒤에 합쳐서 한 번에 보낸다.
+
+    workrole_file 인자는 frontend 가 인증 cookie 로 미리 조회한 값. 없으면 helper 가
+    비인증으로 backend 직접 호출하지만 그 endpoint 가 인증 가드 안에 있어 보통 빈 응답.
     """
     trust_ok = _mark_folder_trusted(workspace_dir)
     perms_ok, perms_added = _write_default_permissions(workspace_dir)
@@ -303,9 +311,11 @@ def bootstrap_agent(workspace_dir: str, tmux_session: str, agent_name: str = "")
         parts: list[str] = []
         if agent_name and agent_name.strip():
             parts.append(_build_identity_prompt(agent_name.strip()))
-        workrole_file = _fetch_workrole_file().strip()
-        if workrole_file:
-            parts.append(_build_workrole_prompt(workrole_file))
+        # 인자로 받은 path 가 있으면 그걸 우선 — frontend 가 인증해서 가져온 값.
+        # 없으면 옛 helper-직접-fetch fallback (single-mac 환경에서만 동작).
+        effective_workrole = workrole_file.strip() if workrole_file else _fetch_workrole_file().strip()
+        if effective_workrole:
+            parts.append(_build_workrole_prompt(effective_workrole))
         if parts:
             prompt = "\n\n".join(parts)
             threading.Thread(
