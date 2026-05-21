@@ -28,7 +28,11 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 const ENV_AGENT_ID = process.env.AIDESK_AGENT_ID;
-const API_URL  = process.env.AIDESK_API_URL || 'http://localhost:30081';
+// API_URL 은 env 가 1차 — 단, claude TUI 가 *오랜 시간 도는 동안 사용자가 backend URL
+// 을 바꾸면* spawn 시점 env 가 stale 이 된다. 이를 자동 회복하기 위해 같은 mac 의
+// helper 에 *최신 backend URL* 을 묻는 보조 경로를 둔다.
+let API_URL  = process.env.AIDESK_API_URL || 'http://localhost:30081';
+const HELPER_URL = process.env.AIDESK_HELPER_URL || 'http://localhost:30083';
 const POLL_MS  = Number(process.env.AIDESK_POLL_MS || 5000);
 
 // 부팅 시 한 번 결정되며, 결정 실패해도 종료하지 않는다 (백엔드 미기동 시점에 claude 가
@@ -92,15 +96,52 @@ const TOOLS = [
 // 백엔드 호출 헬퍼
 // ---------------------------------------------------------------------
 
+/**
+ * 같은 mac 의 helper 에게 *현재 backend URL* 을 물어 API_URL 갱신.
+ * 호출자가 await 하든 안 하든 부수효과로 모듈 내 API_URL 만 업데이트.
+ */
+async function refreshApiUrlFromHelper() {
+  try {
+    const r = await fetch(`${HELPER_URL}/api/local-info`, {
+      signal: AbortSignal.timeout(2000)
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const fresh = data?.currentBackendUrl;
+    if (fresh && fresh !== API_URL) {
+      process.stderr.write(
+        `aidesk-channel: API_URL ${API_URL} -> ${fresh} (helper override)\n`
+      );
+      API_URL = fresh;
+    }
+  } catch {
+    // helper 미응답이면 기존 API_URL 그대로 유지 — 다음 도구 호출 때 다시 시도.
+  }
+}
+
 async function api(path, init = {}) {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) }
-  });
-  const env = await res.json();
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${env?.message || res.statusText}`);
-  if (env.result !== 0 && !env.data) throw new Error(env.message || 'backend error');
-  return env;
+  const headers = { 'Content-Type': 'application/json', ...(init.headers || {}) };
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+      const env = await res.json();
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${env?.message || res.statusText}`);
+      if (env.result !== 0 && !env.data) throw new Error(env.message || 'backend error');
+      return env;
+    } catch (e) {
+      lastErr = e;
+      // 네트워크 / 연결 오류 ('fetch failed' 등) 만 재시도 — HTTP 5xx 같은 응답은 그대로.
+      const msg = String(e?.message || '');
+      const isNetwork = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|network|aborted/i.test(msg);
+      if (attempt === 0 && isNetwork) {
+        await refreshApiUrlFromHelper();
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
 }
 
 const isUuid = (s) => typeof s === 'string' && /^[0-9a-f-]{36}$/i.test(s);
@@ -287,6 +328,11 @@ async function pollInbox() {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
+
+// 부팅 직후 helper 에게 *현재 backend URL* 확인 — claude TUI 가 오랜 시간 도는 동안
+// 사용자가 backend URL 을 바꿨을 가능성에 대비. helper 응답이 더 최신이면 그걸로 갱신.
+await refreshApiUrlFromHelper();
+
 process.stderr.write(
   `aidesk-channel ready. cwd=${process.cwd()} api=${API_URL} poll=${POLL_MS}ms\n`
 );
