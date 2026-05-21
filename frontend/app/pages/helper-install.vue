@@ -21,7 +21,7 @@
                   ? '아래 버튼으로 본인 mac 에 최신 .pkg 를 받습니다. 설치 시 기존 plist 환경변수는 보존됩니다.'
                   : '아래 버튼으로 본인 mac 에 .pkg 를 받습니다.' }}
             </p>
-            <a class="btn-primary" href="/api/helper/download" download>
+            <a class="btn-primary" :href="downloadUrl" download>
               {{ helperVersion.latestFilename || 'AIDeskHelper .pkg' }} 다운로드
             </a>
           </div>
@@ -73,6 +73,14 @@ import { useHelperVersionStore } from '~/stores/helperVersion';
 const helperVersion = useHelperVersionStore();
 const checking = ref(false);
 const lastCheckFailed = ref(false);
+
+/** subpath 배포 (예: /ai-desk) 일 때 NUXT_PUBLIC_API_BASE 가 박혀 있어
+ *  href 도 그 prefix 를 붙여야 ingress 가 라우팅한다. root 운영 시 빈 문자열 → 그대로. */
+const downloadUrl = computed(() => {
+  const config = useRuntimeConfig();
+  const base = (config.public.apiBase as string) || '';
+  return `${base}/api/helper/download`;
+});
 
 /** 페이지 진입 시 store 가 비어있을 수 있어 1회 새로 조회 — 업데이트 모드 / 미설치
  *  모드 판정에 필요. */
