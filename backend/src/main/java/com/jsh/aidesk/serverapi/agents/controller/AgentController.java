@@ -28,8 +28,9 @@ public class AgentController {
 
     @GetMapping
     public ResponseJson<AgentListRsVo> list(
-            @RequestParam(value = "status", required = false) String status) {
-        return ResponseJson.ok(agentService.getList(status));
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "callerAgentId", required = false) String callerAgentId) {
+        return ResponseJson.ok(agentService.getList(status, callerAgentId));
     }
 
     @GetMapping("/{agentId}")

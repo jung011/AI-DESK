@@ -62,8 +62,7 @@ public class MessageService {
         if (from == null || to == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "발신/수신 AI 미존재");
         }
-        // 권한: sender 와 receiver 가 모두 같은 사용자 소유여야 한다. 외부 동료 메시지는 별도
-        // 라우팅(kaflix-channel) 으로 가므로 본 endpoint 는 *같은 user 내 통신* 전용.
+        // 권한 검증 — channel/channel_backend.md §2 의 (me) 게이트웨이 정책.
         //
         // actor 결정:
         //   - 인증된 호출 (브라우저 cookie) → SecurityContext.accountSn 으로 검증
@@ -71,8 +70,16 @@ public class MessageService {
         //     mcp 는 본인의 self_agent 만 sender 로 사용하므로 자기 user 외 발신은 일어나지 않음.
         var authedUser = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentUserOrNull();
         Long actor = (authedUser != null) ? authedUser.getAccountSn() : from.getOwnerAccountSn();
-        if (!actor.equals(from.getOwnerAccountSn()) || !actor.equals(to.getOwnerAccountSn())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다른 사용자의 에이전트로는 메시지 못 보냄");
+        if (!actor.equals(from.getOwnerAccountSn())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인의 에이전트로만 메시지 발신 가능");
+        }
+        boolean crossUser = !from.getOwnerAccountSn().equals(to.getOwnerAccountSn());
+        if (crossUser) {
+            // 사내 동료 통신 — (me)/휴먼 ↔ (me)/휴먼 만 허용. 워커끼리 cross-user 직접 통신 차단.
+            if (!isMeOrHuman(from) || !isMeOrHuman(to)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "사내 동료 통신은 (me) 또는 휴먼만 가능합니다 — 워커 AI 는 본인 user 안에서만 통신");
+            }
         }
         if (from.getAgentId().equals(to.getAgentId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "self-message");
@@ -314,6 +321,18 @@ public class MessageService {
     private static String truncate(String s, int n) {
         if (s == null) return "";
         return s.length() > n ? s.substring(0, n) + "…" : s;
+    }
+
+    /**
+     * (me) AI 또는 휴먼 entity 판정 — cross-user 메시지 게이트웨이 검증에 사용.
+     * - tmux_session 이 "aidesk-self-" prefix 로 시작 = (me)
+     * - model 이 "human" = 휴먼
+     */
+    private static boolean isMeOrHuman(AgentVo a) {
+        if (a == null) return false;
+        String ts = a.getTmuxSession();
+        if (ts != null && ts.startsWith("aidesk-self-")) return true;
+        return "human".equalsIgnoreCase(a.getModel());
     }
 
     /**

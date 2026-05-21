@@ -53,6 +53,15 @@
          ORDER BY started_at DESC
     </select>
 
+    <select id="selectMeAgents" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE deleted_at IS NULL
+           AND tmux_session LIKE 'aidesk-self-%'
+           AND owner_account_sn &lt;&gt; #{excludeAccountSn}
+         ORDER BY owner_account_sn ASC
+    </select>
+
     <insert id="insert" parameterType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
         INSERT INTO t_ai_agent (
             agent_id, owner_account_sn, agent_name, workspace_dir, tmux_session,

@@ -1,5 +1,6 @@
 package com.jsh.aidesk.serverapi.agents.service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,21 +45,79 @@ public class AgentService {
 
     @Transactional(readOnly = true)
     public AgentListRsVo getList(String status) {
+        return getList(status, null);
+    }
+
+    /**
+     * @param callerAgentId aidesk-channel mcp 가 호출 시 자기 self_agent_id 동봉. 인증된 호출에선 null.
+     *                      caller 의 owner 로 user context 추정 + type 결정 (channel/channel_backend.md §4).
+     */
+    @Transactional(readOnly = true)
+    public AgentListRsVo getList(String status, String callerAgentId) {
         Long me = AuthContext.currentUserOrNull() != null
                 ? AuthContext.currentAccountSn()
                 : null;
-        // 비인증 호출 (aidesk-channel mcp 등) 은 자기 self_agent 를 cwd 매칭으로 찾기 위해 전체 list 가 필요.
-        // 인증된 사용자는 본인 user 의 agent 만.
-        List<AgentVo> rows = (me == null)
-                ? agentMapper.selectAllForSystem()
-                : agentMapper.selectList(me, status);
-        List<AgentItemRsVo> list = rows.stream().map(this::toItem).toList();
+
+        AgentVo caller = null;
+        if (callerAgentId != null && !callerAgentId.isBlank()) {
+            caller = agentMapper.selectByIdAnyOwner(callerAgentId);
+            // 비인증 호출에서 caller 로 user 추정.
+            if (me == null && caller != null) {
+                me = caller.getOwnerAccountSn();
+            }
+        }
+
+        List<AgentVo> rows;
+        if (me == null) {
+            // 비인증 + caller 모름 — mcp ensureAgentId 의 fallback cwd 매칭용. 전체 list.
+            rows = agentMapper.selectAllForSystem();
+        } else {
+            rows = new ArrayList<>(agentMapper.selectList(me, status));
+            // (me)/휴먼 caller 또는 인증된 사용자 (= 브라우저, 휴먼 발신 가정) → 사내 동료 (me) 추가.
+            boolean exposeColleagues = (caller == null) || isMeOrHuman(caller);
+            if (exposeColleagues) {
+                rows.addAll(agentMapper.selectMeAgents(me));
+            }
+        }
+
+        final AgentVo callerFinal = caller;
+        final Long meFinal = me;
+        List<AgentItemRsVo> list = rows.stream()
+                .map(v -> toItem(v, callerFinal, meFinal))
+                .toList();
 
         AgentListRsVo rs = new AgentListRsVo();
         rs.setList(list);
-        // summary 는 본인 user 의 통계 — 비인증이면 0 (mcp 에선 summary 안 봄)
+        // summary 는 본인 user 의 통계 — 비인증/caller 미상이면 0.
         rs.setSummary(me == null ? new AgentSummaryRsVo() : buildSummary(me));
         return rs;
+    }
+
+    /** channel/channel_backend.md §4 의 type 결정. */
+    private static String resolveType(AgentVo agent, AgentVo caller, Long viewerAccountSn) {
+        if (caller != null && agent.getAgentId().equals(caller.getAgentId())) {
+            return "self";
+        }
+        if ("human".equalsIgnoreCase(agent.getModel())) {
+            return "human";
+        }
+        boolean isMe = agent.getTmuxSession() != null
+                && agent.getTmuxSession().startsWith("aidesk-self-");
+        if (isMe) {
+            // viewer 와 같은 user 의 (me) 면 "me", 다르면 사내 동료 "colleague".
+            if (viewerAccountSn != null
+                    && viewerAccountSn.equals(agent.getOwnerAccountSn())) {
+                return "me";
+            }
+            return "colleague";
+        }
+        return "internal";
+    }
+
+    private static boolean isMeOrHuman(AgentVo a) {
+        if (a == null) return false;
+        if ("human".equalsIgnoreCase(a.getModel())) return true;
+        return a.getTmuxSession() != null && a.getTmuxSession().startsWith("aidesk-self-");
     }
 
     @Transactional
@@ -132,6 +191,10 @@ public class AgentService {
     }
 
     private AgentItemRsVo toItem(AgentVo v) {
+        return toItem(v, null, null);
+    }
+
+    private AgentItemRsVo toItem(AgentVo v, AgentVo caller, Long viewerAccountSn) {
         if (v == null) return null;
         AgentItemRsVo r = new AgentItemRsVo();
         r.setAgentId(v.getAgentId());
@@ -144,6 +207,8 @@ public class AgentService {
         r.setContextPct(v.getContextPct());
         r.setStartedAt(v.getStartedAt());
         r.setUpdatedAt(v.getUpdatedAt());
+        r.setOwnerAccountSn(v.getOwnerAccountSn());
+        r.setType(resolveType(v, caller, viewerAccountSn));
         return r;
     }
 

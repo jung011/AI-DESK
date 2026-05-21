@@ -145,9 +145,11 @@ async function ensureAgentId() {
 
 async function listAgents() {
   const me = await ensureAgentId();
-  const env = await api('/api/agents');
+  // callerAgentId 동봉 — backend 가 (me)/휴먼 caller 면 사내 동료 (me) 까지 포함해 반환,
+  // 워커 caller 면 본인 user 의 list 만. type 필드도 응답에 포함됨.
+  const env = await api(`/api/agents?callerAgentId=${encodeURIComponent(me)}`);
   // 자기 자신만 제외하고 모든 상태(active/idle/done) 를 그대로 반환한다.
-  // done 인 동료에게도 send_to 시도는 가능 — 백엔드/last mile 이 적절히 처리.
+  // type 필드 (self/me/internal/human/colleague) 는 그대로 통과 — claude 에 노출.
   return (env.data?.list || []).filter((a) => a.agentId !== me);
 }
 

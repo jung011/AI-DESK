@@ -32,6 +32,14 @@ public interface AgentMapper {
     /** 시스템 콜용 — owner 격리 없이 전체 활성 에이전트. watcher 와 helper reporter 가 사용. */
     List<AgentVo> selectAllForSystem();
 
+    /**
+     * 사내 동료 조회 — 본인 외 user 들의 (me) AI 만.
+     * (me) 식별 : tmux_session LIKE 'aidesk-self-%' AND deleted_at IS NULL.
+     * 각 user 당 0~1 row (가입했지만 (me) 미지정이면 0 row).
+     * <p>CollaboratorService 가 t_user.account_sn 기준 left join 으로 보강.
+     */
+    List<AgentVo> selectMeAgents(@Param("excludeAccountSn") Long excludeAccountSn);
+
     /** vo.ownerAccountSn 가 채워져 있어야 한다. */
     int insert(AgentVo agent);
 

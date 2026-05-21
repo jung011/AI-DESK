@@ -46,9 +46,6 @@ public class SettingService {
     private final AgentMapper agentMapper;
     private final HelperScopeWorkspaceClient helperScopeClient;
 
-    @Value("${kaflix.me-employee-id:}")
-    private String meEmployeeId;
-
     @Value("${vscode.code-server-url:}")
     private String codeServerUrl;
 
@@ -113,10 +110,10 @@ public class SettingService {
         if (path == null || path.isBlank()) return 1;
 
         Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        String meLoginId = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentLoginId();
+        String employeeKey = deriveEmployeeKey(meLoginId);
         String old = mapper.selectValue(me, KEY_A2A_WORKSPACE);
-        String meSession = (meEmployeeId == null || meEmployeeId.isBlank())
-                ? ""
-                : ME_TMUX_PREFIX + meEmployeeId.toLowerCase(Locale.ROOT);
+        String meSession = employeeKey.isEmpty() ? "" : ME_TMUX_PREFIX + employeeKey;
         HelperScopeWorkspaceClient.Result r = helperScopeClient.scope(
                 path, old, purgePreviousHistory, meSession);
         if (r.rc() != 0) {
@@ -125,8 +122,22 @@ public class SettingService {
         }
         String absolute = r.absolutePath();
         mapper.upsertValue(me, KEY_A2A_WORKSPACE, absolute);
-        upsertMeAgent(absolute, me);
+        upsertMeAgent(absolute, me, employeeKey);
         return 0;
+    }
+
+    /**
+     * login_id 에서 (me) tmux_session 의 employee key 부분 추출.
+     * 예: "liki@kaflix.com" → "liki", "wood" → "wood".
+     * 옛 kaflix.me-employee-id 의존 제거.
+     */
+    private static String deriveEmployeeKey(String loginId) {
+        if (loginId == null) return "";
+        String head = loginId.trim().toLowerCase(Locale.ROOT);
+        int at = head.indexOf('@');
+        if (at > 0) head = head.substring(0, at);
+        // tmux session 호환 문자만 (영숫자, -, _)
+        return head.replaceAll("[^a-z0-9_-]", "");
     }
 
     /**
@@ -134,12 +145,12 @@ public class SettingService {
      * `aidesk-self-{employeeId}`. 사용자가 워크스페이스를 옮겨도 같은 row 가 따라간다.
      * meEmployeeId 가 비어 있으면 아무 일도 하지 않음.
      */
-    private void upsertMeAgent(String workspaceDir, Long ownerAccountSn) {
-        if (meEmployeeId == null || meEmployeeId.isBlank()) {
-            log.warn("upsertMeAgent: kaflix.me-employee-id 미설정 — 스킵");
+    private void upsertMeAgent(String workspaceDir, Long ownerAccountSn, String employeeKey) {
+        if (employeeKey == null || employeeKey.isEmpty()) {
+            log.warn("upsertMeAgent: employee key 추출 실패 — 스킵");
             return;
         }
-        String session = ME_TMUX_PREFIX + meEmployeeId.toLowerCase(Locale.ROOT);
+        String session = ME_TMUX_PREFIX + employeeKey;
         AgentVo existing = agentMapper.selectByTmuxSession(session);
         if (existing != null) {
             if (workspaceDir.equals(existing.getWorkspaceDir())) {
@@ -153,7 +164,7 @@ public class SettingService {
         AgentVo v = new AgentVo();
         v.setAgentId(UUID.randomUUID().toString());
         v.setOwnerAccountSn(ownerAccountSn);
-        v.setAgentName(meEmployeeId + " (me)");
+        v.setAgentName(employeeKey + " (me)");
         v.setWorkspaceDir(workspaceDir);
         v.setTmuxSession(session);
         v.setStatus("active");
