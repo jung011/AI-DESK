@@ -10,6 +10,12 @@ messages:
     rate-limit-per-minute: 30   # 발신자당 1분 윈도우
     hop-limit: 10               # 답장 체인 최대 깊이
     context-limit-pct: 90       # 수신 AI 의 contextPct 가 이 값 이상이면 거절
+  # Helper ACK 미수신 시 재발행 정책. retry window 가 helper SSE read timeout (120s) 보다
+  # 길어야 VPN zombie 끊김 후 reconnect 까지 메시지 보존된다. window ≈ ack-timeout * max-retries.
+  retry:
+    ack-timeout-sec: 5    # 이 시간이 지나도 status='sent' 이면 재발행 대상
+    max-retries: 60       # 60회 × 5초 = 약 5분 window. 그 후 status='failed'.
+    batch-limit: 50       # 한 사이클당 최대 처리 메시지 수 (DB 부담 방지)
 
 # 대시보드 임베드 VSCode (code-server). start.sh 가 동일 포트로 띄운다.
 # 외부 노출 시엔 --auth password 로 바꾸고 url 도 그에 맞춰 갱신.

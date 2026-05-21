@@ -2,6 +2,7 @@ package com.jsh.aidesk.serverapi.messages.retry;
 
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,12 +30,15 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class MessageRetryScheduler {
 
-    /** ACK 대기 시간. 이 시간이 지나도 status='sent' 이면 재발행 대상. */
-    private static final int ACK_TIMEOUT_SEC = 5;
+    /** ACK 대기 시간. 이 시간이 지나도 status='sent' 이면 재발행 대상. application.yaml 외부화. */
+    @Value("${messages.retry.ack-timeout-sec:5}")
+    private int ackTimeoutSec;
     /** 최대 재시도 횟수. 초회 발행은 retry_count=0, 1회 retry 후 1, …, MAX 도달 시 failed. */
-    private static final int MAX_RETRIES = 3;
+    @Value("${messages.retry.max-retries:60}")
+    private int maxRetries;
     /** 한 번에 처리할 최대 메시지 수 — DB 부담 방지. */
-    private static final int BATCH_LIMIT = 50;
+    @Value("${messages.retry.batch-limit:50}")
+    private int batchLimit;
 
     private final MessageMapper messageMapper;
     private final AgentMapper agentMapper;
@@ -48,7 +52,7 @@ public class MessageRetryScheduler {
     public void retryStale() {
         List<MessageVo> stale;
         try {
-            stale = messageMapper.selectStaleSent(ACK_TIMEOUT_SEC, MAX_RETRIES, BATCH_LIMIT);
+            stale = messageMapper.selectStaleSent(ackTimeoutSec, maxRetries, batchLimit);
         } catch (Exception e) {
             log.warn("retry: selectStaleSent failed: {}", e.getMessage());
             return;
@@ -66,10 +70,10 @@ public class MessageRetryScheduler {
 
     @Transactional
     protected void processOne(MessageVo m) {
-        if (m.getRetryCount() != null && m.getRetryCount() >= MAX_RETRIES - 1) {
+        if (m.getRetryCount() != null && m.getRetryCount() >= maxRetries - 1) {
             // 한 번 더 시도하면 MAX 도달 — 그냥 failed.
             messageMapper.markFailed(m.getMessageId(),
-                    "Helper ACK 미수신 (재시도 " + MAX_RETRIES + "회 모두 실패)");
+                    "Helper ACK 미수신 (재시도 " + maxRetries + "회 모두 실패)");
             log.warn("retry: msg={} marked failed (max retries reached)", m.getMessageId());
             return;
         }
