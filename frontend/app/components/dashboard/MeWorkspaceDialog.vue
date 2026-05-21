@@ -59,6 +59,7 @@ import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 
 interface A2aWorkspaceRs { path: string }
 interface HelperBrowseRs { rc: number; path?: string; message?: string }
+interface HelperScopeRs { rc: number; message?: string; absolutePath?: string }
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -119,13 +120,31 @@ async function onSave(): Promise<void> {
   saving.value = true;
   errorMsg.value = '';
   try {
-    const { $api } = useNuxtApp();
+    // 1단계: 본인 mac 의 helper 에 scope-workspace 요청 — 폴더 검증 + ~/.claude.json
+    // scope 처리 + 절대 경로 정규화. 멀티 mac 환경에서 backend 가 사용자 mac 의 helper
+    // 에 접근할 수 없으므로, brower 가 본인 localhost helper 를 직접 호출한다.
+    const { $helper, $api } = useNuxtApp();
+    const scope = await $helper<HelperScopeRs>('/api/scope-workspace', {
+      method: 'POST',
+      body: {
+        newWorkspace: path.value,
+        oldWorkspace: savedPath.value,
+        purgePreviousHistory: false,
+        meTmuxSession: '',
+      },
+    });
+    if (scope.rc !== 0) {
+      errorMsg.value = mapScopeError(scope.rc, scope.message);
+      return;
+    }
+    const absolute = scope.absolutePath || path.value;
+    // 2단계: backend 에 검증된 path 만 전달 — DB 저장 + (me) row upsert.
     const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace', {
       method: 'PUT',
-      body: { path: path.value, purgePreviousHistory: false },
+      body: { path: absolute, purgePreviousHistory: false },
     });
     if (env.result === 0 && env.data) {
-      emit('saved', env.data.path || path.value);
+      emit('saved', env.data.path || absolute);
     } else {
       errorMsg.value = env.message || '저장 실패';
     }
@@ -133,6 +152,15 @@ async function onSave(): Promise<void> {
     errorMsg.value = `저장 실패: ${e instanceof Error ? e.message : String(e)}`;
   } finally {
     saving.value = false;
+  }
+}
+
+function mapScopeError(rc: number, message?: string): string {
+  switch (rc) {
+    case 1: return '경로가 비어 있습니다.';
+    case 2: return '존재하지 않거나 디렉토리가 아닙니다.';
+    case 3: return '~/.claude.json 갱신에 실패했습니다.';
+    default: return message || `폴더 검증 실패 (rc=${rc})`;
   }
 }
 
