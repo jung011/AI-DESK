@@ -8,6 +8,41 @@
       </div>
     </div>
 
+    <!-- (me) 워크스페이스 -->
+    <section class="card">
+      <header class="card-head">
+        <h3 class="card-title">(me) 워크스페이스</h3>
+        <p class="card-desc">
+          본인의 (me) AI 가 동작할 *주 작업 폴더*. 그 폴더의 claude 가 사내 동료들로부터 메시지를
+          수신합니다. 변경 시 (me) 에이전트가 새 워크스페이스로 이동합니다.
+        </p>
+      </header>
+      <div class="card-body">
+        <div class="path-row">
+          <span class="path-value" :class="{ unset: !mePath }">
+            {{ mePath || '미지정 — 폴더를 선택하세요' }}
+          </span>
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="mePicking || meSaving"
+            @click="pickMeFolder">
+            {{ mePicking ? '선택 중…' : '폴더 선택' }}
+          </button>
+        </div>
+        <div class="card-actions">
+          <span v-if="meSavedMsg" class="status-msg">{{ meSavedMsg }}</span>
+          <button
+            type="button"
+            class="btn-save"
+            :disabled="meLoading || meSaving || !mePath || mePath === meSavedPath"
+            @click="saveMe">
+            {{ meSaving ? '저장 중…' : '저장' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- 공통 작업 규칙 문서 -->
     <section class="card">
       <header class="card-head">
@@ -58,6 +93,7 @@
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 
 interface WorkroleFileRs { path: string }
+interface A2aWorkspaceRs { path: string }
 interface HelperBrowseRs { rc: number; path?: string; message?: string }
 
 const path = ref('');
@@ -66,6 +102,13 @@ const loading = ref(true);
 const saving = ref(false);
 const picking = ref(false);
 const lastSavedMsg = ref('');
+
+const mePath = ref('');
+const meSavedPath = ref('');
+const meLoading = ref(true);
+const meSaving = ref(false);
+const mePicking = ref(false);
+const meSavedMsg = ref('');
 
 async function fetchOnce(): Promise<void> {
   loading.value = true;
@@ -133,7 +176,70 @@ async function save(): Promise<void> {
   }
 }
 
-onMounted(() => { void fetchOnce(); });
+async function fetchMeOnce(): Promise<void> {
+  meLoading.value = true;
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace');
+    if (env.result === 0 && env.data) {
+      mePath.value = env.data.path || '';
+      meSavedPath.value = mePath.value;
+    }
+  } catch (e) {
+    meSavedMsg.value = `조회 실패: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    meLoading.value = false;
+  }
+}
+
+async function pickMeFolder(): Promise<void> {
+  if (mePicking.value) return;
+  mePicking.value = true;
+  meSavedMsg.value = '';
+  try {
+    const { $helper } = useNuxtApp();
+    const res = await $helper<HelperBrowseRs>('/api/browse-workspace', { method: 'POST' });
+    if (res.rc !== 0) {
+      meSavedMsg.value = res.message || '폴더 선택을 사용할 수 없습니다.';
+      return;
+    }
+    if (res.path) mePath.value = res.path;
+  } catch (e) {
+    meSavedMsg.value = `폴더 선택 호출 실패: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    mePicking.value = false;
+  }
+}
+
+async function saveMe(): Promise<void> {
+  if (meSaving.value || !mePath.value) return;
+  meSaving.value = true;
+  meSavedMsg.value = '';
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace', {
+      method: 'PUT',
+      body: { path: mePath.value, purgePreviousHistory: false },
+    });
+    if (env.result === 0 && env.data) {
+      meSavedPath.value = env.data.path || '';
+      mePath.value = meSavedPath.value;
+      meSavedMsg.value = '저장됨';
+      setTimeout(() => { meSavedMsg.value = ''; }, 2500);
+    } else {
+      meSavedMsg.value = env.message || '저장 실패';
+    }
+  } catch (e) {
+    meSavedMsg.value = `저장 실패: ${e instanceof Error ? e.message : String(e)}`;
+  } finally {
+    meSaving.value = false;
+  }
+}
+
+onMounted(() => {
+  void fetchOnce();
+  void fetchMeOnce();
+});
 </script>
 
 <style scoped>

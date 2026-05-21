@@ -55,6 +55,14 @@
     -->
 
 
+    <!-- (me) 워크스페이스 미지정 또는 (me) row 부재 시 자동 표시되는 모달 -->
+    <MeWorkspaceDialog
+      :open="meWorkspaceDialogOpen"
+      :initial-path="meWorkspacePath"
+      :me-agent-missing="meAgentMissing"
+      @saved="onMeWorkspaceSaved"
+      @cancel="meWorkspaceDialogOpen = false" />
+
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
       :open="dialogOpen"
@@ -87,6 +95,9 @@ import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
+import MeWorkspaceDialog from '~/components/dashboard/MeWorkspaceDialog.vue';
+import type { ApiEnvelope } from '~/vo/agents/AgentVo';
+interface A2aWorkspaceRs { path: string }
 // 임베드 터미널 + 임베드 VSCode 사이드 패널 비활성 — TerminalSidePanel + 하위
 // TerminalPane / VsCodePane 까지 함께 bundle 에서 빠지도록 import 도 같이 주석.
 // 복원하려면 이 import 와 template 안의 <TerminalSidePanel> 블록 주석 해제.
@@ -95,6 +106,7 @@ import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
 
 const {
+  list,
   summary,
   status,
   query,
@@ -103,8 +115,45 @@ const {
   startPolling,
   stopPolling,
   createAgent,
-  deleteAgent
+  deleteAgent,
+  fetchAgents
 } = useAgents();
+
+const meWorkspacePath = ref('');
+const meWorkspaceDialogOpen = ref(false);
+const meAgentMissing = ref(false);
+
+/** (me) AI 는 tmux_session 이 'aidesk-self-' 로 시작. list 에 존재 여부로 판정. */
+function hasMeAgent(): boolean {
+  return list.value.some((a) => a.tmuxSession?.startsWith('aidesk-self-'));
+}
+
+async function loadMeWorkspace(): Promise<void> {
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace');
+    if (env.result === 0 && env.data) {
+      meWorkspacePath.value = env.data.path || '';
+    }
+  } catch {
+    // 조회 실패해도 모달 강제 표시는 하지 않음 — 네트워크 일시 오류일 수 있음.
+    return;
+  }
+  // path 가 비어있거나 (me) row 가 없으면 모달 자동 표시. (me) 가 사라진 케이스는
+  // 사용자가 카드를 직접 삭제했거나 DB 가 정합성 어긋난 상태.
+  const missing = !hasMeAgent();
+  meAgentMissing.value = missing && meWorkspacePath.value !== '';
+  if (!meWorkspacePath.value || missing) {
+    meWorkspaceDialogOpen.value = true;
+  }
+}
+
+async function onMeWorkspaceSaved(path: string): Promise<void> {
+  meWorkspacePath.value = path;
+  meAgentMissing.value = false;
+  meWorkspaceDialogOpen.value = false;
+  await fetchAgents();
+}
 
 const dialogOpen = ref(false);
 const creating = ref(false);
@@ -173,7 +222,13 @@ async function onDeleteConfirm(payload: { extraOption: boolean }): Promise<void>
   // 실패 시는 error 메시지가 useAgents.error 에 채워지고, 페이지 상단에 표시됨.
 }
 
-onMounted(() => startPolling(10_000));
+onMounted(async () => {
+  // (me) 존재 체크는 list 가 채워진 후에 해야 정확. fetchAgents 한 번 명시적으로 await
+  // 후 loadMeWorkspace 로 path + (me) row 양쪽을 본 다음 모달 표시 결정.
+  await fetchAgents();
+  await loadMeWorkspace();
+  startPolling(10_000);
+});
 onUnmounted(() => stopPolling());
 </script>
 
