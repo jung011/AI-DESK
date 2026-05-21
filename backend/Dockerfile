@@ -33,6 +33,9 @@ WORKDIR /app
 RUN groupadd -r aidesk && useradd -r -g aidesk -d /app aidesk
 
 COPY --from=build /workspace/build/libs/*.jar app.jar
+# helper .pkg 도 image 에 함께 baked — HelperDownloadController 가 인증 후 서빙.
+# .pkg 갱신 시 backend/helper-pkg/ 의 옛 파일 교체 + image rebuild.
+COPY helper-pkg /app/helper
 RUN chown -R aidesk:aidesk /app
 USER aidesk
 

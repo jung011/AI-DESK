@@ -80,6 +80,13 @@ frontend/.nitro/
 frontend/.cache/
 frontend/dist/
 
+# Helper .pkg 산출물 — desktop-agent 빌드 결과물.
+# backend image build 시 backend/helper-pkg/ 로 cp 후 docker compose build.
+# git history 비대 방지로 .pkg 자체는 추적 안 함.
+desktop-agent/build-pkg/build/
+desktop-agent/build-pkg/dist/
+backend/helper-pkg/*.pkg
+
 # 일반 Node 패키지 잔재물 (워크스페이스 어디서든)
 **/node_modules/
 **/.pnpm-store/
