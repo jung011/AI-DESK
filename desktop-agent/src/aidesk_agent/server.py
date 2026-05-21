@@ -125,7 +125,7 @@ async def browse_workspace_handler(_: web.Request) -> web.Response:
 
 
 async def scope_workspace_handler(request: web.Request) -> web.Response:
-    """A2A 워크스페이스 검증 + ~/.claude.json 의 kaflix-* MCP scope 이동.
+    """(me) 워크스페이스 검증 + ~/.claude.json 의 projects entry 마킹.
 
     백엔드(도커)가 호스트 파일시스템에 접근 못 하므로 host.docker.internal:30083 으로 호출.
     body: { "newWorkspace": "<absolute path>", "oldWorkspace": "<previous path or empty>" }
