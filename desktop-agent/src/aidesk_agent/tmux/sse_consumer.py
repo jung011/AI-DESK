@@ -147,7 +147,11 @@ async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
 
 async def _consume_once(backend_url: str) -> None:
     url = f"{backend_url.rstrip('/')}/api/desktop/events"
-    timeout = httpx.Timeout(connect=5.0, read=None, write=5.0, pool=5.0)
+    # VPN / 사외 LAN 환경에서 라우터가 idle TCP 를 silent 끊어도 read=None 이면
+    # zombie connection 으로 영원히 wait — deliver event 누락. read timeout 으로
+    # N초 event 없으면 ReadTimeout 발생 → 바깥의 consumer_loop 가 자동 reconnect.
+    # 120s = VPN 일반 idle timeout (5~10분) 보다 짧아 zombie 발생 전 갱신.
+    timeout = httpx.Timeout(connect=5.0, read=120.0, write=5.0, pool=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with aconnect_sse(client, "GET", url) as event_source:
             log.info("SSE connected: %s", url)
