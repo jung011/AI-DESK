@@ -25,10 +25,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/aidesk
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      # kaflix-a2a Control Plane — 사내 VPN 으로 도달.
-      KAFLIX_CONTROL_PLANE_URL: http://172.20.1.1:8080
-      # fallback 정체 (Helper 가 사이드카에서 자동 감지 못 했을 때만 적용)
-      KAFLIX_ME_EMPLOYEE_ID: liki
       # CORS — same-origin proxy 적용으로 브라우저가 항상 frontend(:30080) 와 같은 origin 으로 호출하므로
       # 일반 사용 케이스엔 불필요. helper(:30083) 가 별도 origin 으로 backend 직접 호출하는 경우 대비해서만 유지.
       CORS_ALLOWED_ORIGINS: "http://localhost:30080,http://localhost:30083"
