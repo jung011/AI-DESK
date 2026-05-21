@@ -2,18 +2,27 @@
   <div class="install-page">
     <div class="install-box">
       <header class="install-head">
-        <h2>AI Desk Helper 설치 필요</h2>
-        <p class="sub">본 PC 에 helper 가 설치되어 있지 않아 일부 기능이 동작하지 않습니다.</p>
+        <h2 v-if="isUpdate">AI Desk Helper 업데이트 가능</h2>
+        <h2 v-else>AI Desk Helper 설치 필요</h2>
+        <p v-if="isUpdate" class="sub">
+          현재 <strong>{{ helperVersion.running || '?' }}</strong> →
+          최신 <strong>{{ helperVersion.latest }}</strong>
+        </p>
+        <p v-else class="sub">본 PC 에 helper 가 설치되어 있지 않아 일부 기능이 동작하지 않습니다.</p>
       </header>
 
       <ol class="steps">
         <li>
           <div class="step-num">1</div>
           <div class="step-body">
-            <h3>패키지 다운로드</h3>
-            <p class="step-desc">아래 버튼으로 본인 mac 에 .pkg 를 받습니다.</p>
+            <h3>{{ isUpdate ? '새 패키지 다운로드' : '패키지 다운로드' }}</h3>
+            <p class="step-desc">
+              {{ isUpdate
+                  ? '아래 버튼으로 본인 mac 에 최신 .pkg 를 받습니다. 설치 시 기존 plist 환경변수는 보존됩니다.'
+                  : '아래 버튼으로 본인 mac 에 .pkg 를 받습니다.' }}
+            </p>
             <a class="btn-primary" href="/api/helper/download" download>
-              AIDeskHelper .pkg 다운로드
+              {{ helperVersion.latestFilename || 'AIDeskHelper .pkg' }} 다운로드
             </a>
           </div>
         </li>
@@ -59,27 +68,38 @@
 </template>
 
 <script setup lang="ts">
+import { useHelperVersionStore } from '~/stores/helperVersion';
+
+const helperVersion = useHelperVersionStore();
 const checking = ref(false);
 const lastCheckFailed = ref(false);
+
+/** 페이지 진입 시 store 가 비어있을 수 있어 1회 새로 조회 — 업데이트 모드 / 미설치
+ *  모드 판정에 필요. */
+onMounted(async () => {
+  if (!helperVersion.running && !helperVersion.missing) {
+    await helperVersion.refresh();
+  }
+});
+
+/** helper 가 *살아있고* (= missing=false) latest 가 *다르면* 업데이트 모드. */
+const isUpdate = computed(
+  () => !helperVersion.missing && helperVersion.running && helperVersion.needsUpdate,
+);
 
 async function recheck(): Promise<void> {
   if (checking.value) return;
   checking.value = true;
   lastCheckFailed.value = false;
   try {
-    const config = useRuntimeConfig();
-    const base = (config.public.helperBase as string) || 'http://localhost:30083';
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2500);
-    const res = await fetch(`${base}/api/health`, { signal: ctrl.signal });
-    clearTimeout(t);
-    if (res.ok) {
-      await navigateTo('/dashboard');
+    await helperVersion.refresh();
+    if (helperVersion.missing) {
+      lastCheckFailed.value = true;
       return;
     }
-    lastCheckFailed.value = true;
-  } catch {
-    lastCheckFailed.value = true;
+    // 업데이트 모드는 *현재 running == latest* 가 되면 통과. 설치 모드는 helper 가
+    // 살아있기만 하면 통과 (이 경우 needsUpdate 가 true 일 수 있는데, 그 안내는 배너로).
+    await navigateTo('/dashboard');
   } finally {
     checking.value = false;
   }

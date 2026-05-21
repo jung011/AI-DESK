@@ -1,5 +1,6 @@
 <template>
   <div class="app-shell">
+    <HelperUpdateBanner />
     <HeaderView />
     <LeftMenuView />
     <main class="app-main" :class="{ 'menu-open': layout.sideMenuOpen }">
@@ -12,6 +13,7 @@
 import { useLayoutStore } from '~/stores/layout';
 import HeaderView from '~/components/layout/HeaderView.vue';
 import LeftMenuView from '~/components/layout/LeftMenuView.vue';
+import HelperUpdateBanner from '~/components/layout/HelperUpdateBanner.vue';
 
 const layout = useLayoutStore();
 </script>
