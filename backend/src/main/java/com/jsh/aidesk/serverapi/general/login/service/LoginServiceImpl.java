@@ -1,5 +1,7 @@
 package com.jsh.aidesk.serverapi.general.login.service;
 
+import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
+import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 import com.jsh.aidesk.serverapi.common.jwt.JwtProvider;
 import com.jsh.aidesk.serverapi.common.util.HashUtil;
 import com.jsh.aidesk.serverapi.general.login.mapper.LoginMapper;
@@ -18,6 +20,7 @@ import java.util.UUID;
 public class LoginServiceImpl implements LoginService {
 
     private final LoginMapper loginMapper;
+    private final AgentMapper agentMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
 
@@ -49,6 +52,20 @@ public class LoginServiceImpl implements LoginService {
         vo.setDisplayName(normalized);   // 회원가입 시 displayName = loginId (사용자 결정)
         vo.setRole("USER");
         loginMapper.insertAccount(vo);   // useGeneratedKeys 로 accountSn 채워짐
+
+        // 휴먼 entity — 채팅에서 user 본인이 보낸 메시지의 발신자로 쓰임. user 별 1 row.
+        // model='human' + tmux_session='__human__:<sn>'. helper/last-mile 은 이 패턴을 만나면
+        // tmux send-keys skip + 즉시 delivered 마킹.
+        AgentVo human = new AgentVo();
+        human.setAgentId(UUID.randomUUID().toString());
+        human.setOwnerAccountSn(vo.getAccountSn());
+        human.setAgentName("휴먼");
+        human.setWorkspaceDir("");
+        human.setTmuxSession("__human__:" + vo.getAccountSn());
+        human.setStatus("active");
+        human.setModel("human");
+        agentMapper.insert(human);
+
         // generated 시각 컬럼 (created_at) 은 select 로 재조회해 채워 반환
         return loginMapper.selectAccountByAccountSn(vo.getAccountSn());
     }

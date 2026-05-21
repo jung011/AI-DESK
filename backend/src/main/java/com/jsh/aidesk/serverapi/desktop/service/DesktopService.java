@@ -58,7 +58,9 @@ public class DesktopService {
         rs.setTotalWorkspaces(workspaces == null ? 0 : workspaces.size());
         if (workspaces == null || workspaces.isEmpty()) return rs;
 
-        List<AgentVo> agents = agentMapper.selectList(null);
+        // helper 가 보낸 reporter payload — 어느 user 의 mac 인지 모름 (helper-user binding 후속).
+        // 본 단계에서는 *모든 user 의 에이전트* 를 대상으로 매칭 시도.
+        List<AgentVo> agents = agentMapper.selectAllForSystem();
         Map<String, AgentVo> agentByWs = new HashMap<>();
         for (AgentVo a : agents) {
             if (a.getWorkspaceDir() != null && !a.getWorkspaceDir().isBlank()) {

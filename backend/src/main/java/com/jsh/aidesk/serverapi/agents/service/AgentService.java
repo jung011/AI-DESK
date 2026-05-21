@@ -16,6 +16,7 @@ import com.jsh.aidesk.serverapi.agents.vo.AgentItemRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentListRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentSummaryRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
+import com.jsh.aidesk.serverapi.common.jwt.AuthContext;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 
 import lombok.RequiredArgsConstructor;
@@ -43,23 +44,26 @@ public class AgentService {
 
     @Transactional(readOnly = true)
     public AgentListRsVo getList(String status) {
-        List<AgentVo> rows = agentMapper.selectList(status);
+        Long me = AuthContext.currentAccountSn();
+        List<AgentVo> rows = agentMapper.selectList(me, status);
         List<AgentItemRsVo> list = rows.stream().map(this::toItem).toList();
 
         AgentListRsVo rs = new AgentListRsVo();
         rs.setList(list);
-        rs.setSummary(buildSummary());
+        rs.setSummary(buildSummary(me));
         return rs;
     }
 
     @Transactional
     public AgentItemRsVo create(AgentCreateRqVo req) {
+        Long me = AuthContext.currentAccountSn();
         String agentId = UUID.randomUUID().toString();
         String tmuxSession = "aidesk-" + agentId.substring(0, 8);
         String fullModel = MODEL_FULLNAMES.getOrDefault(req.getModel(), req.getModel());
 
         AgentVo entity = new AgentVo();
         entity.setAgentId(agentId);
+        entity.setOwnerAccountSn(me);
         entity.setAgentName(req.getAgentName());
         entity.setWorkspaceDir(stripTrailingSlash(req.getWorkspaceDir()));
         entity.setTmuxSession(tmuxSession);
@@ -68,17 +72,18 @@ public class AgentService {
         entity.setContextPct(0);
 
         agentMapper.insert(entity);
-        return toItem(agentMapper.selectById(agentId));
+        return toItem(agentMapper.selectById(agentId, me));
     }
 
     @Transactional
     public boolean delete(String agentId) {
+        Long me = AuthContext.currentAccountSn();
         // tmux 세션 / Terminal 윈도우 정리는 프론트가 호출 직전에 헬퍼(POST /api/cleanup-agent)
         // 를 통해 본인 Mac 에서 수행. 백엔드는 DB 작업만 책임.
         // 메시지 cascade — 이 에이전트가 보내거나 받은 모든 t_ai_message row 도 함께 제거.
         // FK 제약은 없지만 orphan 메시지가 남으면 audit 시 join 결과가 깨지므로 같이 비운다.
         int msgs = messageMapper.deleteByAgent(agentId);
-        int agents = agentMapper.hardDelete(agentId);
+        int agents = agentMapper.hardDelete(agentId, me);
         if (agents > 0) {
             log.info("agent hard-deleted: agent_id={} cascaded_messages={}", agentId, msgs);
         }
@@ -87,18 +92,18 @@ public class AgentService {
 
     @Transactional(readOnly = true)
     public AgentVo findById(String agentId) {
-        return agentMapper.selectById(agentId);
+        return agentMapper.selectById(agentId, AuthContext.currentAccountSn());
     }
 
     @Transactional(readOnly = true)
     public AgentItemRsVo detail(String agentId) {
-        AgentVo v = agentMapper.selectById(agentId);
+        AgentVo v = agentMapper.selectById(agentId, AuthContext.currentAccountSn());
         return v == null ? null : toItem(v);
     }
 
-    private AgentSummaryRsVo buildSummary() {
+    private AgentSummaryRsVo buildSummary(Long ownerAccountSn) {
         Map<String, Integer> counts = new HashMap<>();
-        for (Map<String, Object> row : agentMapper.selectStatusCounts()) {
+        for (Map<String, Object> row : agentMapper.selectStatusCounts(ownerAccountSn)) {
             counts.put((String) row.get("status"), ((Number) row.get("cnt")).intValue());
         }
         AgentSummaryRsVo s = new AgentSummaryRsVo();

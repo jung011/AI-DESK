@@ -6,13 +6,14 @@
     <select id="selectValue" resultType="java.lang.String">
         SELECT setting_value
           FROM t_aidesk_setting
-         WHERE setting_key = #{key}
+         WHERE account_sn = #{accountSn}
+           AND setting_key = #{key}
     </select>
 
     <update id="upsertValue">
-        INSERT INTO t_aidesk_setting (setting_key, setting_value, updated_at)
-        VALUES (#{key}, #{value}, NOW())
-        ON CONFLICT (setting_key)
+        INSERT INTO t_aidesk_setting (account_sn, setting_key, setting_value, updated_at)
+        VALUES (#{accountSn}, #{key}, #{value}, NOW())
+        ON CONFLICT (account_sn, setting_key)
         DO UPDATE SET setting_value = EXCLUDED.setting_value,
                       updated_at    = NOW()
     </update>

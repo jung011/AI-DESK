@@ -64,16 +64,18 @@ public interface MessageMapper {
         selectConversations(@Param("agentId") String agentId);
 
     /**
-     * AI 별 미확인 수신 메시지 수.
+     * AI 별 미확인 수신 메시지 수. 본인 user 의 agent 가 receiver 인 것만.
      * status IN (delivered, replied) AND read_at IS NULL 만 카운트.
      */
-    List<com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo> selectUnreadCounts();
+    List<com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo> selectUnreadCounts(
+            @Param("ownerAccountSn") Long ownerAccountSn);
 
     /**
-     * 감사 로그 — 모든 메시지를 시간 역순으로. 필터는 모두 선택.
+     * 감사 로그 — 본인 user 의 agent 가 sender 또는 receiver 인 메시지만. 필터는 모두 선택.
      * q 는 본문 부분 일치 (ILIKE).
      */
     List<com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo> selectAudit(
+            @Param("ownerAccountSn") Long ownerAccountSn,
             @Param("status") String status,
             @Param("fromAgentId") String fromAgentId,
             @Param("toAgentId") String toAgentId,

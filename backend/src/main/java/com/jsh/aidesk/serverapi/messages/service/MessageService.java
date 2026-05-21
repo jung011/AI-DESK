@@ -57,10 +57,16 @@ public class MessageService {
      */
     @Transactional
     public MessageItemRsVo create(MessageCreateRqVo req) {
-        AgentVo from = agentMapper.selectById(req.getFromAgentId());
-        AgentVo to = agentMapper.selectById(req.getToAgentId());
+        AgentVo from = agentMapper.selectByIdAnyOwner(req.getFromAgentId());
+        AgentVo to = agentMapper.selectByIdAnyOwner(req.getToAgentId());
         if (from == null || to == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "발신/수신 AI 미존재");
+        }
+        // 권한: sender 와 receiver 가 모두 같은 사용자 소유여야 한다. 외부 동료 메시지는 별도
+        // 라우팅(kaflix-channel) 으로 가므로 본 endpoint 는 *같은 user 내 통신* 전용.
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        if (!me.equals(from.getOwnerAccountSn()) || !me.equals(to.getOwnerAccountSn())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "다른 사용자의 에이전트로는 메시지 못 보냄");
         }
         if (from.getAgentId().equals(to.getAgentId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "self-message");
@@ -204,7 +210,8 @@ public class MessageService {
     @Transactional(readOnly = true)
     public MessageListRsVo audit(String status, String fromAgentId, String toAgentId, String q, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 1000));
-        var list = messageMapper.selectAudit(status, fromAgentId, toAgentId, q, safeLimit + 1);
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        var list = messageMapper.selectAudit(me, status, fromAgentId, toAgentId, q, safeLimit + 1);
         boolean hasMore = list.size() > safeLimit;
         if (hasMore) list = list.subList(0, safeLimit);
         MessageListRsVo rs = new MessageListRsVo();
@@ -219,7 +226,8 @@ public class MessageService {
      */
     @Transactional(readOnly = true)
     public UnreadCountRsVo getUnreadCount(String agentId) {
-        List<AgentUnreadRsVo> all = messageMapper.selectUnreadCounts();
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        List<AgentUnreadRsVo> all = messageMapper.selectUnreadCounts(me);
         UnreadCountRsVo rs = new UnreadCountRsVo();
         if (agentId != null && !agentId.isBlank()) {
             List<AgentUnreadRsVo> filtered = all.stream()
@@ -251,7 +259,7 @@ public class MessageService {
      */
     @Transactional
     public MessageBroadcastRsVo broadcast(MessageBroadcastRqVo req) {
-        AgentVo from = agentMapper.selectById(req.getFromAgentId());
+        AgentVo from = agentMapper.selectByIdAnyOwner(req.getFromAgentId());
         if (from == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "발신 AI 미존재");
         }
@@ -268,7 +276,7 @@ public class MessageService {
         int notFound = duplicateOrSelf;
 
         for (String toId : uniqueTo) {
-            AgentVo to = agentMapper.selectById(toId);
+            AgentVo to = agentMapper.selectByIdAnyOwner(toId);
             if (to == null) { notFound++; continue; }
 
             MessageCreateRqVo single = new MessageCreateRqVo();

@@ -25,14 +25,16 @@
     </insert>
 
     <select id="selectFeed" resultMap="actionLogMap">
-        SELECT log_id, agent_id, agent_name, session_id, tool, category, target, summary, created_at
-        FROM   t_ai_action_log
+        SELECT l.log_id, l.agent_id, l.agent_name, l.session_id, l.tool, l.category, l.target, l.summary, l.created_at
+        FROM   t_ai_action_log l
+        JOIN   t_ai_agent a ON a.agent_id = l.agent_id
+                           AND a.owner_account_sn = #{ownerAccountSn}
         <where>
             <if test="category != null and category != ''">
-                category = #{category}
+                l.category = #{category}
             </if>
         </where>
-        ORDER BY created_at DESC
+        ORDER BY l.created_at DESC
         LIMIT  #{limit}
     </select>
 </mapper>

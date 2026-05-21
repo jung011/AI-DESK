@@ -81,10 +81,11 @@ public class LogService {
 
         List<LogFeedItemRsVo> all = new ArrayList<>();
 
-        // 1) 메시지 — aidesk-channel 의 모든 대화. liki(me) 도 AI 인스턴스라 포함
-        //    (사용자가 워커 터미널에 직접 입력한 건 채널을 안 거치므로 애초에 row 가 없음).
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+
+        // 1) 메시지 — 본인 user 의 agent 가 sender 또는 receiver 인 메시지만.
         //    status='failed' 는 pre-flight 실패 등으로 전달 못한 메시지 → 카테고리 'error' 로 강제.
-        List<MessageItemRsVo> msgs = messageMapper.selectAudit(null, null, null, null, cap);
+        List<MessageItemRsVo> msgs = messageMapper.selectAudit(me, null, null, null, null, cap);
         for (MessageItemRsVo m : msgs) {
             String c = "failed".equals(m.getStatus()) ? "error" : MessageClassifier.classify(m.getContent());
             if (cat != null && !cat.equals(c)) continue;
@@ -103,8 +104,8 @@ public class LogService {
             all.add(item);
         }
 
-        // 2) 액션 — DB 에서 카테고리 필터로 바로
-        List<ActionLogVo> actions = actionLogMapper.selectFeed(cat, cap);
+        // 2) 액션 — 본인 user 의 agent 가 수행한 것만.
+        List<ActionLogVo> actions = actionLogMapper.selectFeed(me, cat, cap);
         for (ActionLogVo a : actions) {
             LogFeedItemRsVo item = new LogFeedItemRsVo();
             item.setType("action");

@@ -6,6 +6,7 @@
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS t_ai_agent (
     agent_id          VARCHAR(36)  PRIMARY KEY,
+    owner_account_sn  BIGINT       NOT NULL REFERENCES t_user(account_sn) ON DELETE CASCADE,
     agent_name        VARCHAR(50)  NOT NULL,
     workspace_dir     VARCHAR(500) NOT NULL,
     tmux_session      VARCHAR(80)  NOT NULL,
@@ -18,6 +19,8 @@ CREATE TABLE IF NOT EXISTS t_ai_agent (
     updated_at        TIMESTAMPTZ,
     deleted_at        TIMESTAMPTZ
 );
+CREATE INDEX IF NOT EXISTS ix_agent_owner ON t_ai_agent (owner_account_sn);
+COMMENT ON COLUMN t_ai_agent.owner_account_sn IS '에이전트 소유 사용자 (t_user.account_sn). 모든 조회/생성/삭제가 본인 것만.';
 
 COMMENT ON TABLE  t_ai_agent IS 'AI 에이전트 인스턴스';
 COMMENT ON COLUMN t_ai_agent.agent_id          IS '에이전트 UUID (PK)';
@@ -38,12 +41,9 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_deleted
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_agent_tmux_session
     ON t_ai_agent (tmux_session) WHERE deleted_at IS NULL;
 
--- 사용자(인간) entity — 채팅에서 AI 들과 별개 발신자/수신자로 동작.
--- tmux_session = '__human__' sentinel: backend/helper 가 이걸 만나면 send-keys skip + 즉시 delivered.
--- model = 'human' 으로 일반 AI agent 와 구분.
-INSERT INTO t_ai_agent (agent_id, agent_name, workspace_dir, tmux_session, status, model, bootstrap_applied)
-VALUES ('00000000-0000-0000-0000-000000000001', '휴먼', '', '__human__', 'active', 'human', TRUE)
-ON CONFLICT (agent_id) DO NOTHING;
+-- 휴먼 entity 는 *user 별 1 row* 로 LoginService.signup() 에서 자동 생성.
+-- tmux_session = '__human__:<account_sn>' 형식. model = 'human'.
+-- backend / helper 가 이 row 를 만나면 send-keys skip + 즉시 delivered.
 
 -- =====================================================================
 -- t_ai_message — AI 협업 메시지
@@ -101,13 +101,16 @@ CREATE INDEX IF NOT EXISTS idx_ai_message_retry
 -- 권한이 활성화되는 워크스페이스 절대 경로. NULL 이면 (me) 터미널 열기 비활성.
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS t_aidesk_setting (
-    setting_key   VARCHAR(80)  PRIMARY KEY,
+    account_sn    BIGINT       NOT NULL REFERENCES t_user(account_sn) ON DELETE CASCADE,
+    setting_key   VARCHAR(80)  NOT NULL,
     setting_value TEXT,
-    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (account_sn, setting_key)
 );
 
-COMMENT ON TABLE  t_aidesk_setting IS 'AI Desk 런타임 단일값 설정';
-COMMENT ON COLUMN t_aidesk_setting.setting_key   IS '설정 키';
+COMMENT ON TABLE  t_aidesk_setting IS 'AI Desk 런타임 단일값 설정 (사용자별).';
+COMMENT ON COLUMN t_aidesk_setting.account_sn    IS '소유 사용자 (t_user.account_sn).';
+COMMENT ON COLUMN t_aidesk_setting.setting_key   IS '설정 키 (account_sn 과의 복합 PK)';
 COMMENT ON COLUMN t_aidesk_setting.setting_value IS '설정값 (NULL 가능)';
 
 -- =====================================================================

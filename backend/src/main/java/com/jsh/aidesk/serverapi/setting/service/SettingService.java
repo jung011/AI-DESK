@@ -52,21 +52,24 @@ public class SettingService {
     @Value("${vscode.code-server-url:}")
     private String codeServerUrl;
 
-    /** A2A 워크스페이스 경로 — 없으면 빈 문자열 반환. */
+    /** A2A 워크스페이스 경로 — 없으면 빈 문자열 반환. 본인 user 의 설정만. */
     public String getA2aWorkspace() {
-        String v = mapper.selectValue(KEY_A2A_WORKSPACE);
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        String v = mapper.selectValue(me, KEY_A2A_WORKSPACE);
         return v == null ? "" : v;
     }
 
-    /** 작업 규칙 문서 파일 경로 — 없으면 빈 문자열. Helper 가 빈값이면 주입 생략. */
+    /** 작업 규칙 문서 파일 경로 — 본인 user 의 설정만. */
     public String getWorkroleFile() {
-        String v = mapper.selectValue(KEY_WORKROLE_FILE);
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        String v = mapper.selectValue(me, KEY_WORKROLE_FILE);
         return v == null ? "" : v;
     }
 
-    /** 작업 규칙 문서 파일 경로 저장. 빈 문자열 허용 ("주입 안 함"). */
+    /** 작업 규칙 문서 파일 경로 저장. */
     public void setWorkroleFile(String path) {
-        mapper.upsertValue(KEY_WORKROLE_FILE, path == null ? "" : path);
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        mapper.upsertValue(me, KEY_WORKROLE_FILE, path == null ? "" : path);
     }
 
     /**
@@ -109,7 +112,8 @@ public class SettingService {
     public int setA2aWorkspace(String path, boolean purgePreviousHistory) {
         if (path == null || path.isBlank()) return 1;
 
-        String old = mapper.selectValue(KEY_A2A_WORKSPACE);
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        String old = mapper.selectValue(me, KEY_A2A_WORKSPACE);
         String meSession = (meEmployeeId == null || meEmployeeId.isBlank())
                 ? ""
                 : ME_TMUX_PREFIX + meEmployeeId.toLowerCase(Locale.ROOT);
@@ -120,8 +124,8 @@ public class SettingService {
             return r.rc();
         }
         String absolute = r.absolutePath();
-        mapper.upsertValue(KEY_A2A_WORKSPACE, absolute);
-        upsertMeAgent(absolute);
+        mapper.upsertValue(me, KEY_A2A_WORKSPACE, absolute);
+        upsertMeAgent(absolute, me);
         return 0;
     }
 
@@ -130,7 +134,7 @@ public class SettingService {
      * `aidesk-self-{employeeId}`. 사용자가 워크스페이스를 옮겨도 같은 row 가 따라간다.
      * meEmployeeId 가 비어 있으면 아무 일도 하지 않음.
      */
-    private void upsertMeAgent(String workspaceDir) {
+    private void upsertMeAgent(String workspaceDir, Long ownerAccountSn) {
         if (meEmployeeId == null || meEmployeeId.isBlank()) {
             log.warn("upsertMeAgent: kaflix.me-employee-id 미설정 — 스킵");
             return;
@@ -142,12 +146,13 @@ public class SettingService {
                 log.info("upsertMeAgent: workspace 동일 — 갱신 불필요 (agentId={})", existing.getAgentId());
                 return;
             }
-            int n = agentMapper.updateWorkspaceDir(existing.getAgentId(), workspaceDir);
+            int n = agentMapper.updateWorkspaceDir(existing.getAgentId(), workspaceDir, ownerAccountSn);
             log.info("upsertMeAgent: workspace 갱신 (agentId={}, updated={})", existing.getAgentId(), n);
             return;
         }
         AgentVo v = new AgentVo();
         v.setAgentId(UUID.randomUUID().toString());
+        v.setOwnerAccountSn(ownerAccountSn);
         v.setAgentName(meEmployeeId + " (me)");
         v.setWorkspaceDir(workspaceDir);
         v.setTmuxSession(session);

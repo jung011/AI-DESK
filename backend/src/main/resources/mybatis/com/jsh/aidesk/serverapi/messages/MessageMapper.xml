@@ -205,6 +205,7 @@
           FROM t_ai_message m
           JOIN t_ai_agent a ON a.agent_id = m.to_agent_id
                            AND a.deleted_at IS NULL
+                           AND a.owner_account_sn = #{ownerAccountSn}
          WHERE m.read_at IS NULL
            AND m.status IN ('delivered', 'replied')
          GROUP BY m.to_agent_id, a.agent_name
@@ -214,7 +215,8 @@
     <select id="selectAudit"
             resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
         <include refid="itemSelectClause"/>
-         WHERE 1 = 1
+         WHERE (af.owner_account_sn = #{ownerAccountSn}
+            OR at.owner_account_sn = #{ownerAccountSn})
         <if test="status != null and status != ''">
            AND m.status = #{status}
         </if>

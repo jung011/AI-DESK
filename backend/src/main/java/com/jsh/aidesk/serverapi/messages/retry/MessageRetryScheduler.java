@@ -73,8 +73,9 @@ public class MessageRetryScheduler {
             log.warn("retry: msg={} marked failed (max retries reached)", m.getMessageId());
             return;
         }
-        AgentVo from = agentMapper.selectById(m.getFromAgentId());
-        AgentVo to = agentMapper.selectById(m.getToAgentId());
+        // 스케줄러는 시스템 콜 — owner 격리 없이 sender/receiver 정체 확인.
+        AgentVo from = agentMapper.selectByIdAnyOwner(m.getFromAgentId());
+        AgentVo to = agentMapper.selectByIdAnyOwner(m.getToAgentId());
         if (from == null || to == null) {
             messageMapper.markFailed(m.getMessageId(), "발신자/수신자 에이전트 조회 실패");
             return;
