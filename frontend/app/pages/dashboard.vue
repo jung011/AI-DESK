@@ -38,8 +38,8 @@
       @delete="onDeleteRequest"
       @select="onAgentSelect" />
 
-    <!-- 사내 동료 AI (자체 채널 — 같은 backend 의 다른 user 의 (me)) -->
-    <ColleagueGrid @select="onColleagueSelect" />
+    <!-- 사내 동료 AI (자체 채널 — 조회 전용. 메시지는 외부 터미널의 (me) claude 가 mcp send_to). -->
+    <ColleagueGrid />
 
     <!-- 임베드 터미널 + VSCode 사이드 패널 — 사용 빈도 낮아 잠시 비활성.
          외부 터미널 열기 / 외부 VSCode 열기 (AgentCard 안 버튼) 흐름은 그대로 동작.
@@ -93,7 +93,6 @@ import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
 // import TerminalSidePanel from '~/components/dashboard/TerminalSidePanel.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
-import type { ColleagueItem } from '~/vo/colleagues/ColleagueVo';
 
 const {
   summary,
@@ -137,14 +136,6 @@ function onAgentSelect(agent: AgentItem): void {
   panel.open = true;
 }
 
-function onColleagueSelect(c: ColleagueItem): void {
-  // 사내 동료 카드 클릭 — 메시지 발신 모달은 후속 작업.
-  // 향후 channel/channel_frontend.md §2.3 의 메시지 모달과 연결.
-  alert(
-    `사내 동료 "${c.displayName}" 에게 메시지 보내기 — UI 후속 작업.\n`
-    + `agent_id: ${c.meAgentId}`,
-  );
-}
 
 async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
   creating.value = true;

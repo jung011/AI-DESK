@@ -9,6 +9,11 @@
       </span>
     </div>
 
+    <div class="colleague-hint">
+      조회용 패널 — 사내 동료에게 메시지는 외부 터미널의 (me) claude 에서
+      <code>mcp__aidesk-channel__send_to</code> 로 보냅니다.
+    </div>
+
     <div v-if="colleagues.list.value.length === 0" class="colleague-empty">
       가입한 사내 동료가 없습니다.
       <small class="colleague-empty-hint">
@@ -17,15 +22,11 @@
     </div>
 
     <div v-else class="colleague-grid">
-      <button
+      <div
         v-for="c in sorted"
         :key="c.accountSn"
-        type="button"
         class="colleague-card"
-        :class="{ offline: !c.online, 'me-unset': !c.meAgentId }"
-        :disabled="!c.meAgentId"
-        :title="!c.meAgentId ? '동료가 (me) 워크스페이스를 아직 지정하지 않음' : '메시지 보내기'"
-        @click="onCardClick(c)">
+        :class="{ offline: !c.online, 'me-unset': !c.meAgentId }">
         <span class="online-dot" :class="{ online: c.online }" />
         <div class="colleague-name">
           {{ c.displayName || c.loginId }}
@@ -38,7 +39,7 @@
           <span class="status-badge" :class="`status-${c.meStatus}`">{{ c.meStatus }}</span>
           <span v-if="c.meContextPct != null" class="ctx-pct">ctx {{ c.meContextPct }}%</span>
         </div>
-      </button>
+      </div>
     </div>
   </section>
 </template>
@@ -46,11 +47,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { useColleagues } from '~/composables/useColleagues';
-import type { ColleagueItem } from '~/vo/colleagues/ColleagueVo';
-
-const emit = defineEmits<{
-  (e: 'select', c: ColleagueItem): void;
-}>();
 
 const colleagues = useColleagues();
 const POLL_INTERVAL_MS = 10_000;
@@ -77,11 +73,6 @@ const sorted = computed(() => {
 const onlineCount = computed(() =>
   colleagues.list.value.filter((c) => c.online).length,
 );
-
-function onCardClick(c: ColleagueItem): void {
-  if (!c.meAgentId) return;
-  emit('select', c);
-}
 </script>
 
 <style scoped>
@@ -109,6 +100,26 @@ function onCardClick(c: ColleagueItem): void {
 }
 .online-dot.online { background: #00d084; }
 
+.colleague-hint {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: #F4F6FB;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
+}
+.colleague-hint code {
+  background: #FFFFFF;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #E2E8F0;
+  font-family: monospace;
+  font-size: 11px;
+  color: #444;
+}
+
 .colleague-empty {
   padding: 32px 20px; text-align: center;
   color: #999; font-size: 13px;
@@ -128,19 +139,12 @@ function onCardClick(c: ColleagueItem): void {
   position: relative;
   background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
   padding: 12px 14px;
-  cursor: pointer; text-align: left;
-  transition: border-color .15s, box-shadow .15s;
+  text-align: left;
   font-family: inherit;
   display: flex; flex-direction: column; gap: 4px;
 }
-.colleague-card:hover:not(:disabled) {
-  border-color: #0062ff;
-  box-shadow: 0 3px 10px 0 rgba(0, 98, 255, .12);
-}
-.colleague-card:disabled {
-  cursor: not-allowed; opacity: 0.6;
-}
 .colleague-card.offline { background: #F8FAFC; }
+.colleague-card.me-unset { opacity: 0.7; }
 .colleague-card .online-dot {
   position: absolute; top: 12px; right: 12px;
 }
