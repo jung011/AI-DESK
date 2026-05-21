@@ -31,6 +31,15 @@
               {{ picking ? '선택 중…' : '폴더 선택' }}
             </button>
           </div>
+          <!-- 옛 워크스페이스가 있고 새 path 가 다를 때만 노출 — 신규 지정/재지정 모드엔 의미 X. -->
+          <label v-if="showPurgeOption" class="purge-option">
+            <input
+              type="checkbox"
+              :checked="purgePreviousHistory"
+              :disabled="saving"
+              @change="purgePreviousHistory = ($event.target as HTMLInputElement).checked" />
+            <span>기존 워크스페이스의 Claude 대화 기록도 함께 삭제</span>
+          </label>
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
         </div>
         <footer class="popup-foot">
@@ -83,6 +92,14 @@ const savedPath = ref('');
 const picking = ref(false);
 const saving = ref(false);
 const errorMsg = ref('');
+/** 변경 모드(옛 path 가 있고 새 path 가 다름)에서만 의미 있음. AI 삭제 다이얼로그와
+ *  동일 패턴으로 default true. */
+const purgePreviousHistory = ref(true);
+
+/** 신규 지정 / 같은 폴더 재지정 모드엔 옛 워크스페이스가 없으므로 옵션 숨김. */
+const showPurgeOption = computed(
+  () => !!savedPath.value && savedPath.value !== path.value,
+);
 
 watch(() => props.open, (next) => {
   if (next) {
@@ -91,6 +108,7 @@ watch(() => props.open, (next) => {
     picking.value = false;
     saving.value = false;
     errorMsg.value = '';
+    purgePreviousHistory.value = true;
   }
 });
 
@@ -129,7 +147,8 @@ async function onSave(): Promise<void> {
       body: {
         newWorkspace: path.value,
         oldWorkspace: savedPath.value,
-        purgePreviousHistory: false,
+        // showPurgeOption 가 false 일 땐 사용자 입력이 무의미하므로 false 로 전달.
+        purgePreviousHistory: showPurgeOption.value && purgePreviousHistory.value,
         meTmuxSession: '',
       },
     });
@@ -212,6 +231,22 @@ function onCancel(): void {
   word-break: break-all;
 }
 .path-value.unset { color: #94A3B8; font-family: inherit; font-style: italic; }
+.purge-option {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid #F0F2F5;
+  font-size: 12px; color: #475569;
+  cursor: pointer; user-select: none;
+}
+.purge-option input[type=checkbox] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  width: 14px; height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #0062ff;
+}
+.purge-option:has(input:disabled) { cursor: not-allowed; opacity: .6; }
 .btn-secondary {
   height: 36px; padding: 0 16px;
   background: #fff; color: #475569;

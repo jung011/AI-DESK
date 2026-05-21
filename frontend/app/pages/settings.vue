@@ -30,6 +30,14 @@
             {{ mePicking ? '선택 중…' : '폴더 선택' }}
           </button>
         </div>
+        <label v-if="showMePurgeOption" class="purge-option">
+          <input
+            type="checkbox"
+            :checked="mePurgePrevious"
+            :disabled="meSaving"
+            @change="mePurgePrevious = ($event.target as HTMLInputElement).checked" />
+          <span>기존 워크스페이스의 Claude 대화 기록도 함께 삭제</span>
+        </label>
         <div class="card-actions">
           <span v-if="meSavedMsg" class="status-msg">{{ meSavedMsg }}</span>
           <button
@@ -109,6 +117,11 @@ const meLoading = ref(true);
 const meSaving = ref(false);
 const mePicking = ref(false);
 const meSavedMsg = ref('');
+/** 변경 모드(옛 path 있고 새 path 다름)에서만 의미. AI 삭제 다이얼로그와 동일 default true. */
+const mePurgePrevious = ref(true);
+const showMePurgeOption = computed(
+  () => !!meSavedPath.value && meSavedPath.value !== mePath.value,
+);
 
 async function fetchOnce(): Promise<void> {
   loading.value = true;
@@ -211,15 +224,33 @@ async function pickMeFolder(): Promise<void> {
   }
 }
 
+interface HelperScopeRs { rc: number; message?: string; absolutePath?: string }
+
 async function saveMe(): Promise<void> {
   if (meSaving.value || !mePath.value) return;
   meSaving.value = true;
   meSavedMsg.value = '';
   try {
-    const { $api } = useNuxtApp();
+    // MeWorkspaceDialog 와 동일한 2단계 — helper scope 후 backend PUT.
+    // 옛엔 backend 만 호출해 ~/.claude.json scope 처리가 누락됐었음.
+    const { $api, $helper } = useNuxtApp();
+    const scope = await $helper<HelperScopeRs>('/api/scope-workspace', {
+      method: 'POST',
+      body: {
+        newWorkspace: mePath.value,
+        oldWorkspace: meSavedPath.value,
+        purgePreviousHistory: showMePurgeOption.value && mePurgePrevious.value,
+        meTmuxSession: '',
+      },
+    });
+    if (scope.rc !== 0) {
+      meSavedMsg.value = scope.message || '폴더 검증 실패';
+      return;
+    }
+    const absolute = scope.absolutePath || mePath.value;
     const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace', {
       method: 'PUT',
-      body: { path: mePath.value, purgePreviousHistory: false },
+      body: { path: absolute, purgePreviousHistory: false },
     });
     if (env.result === 0 && env.data) {
       meSavedPath.value = env.data.path || '';
@@ -305,6 +336,23 @@ onMounted(() => {
 }
 .btn-secondary:hover:not(:disabled) { background: #F8FAFC; border-color: #0062ff; color: #0062ff; }
 .btn-secondary:disabled { opacity: .6; cursor: not-allowed; }
+
+.purge-option {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid #F0F2F5;
+  font-size: 12px; color: #475569;
+  cursor: pointer; user-select: none;
+}
+.purge-option input[type=checkbox] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  width: 14px; height: 14px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #0062ff;
+}
+.purge-option:has(input:disabled) { cursor: not-allowed; opacity: .6; }
 
 .card-actions {
   display: flex; align-items: center; justify-content: flex-end;
