@@ -73,8 +73,10 @@ public class AgentService {
             rows = agentMapper.selectAllForSystem();
         } else {
             rows = new ArrayList<>(agentMapper.selectList(me, status));
-            // (me)/휴먼 caller 또는 인증된 사용자 (= 브라우저, 휴먼 발신 가정) → 사내 동료 (me) 추가.
-            boolean exposeColleagues = (caller == null) || isMeOrHuman(caller);
+            // 사내 동료 (me) 노출은 *외부 터미널의 claude 의 list_agents* 전용 (mcp 가 callerAgentId 동봉).
+            // 대시보드 AI 그리드 / /chat partner 는 본인 user 안만 보임 — 기존 케플릭스 UX 유지.
+            // 사내 동료 디렉토리는 별도 /api/colleagues (조회 전용 패널).
+            boolean exposeColleagues = caller != null && isMeOrHuman(caller);
             if (exposeColleagues) {
                 rows.addAll(agentMapper.selectMeAgents(me));
             }
