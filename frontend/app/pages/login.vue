@@ -155,10 +155,43 @@ const onSubmit = async () => {
   font-size: 13px; color: #222; background: #fff;
   outline: none; transition: border-color .15s;
   width: 100%; box-sizing: border-box;
+  /* 외부 reset.css 의 input[type=email/password] 가 color 미정의지만, 일부 브라우저 매니저가
+     ‘유출 비밀번호 경고’ 색을 덮어쓰는 케이스가 있어서 명시. */
+  -webkit-text-fill-color: #222;
 }
 .form_input:focus { border-color: #0062ff; }
 .form_input::placeholder { color: #BCC4D0; }
-.form_input:disabled { background: #F4F6FB; color: #999; }
+.form_input:disabled { background: #F4F6FB; color: #999; -webkit-text-fill-color: #999; }
+
+/* common.css 의 글로벌 룰 `input:invalid { border-color/color: #E83667 !important; }` 가
+   :invalid 상태(빈 값 + required, 잘못된 email 형식 등)에서 input 을 빨갛게 만든다. 로그인
+   화면은 .login-error 의 단일 한국어 문구로만 에러를 표시하므로 :invalid 빨강은 끄고
+   디자인 시스템의 기본 회색 / 포커스 파란색을 유지한다. */
+.form_input:invalid,
+.form_input:required:invalid,
+input.form_input:invalid {
+  border-color: #D4DCE4 !important;
+  color: #222 !important;
+  -webkit-text-fill-color: #222 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.form_input:focus:invalid,
+input.form_input:focus:invalid {
+  border-color: #0062ff !important;
+}
+
+/* Chrome / Safari autofill 노란 박스 + 텍스트 색 덮어쓰기 강제 회피.
+   autofill 적용 시 -webkit-text-fill-color 를 우리 색으로, box-shadow 로 흰 배경 강제. */
+.form_input:-webkit-autofill,
+.form_input:-webkit-autofill:hover,
+.form_input:-webkit-autofill:focus,
+.form_input:-webkit-autofill:active {
+  -webkit-text-fill-color: #222 !important;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  caret-color: #222;
+  transition: background-color 5000s ease-in-out 0s;
+}
 
 /* 비밀번호 토글 */
 .input_with_toggle { position: relative; }
