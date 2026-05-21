@@ -201,8 +201,16 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str) -> bool:
 
 
 def _fetch_workrole_file() -> str:
-    """백엔드 설정의 workrole_file 경로 조회. 실패/미설정이면 빈 문자열."""
-    backend_url = os.environ.get("AIDESK_BACKEND_URL", _DEFAULT_BACKEND_URL).rstrip("/")
+    """백엔드 설정의 workrole_file 경로 조회. 실패/미설정이면 빈 문자열.
+
+    이 fetch 는 인증 없이 호출돼 backend 가 401 로 막는다 (= 정상 fallback 흐름).
+    실제 workrole 주입은 frontend 가 bootstrap body 에 path 동봉해서 처리.
+    """
+    backend_url = (
+        os.environ.get("AIDESK_HUB_URL")
+        or os.environ.get("AIDESK_BACKEND_URL")
+        or _DEFAULT_BACKEND_URL
+    ).rstrip("/")
     try:
         resp = httpx.get(f"{backend_url}/api/settings/workrole-file", timeout=3.0)
         resp.raise_for_status()

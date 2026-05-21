@@ -40,6 +40,7 @@ sudo -u "$CONSOLE_USER" mkdir -p "$LA_DIR" "$LOG_DIR" "$USER_HOME/.aidesk"
 # 핵심 시스템 env (PATH/HOME/LANG/LC_CTYPE) 만 항상 덮어쓴다.
 sudo -u "$CONSOLE_USER" python3 - "$PLIST" "$LOG_DIR" "$USER_HOME" "$USER_LANG" <<'PYEOF'
 import sys, plistlib
+from urllib.parse import urlparse
 plist_path, log_dir, user_home, user_lang = sys.argv[1:]
 try:
     with open(plist_path, 'rb') as f:
@@ -51,6 +52,16 @@ existing_env['PATH'] = f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{user_ho
 existing_env['HOME'] = user_home
 existing_env['LANG'] = user_lang
 existing_env['LC_CTYPE'] = 'UTF-8'
+# 마이그레이션: 옛 AIDESK_BACKEND_URL + AIDESK_EXTRA_ORIGINS 두 변수를
+# 단일 AIDESK_HUB_URL 로 통합. helper 코드는 HUB_URL 만 보고 origin/backend
+# derive — 다음 URL 변경 때 두 변수 일관성 유지 부담 X.
+if 'AIDESK_HUB_URL' not in existing_env:
+    legacy_backend = existing_env.get('AIDESK_BACKEND_URL', '').strip()
+    if legacy_backend:
+        existing_env['AIDESK_HUB_URL'] = legacy_backend
+# 옛 키는 정리 (HUB_URL 이 있으면 의미 없음). 단 helper 코드는 fallback 으로 옛 키도 인식.
+existing_env.pop('AIDESK_BACKEND_URL', None)
+existing_env.pop('AIDESK_EXTRA_ORIGINS', None)
 plist = {
     'Label': 'com.aidesk.agent',
     'ProgramArguments': ['/usr/local/bin/aidesk-helper'],

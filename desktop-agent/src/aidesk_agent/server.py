@@ -14,6 +14,7 @@ import plistlib
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 
 from aiohttp import web
 
@@ -43,23 +44,46 @@ log = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 30083
 
-# 대시보드 origin 화이트리스트. 환경변수 AIDESK_EXTRA_ORIGINS (콤마 구분) 로 운영 도메인 추가.
+# --- 단일 진실: AIDESK_HUB_URL ---
+# 옛엔 AIDESK_BACKEND_URL + AIDESK_EXTRA_ORIGINS 두 변수가 별도 — URL 한 번 바꿀 때 두 군데
+# 일관성 유지가 어려웠다 (path 포함 vs 제거 등 결함 빈발). 이제 HUB_URL 하나만 보면 된다:
+#   AIDESK_HUB_URL=<frontend URL>  ← 사용자가 setup 모달에서 입력하는 *동일한 값*
+# 옛 키 (AIDESK_BACKEND_URL/AIDESK_EXTRA_ORIGINS) 는 backward compat fallback 으로만 인식.
+def _resolve_hub_url() -> str:
+    return (
+        os.environ.get("AIDESK_HUB_URL")
+        or os.environ.get("AIDESK_BACKEND_URL")
+        or "http://localhost:30081"
+    ).rstrip("/")
+
+
+def _origin_of(url: str) -> str:
+    """URL 에서 path 제거된 *origin* (scheme://host[:port]) 만 반환 — brower Origin 헤더 매칭용."""
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}" if p.scheme and p.netloc else url
+
+
+# 대시보드 origin 화이트리스트.
 _DEFAULT_ORIGINS = {
     "http://localhost:30080",
     "http://127.0.0.1:30080",
 }
-ALLOWED_ORIGINS = _DEFAULT_ORIGINS | {
-    o.strip() for o in os.environ.get("AIDESK_EXTRA_ORIGINS", "").split(",") if o.strip()
-}
+ALLOWED_ORIGINS = (
+    _DEFAULT_ORIGINS
+    | ({_origin_of(_resolve_hub_url())} if _resolve_hub_url() else set())
+    # backward compat — 옛 deploy 에서 콤마-구분 EXTRA_ORIGINS 박은 경우.
+    | {o.strip() for o in os.environ.get("AIDESK_EXTRA_ORIGINS", "").split(",") if o.strip()}
+)
 
-# 중앙서버 IP 가 바뀌면 동료 brower 가 *새 IP origin* 으로 helper 를 호출해 setup 을 다시 잡아야 한다.
-# 그 첫 호출은 정의상 ALLOWED_ORIGINS 에 없는 origin 이므로, setup/local-info 두 endpoint 만은
-# 화이트리스트 우회로 *모든 origin* 을 허용한다. 다른 endpoint 는 기존 정책 유지.
-_OPEN_ORIGIN_PATHS = {"/api/setup", "/api/local-info"}
+# 중앙서버 URL 이 바뀌거나 새 동료가 첫 진입할 때 brower 의 origin 이 helper 의
+# ALLOWED_ORIGINS 에 아직 없을 수 있다. helper-install 페이지 흐름에 쓰이는 health /
+# local-info / setup 세 endpoint 는 화이트리스트 우회로 *모든 origin* 을 허용한다.
+# 그 외 (browse, scope, agents/bootstrap 등) 는 기존 정책 유지 — 정상 origin 만.
+_OPEN_ORIGIN_PATHS = {"/api/setup", "/api/local-info", "/api/health"}
 
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / "com.aidesk.agent.plist"
 _CLAUDE_JSON_PATH = Path.home() / ".claude.json"
-_HUB_URL_RE = re.compile(r"^https?://[\w\.\-]+(?::\d+)?/?$")
+_HUB_URL_RE = re.compile(r"^https?://[\w\.\-]+(?::\d+)?(?:/[\w\.\-/]*)?/?$")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -109,9 +133,8 @@ async def local_info(_: web.Request) -> web.Response:
         {
             "workspaces": workspaces,
             "tmuxSessions": tmux,
-            # 현재 helper 가 가리키는 중앙서버 — frontend HelperSetupDialog 가 brower origin 과 비교해
-            # mismatch 면 setup 모달 자동 노출.
-            "currentBackendUrl": os.environ.get("AIDESK_BACKEND_URL", DEFAULT_BACKEND_URL),
+            # 현재 helper 가 가리키는 중앙서버 — HUB_URL 단일 진실로 통합.
+            "currentBackendUrl": _resolve_hub_url(),
             "currentExtraOrigins": sorted(o for o in ALLOWED_ORIGINS if o not in _DEFAULT_ORIGINS),
         }
     )
@@ -139,15 +162,16 @@ def _apply_setup(hub_url: str) -> tuple[int, str]:
         else (frontend_origin[:-len(":30080")] + ":30081" if frontend_origin.endswith(":30080") else frontend_origin)
     )
 
-    # 1) plist 갱신
+    # 1) plist 갱신 — 단일 진실 AIDESK_HUB_URL 만 저장. 옛 키는 마이그레이션 잔재라 제거.
     if not _PLIST_PATH.exists():
         return 2, f"LaunchAgent plist 가 없습니다: {_PLIST_PATH}"
     try:
         with open(_PLIST_PATH, "rb") as f:
             plist = plistlib.load(f)
         env = plist.setdefault("EnvironmentVariables", {})
-        env["AIDESK_BACKEND_URL"] = backend_url
-        env["AIDESK_EXTRA_ORIGINS"] = frontend_origin
+        env["AIDESK_HUB_URL"] = backend_url
+        env.pop("AIDESK_BACKEND_URL", None)
+        env.pop("AIDESK_EXTRA_ORIGINS", None)
         with open(_PLIST_PATH, "wb") as f:
             plistlib.dump(plist, f)
     except (OSError, plistlib.InvalidFileException) as e:
@@ -383,7 +407,7 @@ async def code_server_status_handler(request: web.Request) -> web.Response:
 
 
 async def _start_background_tasks(app: web.Application) -> None:
-    backend_url = os.environ.get("AIDESK_BACKEND_URL", DEFAULT_BACKEND_URL)
+    backend_url = _resolve_hub_url()
     interval = float(
         os.environ.get("AIDESK_REPORT_INTERVAL_SEC", DEFAULT_REPORT_INTERVAL_SEC)
     )
