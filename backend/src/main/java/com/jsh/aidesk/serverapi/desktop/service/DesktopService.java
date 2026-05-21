@@ -62,6 +62,10 @@ public class DesktopService {
                 updated++;
                 log.debug("desktop: agent={} status {} -> {} (from Helper)",
                         a.getAgentName(), a.getStatus(), w.getStatus());
+            } else {
+                // status 변화가 없어도 *helper 가 살아있다는 신호* 로 updated_at 만 touch.
+                // ColleagueService 의 online window 판정이 updated_at 만 보기 때문.
+                agentMapper.touchUpdatedAt(a.getAgentId());
             }
         }
         rs.setMatchedAgents(matched);

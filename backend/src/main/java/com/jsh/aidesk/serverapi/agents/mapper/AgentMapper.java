@@ -55,6 +55,9 @@ public interface AgentMapper {
                                  @Param("status") String status,
                                  @Param("contextPct") Integer contextPct);
 
+    /** status / context 변화가 없어도 helper 가 살아있다는 신호로 updated_at 만 갱신 — online window 판정용. */
+    int touchUpdatedAt(@Param("agentId") String agentId);
+
     /**
      * tmux_session 으로 에이전트를 찾는 데 사용. helper / last-mile 시스템 콜이라
      * owner 격리 없음. caller 가 필요하면 결과의 ownerAccountSn 비교.

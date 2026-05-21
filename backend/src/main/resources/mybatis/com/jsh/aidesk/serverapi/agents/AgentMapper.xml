@@ -89,6 +89,13 @@
            AND deleted_at IS NULL
     </update>
 
+    <update id="touchUpdatedAt">
+        UPDATE t_ai_agent
+           SET updated_at = NOW()
+         WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
+    </update>
+
 
     <select id="selectByTmuxSession" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
         SELECT <include refid="agentColumns"/>

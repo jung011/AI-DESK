@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
-import com.jsh.aidesk.serverapi.setting.helper.HelperScopeWorkspaceClient;
 import com.jsh.aidesk.serverapi.setting.mapper.SettingMapper;
 import com.jsh.aidesk.serverapi.setting.vo.CodeServerRsVo;
 
@@ -44,7 +43,6 @@ public class SettingService {
 
     private final SettingMapper mapper;
     private final AgentMapper agentMapper;
-    private final HelperScopeWorkspaceClient helperScopeClient;
 
     @Value("${vscode.code-server-url:}")
     private String codeServerUrl;
@@ -95,16 +93,15 @@ public class SettingService {
     }
 
     /**
-     * A2A 워크스페이스 변경.
+     * A2A 워크스페이스 저장.
      *
-     * 백엔드가 도커 컨테이너 안에서 동작하므로 호스트의 디렉토리 검증 및
-     * `~/.claude.json` 갱신은 호스트에 있는 Helper 에 위임한다. 백엔드는:
-     *   1) Helper 의 /api/scope-workspace 호출 (검증 + claude.json scope 이동)
-     *   2) Helper 가 돌려준 정규화된 absolutePath 를 DB 에 저장
-     *   3) (me) 에이전트 upsert
+     * 호스트 폴더 검증 + `~/.claude.json` scope 처리는 frontend 가 *본인 mac 의*
+     * Helper /api/scope-workspace 를 직접 호출하여 끝낸 뒤 절대 경로를 이 endpoint
+     * 로 넘긴다. 백엔드는 그 경로를 신뢰하고 DB upsert + (me) row 만 처리한다.
+     * (옛 흐름: 백엔드 → host.docker.internal:30083 호출은 *백엔드가 도는 mac 의*
+     * helper 만 가리키므로 다른 mac 사용자에겐 동작하지 않았음.)
      *
-     * @return rc 0=성공, 1=빈 경로, 2=디렉토리 아님, 3=claude.json 갱신 실패,
-     *            9=Helper 통신 실패
+     * @return rc 0=성공, 1=빈 경로
      */
     public int setA2aWorkspace(String path, boolean purgePreviousHistory) {
         if (path == null || path.isBlank()) return 1;
@@ -112,17 +109,8 @@ public class SettingService {
         Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
         String meLoginId = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentLoginId();
         String employeeKey = deriveEmployeeKey(meLoginId);
-        String old = mapper.selectValue(me, KEY_A2A_WORKSPACE);
-        String meSession = employeeKey.isEmpty() ? "" : ME_TMUX_PREFIX + employeeKey;
-        HelperScopeWorkspaceClient.Result r = helperScopeClient.scope(
-                path, old, purgePreviousHistory, meSession);
-        if (r.rc() != 0) {
-            log.warn("setA2aWorkspace: helper scope 실패 rc={} message={}", r.rc(), r.message());
-            return r.rc();
-        }
-        String absolute = r.absolutePath();
-        mapper.upsertValue(me, KEY_A2A_WORKSPACE, absolute);
-        upsertMeAgent(absolute, me, employeeKey);
+        mapper.upsertValue(me, KEY_A2A_WORKSPACE, path);
+        upsertMeAgent(path, me, employeeKey);
         return 0;
     }
 

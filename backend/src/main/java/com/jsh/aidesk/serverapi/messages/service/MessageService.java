@@ -13,7 +13,6 @@ import com.jsh.aidesk.serverapi.messages.lastmile.LastMileAdapter;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 import com.jsh.aidesk.serverapi.messages.policy.MessagePolicyChecker;
 import com.jsh.aidesk.serverapi.messages.policy.PolicyResult;
-import com.jsh.aidesk.serverapi.messages.preflight.HelperTmuxChecker;
 
 import lombok.extern.slf4j.Slf4j;
 import java.util.List;
@@ -43,7 +42,6 @@ public class MessageService {
     private final AgentMapper agentMapper;
     private final MessagePolicyChecker policy;
     private final LastMileAdapter lastMile;
-    private final HelperTmuxChecker tmuxChecker;
 
     /**
      * 메시지 발신.
@@ -108,31 +106,15 @@ public class MessageService {
             entity.setHopCount(0);
         }
 
-        // 휴먼(인간 사용자) entity 는 tmux 가 없음 — preflight/last-mile 우회.
+        // 휴먼(인간 사용자) entity 는 tmux 가 없음 — last-mile 우회.
         // 채팅 UI 가 폴링으로 가져가서 사용자에게 표시하면 됨. 즉시 status='delivered' 마킹.
         boolean toIsHuman = "human".equalsIgnoreCase(to.getModel());
 
-        // 4-pre) Pre-flight — 수신자 tmux 세션이 실제 호스트에 살아있는지 Helper 에게 확인.
-        //   불가능 상태면: agent.status='error' 마킹 + 메시지는 failed 로 insert + 응답에 status='failed'.
-        //   예외를 던지면 동일 트랜잭션이 rollback 되어 status update 와 audit insert 가 모두 사라짐.
-        //   대신 정책 위반과 동일하게 failed 응답으로 처리해 송신자가 status+errorReason 으로 인지.
-        HelperTmuxChecker.Result preflight = toIsHuman
-                ? new HelperTmuxChecker.Result(true, "human entity — skip")
-                : tmuxChecker.check(to.getTmuxSession());
-        if (!preflight.alive()) {
-            String reason = "수신 AI 통신 불가: " + preflight.reason();
-            log.warn("[message-preflight] FAIL from={}({}) to={}({}) tmux={} reason={} content={}",
-                    from.getAgentName(), from.getAgentId(),
-                    to.getAgentName(), to.getAgentId(),
-                    to.getTmuxSession(), preflight.reason(),
-                    truncate(req.getContent(), 200));
-            // 수신자 상태를 error 로 마킹 (contextPct 는 그대로 유지 — null 넘기면 미변경)
-            agentMapper.updateStatusFromWatcher(to.getAgentId(), "error", null);
-            entity.setStatus("failed");
-            entity.setErrorReason(reason);
-            messageMapper.insert(entity);
-            return messageMapper.selectItemById(entity.getMessageId());
-        }
+        // 멀티 mac 환경에서 backend → host.docker.internal:30083 preflight 는 *backend 가 도는
+        // mac 의 helper* 만 호출하므로 수신자 helper 가 다른 mac 에 있으면 항상 fail.
+        // 옛 single-mac 가정의 preflight 제거 — SSE 발송 + helper ack 흐름에 위임:
+        //   수신측 helper 가 본인 mac 에 해당 tmux 있으면 send-keys + ack → status='delivered'
+        //   없으면 ignore → status 'sent' 그대로 (UI 가 sent 로 표시).
 
         // 4. 정책 검사
         PolicyResult result = policy.check(from, to, parent);
