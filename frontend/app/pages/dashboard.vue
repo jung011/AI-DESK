@@ -38,8 +38,8 @@
       @delete="onDeleteRequest"
       @select="onAgentSelect" />
 
-    <!-- 사내 동료 AI (kaflix-a2a Control Plane) -->
-    <ExternalAgentGrid @select-me="onSelectMe" />
+    <!-- 사내 동료 AI (자체 채널 — 같은 backend 의 다른 user 의 (me)) -->
+    <ColleagueGrid @select="onColleagueSelect" />
 
     <!-- 임베드 터미널 + VSCode 사이드 패널 — 사용 빈도 낮아 잠시 비활성.
          외부 터미널 열기 / 외부 VSCode 열기 (AgentCard 안 버튼) 흐름은 그대로 동작.
@@ -86,14 +86,14 @@ import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
-import ExternalAgentGrid from '~/components/dashboard/ExternalAgentGrid.vue';
+import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
 // 임베드 터미널 + 임베드 VSCode 사이드 패널 비활성 — TerminalSidePanel + 하위
 // TerminalPane / VsCodePane 까지 함께 bundle 에서 빠지도록 import 도 같이 주석.
 // 복원하려면 이 import 와 template 안의 <TerminalSidePanel> 블록 주석 해제.
 // import TerminalSidePanel from '~/components/dashboard/TerminalSidePanel.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
-import type { ExternalAgentItem } from '~/vo/external/ExternalAgentVo';
+import type { ColleagueItem } from '~/vo/colleagues/ColleagueVo';
 
 const {
   summary,
@@ -137,20 +137,13 @@ function onAgentSelect(agent: AgentItem): void {
   panel.open = true;
 }
 
-async function onSelectMe(a: ExternalAgentItem): Promise<void> {
-  panel.agentName = `${a.name || a.employeeId} (me)`;
-  panel.subtitle = '본인 A2A 터미널';
-  panel.tmuxSession = `aidesk-self-${a.employeeId.toLowerCase()}`;
-  panel.model = 'claude';
-  // A2A 워크스페이스 경로를 가져와 VSCode 탭에서도 열 수 있게 한다.
-  try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; data: { path: string } }>(
-      '/api/settings/a2a-workspace',
-    );
-    panel.workspaceDir = env.result === 0 ? (env.data?.path || '') : '';
-  } catch { panel.workspaceDir = ''; }
-  panel.open = true;
+function onColleagueSelect(c: ColleagueItem): void {
+  // 사내 동료 카드 클릭 — 메시지 발신 모달은 후속 작업.
+  // 향후 channel/channel_frontend.md §2.3 의 메시지 모달과 연결.
+  alert(
+    `사내 동료 "${c.displayName}" 에게 메시지 보내기 — UI 후속 작업.\n`
+    + `agent_id: ${c.meAgentId}`,
+  );
 }
 
 async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
