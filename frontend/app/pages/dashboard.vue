@@ -55,6 +55,14 @@
     -->
 
 
+    <!-- helper 가 가리키는 중앙서버가 현재 페이지와 다르면 자동 표시 — IP 변경 자동 반영. -->
+    <HelperSetupDialog
+      :open="helperSetupOpen"
+      :current-backend-url="helperBackendUrl"
+      :page-origin="pageOrigin"
+      @applied="onHelperSetupApplied"
+      @cancel="helperSetupOpen = false" />
+
     <!-- (me) 워크스페이스 미지정 또는 (me) row 부재 시 자동 표시되는 모달 -->
     <MeWorkspaceDialog
       :open="meWorkspaceDialogOpen"
@@ -96,8 +104,10 @@ import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
 import MeWorkspaceDialog from '~/components/dashboard/MeWorkspaceDialog.vue';
+import HelperSetupDialog from '~/components/dashboard/HelperSetupDialog.vue';
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 interface A2aWorkspaceRs { path: string }
+interface HelperLocalInfoRs { currentBackendUrl?: string }
 // 임베드 터미널 + 임베드 VSCode 사이드 패널 비활성 — TerminalSidePanel + 하위
 // TerminalPane / VsCodePane 까지 함께 bundle 에서 빠지도록 import 도 같이 주석.
 // 복원하려면 이 import 와 template 안의 <TerminalSidePanel> 블록 주석 해제.
@@ -122,6 +132,34 @@ const {
 const meWorkspacePath = ref('');
 const meWorkspaceDialogOpen = ref(false);
 const meAgentMissing = ref(false);
+
+const helperSetupOpen = ref(false);
+const helperBackendUrl = ref('');
+const pageOrigin = ref('');
+
+/** helper 의 backend URL host 와 brower origin host 가 다르면 setup 모달.
+ *  같은 host 면 port 차이는 무시 (frontend:30080 vs backend:30081). */
+async function checkHelperSetup(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  pageOrigin.value = window.location.origin;
+  try {
+    const { $helper } = useNuxtApp();
+    const info = await $helper<HelperLocalInfoRs>('/api/local-info');
+    helperBackendUrl.value = info.currentBackendUrl || '';
+    if (!helperBackendUrl.value) return; // 옛 helper (0.6.7-) 호환 — 모달 안 띄움
+    const helperHost = new URL(helperBackendUrl.value).hostname;
+    const pageHost = new URL(pageOrigin.value).hostname;
+    if (helperHost !== pageHost) helperSetupOpen.value = true;
+  } catch {
+    // helper 미가동 등 — 무시. (me) 모달 단계의 폴더 선택에서 어차피 에러로 안내됨.
+  }
+}
+
+function onHelperSetupApplied(): void {
+  // helper 가 launchctl 재로드 + brower 가 3s 후 자동 새로고침. 그 동안 다른 모달 숨김.
+  helperSetupOpen.value = false;
+  meWorkspaceDialogOpen.value = false;
+}
 
 /** (me) AI 는 tmux_session 이 'aidesk-self-' 로 시작. list 에 존재 여부로 판정. */
 function hasMeAgent(): boolean {
@@ -223,8 +261,10 @@ async function onDeleteConfirm(payload: { extraOption: boolean }): Promise<void>
 }
 
 onMounted(async () => {
-  // (me) 존재 체크는 list 가 채워진 후에 해야 정확. fetchAgents 한 번 명시적으로 await
-  // 후 loadMeWorkspace 로 path + (me) row 양쪽을 본 다음 모달 표시 결정.
+  // 우선 helper 가 가리키는 중앙서버가 현재 페이지와 일치하는지 확인 — 다르면 setup 모달
+  // 이 최우선 노출. (me) 워크스페이스 모달은 setup 마친 다음 단계.
+  await checkHelperSetup();
+  if (helperSetupOpen.value) return;
   await fetchAgents();
   await loadMeWorkspace();
   startPolling(10_000);
