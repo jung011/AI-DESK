@@ -80,6 +80,16 @@ export function useAgents(initialStatus: string = 'all') {
         // 이 호출이 끝나야 사용자가 터미널을 안 열어도 신규 AI 가 메시지 수신 가능.
         // Helper 가 꺼져있어도 본문 작업은 끝났으니 에러는 콘솔 경고만, 사용자에겐 성공으로 표시.
         if (env.data?.workspaceDir && env.data?.tmuxSession) {
+          // 공통 작업 규칙 문서 경로는 *brower 가 인증 cookie 가진 채* 조회해서
+          // helper 에 함께 넘긴다. helper 가 직접 backend 를 인증 없이 호출하면
+          // /api/settings/** 의 인증 가드에 막혀 항상 빈 문자열을 받았던 결함 회피.
+          let workroleFile = '';
+          try {
+            const wrEnv = await $api<ApiEnvelope<{ path: string }>>('/api/settings/workrole-file');
+            if (wrEnv.result === 0 && wrEnv.data) workroleFile = wrEnv.data.path || '';
+          } catch {
+            // workrole 조회 실패해도 bootstrap 자체는 진행 (identity prompt 만 주입됨).
+          }
           try {
             await $helper<{ rc: number; message?: string }>('/api/agents/bootstrap', {
               method: 'POST',
@@ -87,6 +97,7 @@ export function useAgents(initialStatus: string = 'all') {
                 workspaceDir: env.data.workspaceDir,
                 tmuxSession: env.data.tmuxSession,
                 agentName: env.data.agentName,
+                workroleFile,
               },
             });
           } catch (bootErr) {
