@@ -23,7 +23,6 @@ from .workspace import browse_file, browse_workspace, cleanup_agent, scope_works
 # 임베드 터미널 사이드 패널 비활성화에 맞춰 pty WebSocket handler 도 보류.
 # 복원하려면 이 import 와 아래의 라우터 등록 두 곳을 같이 주석 해제.
 # from .tmux.pty_bridge import terminal_handler
-from .kaflix import pump_loop as kaflix_pump_loop
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .tmux import consumer_loop, scan_sessions
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
@@ -277,16 +276,15 @@ async def _start_background_tasks(app: web.Application) -> None:
     action_hook_auto_install()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
-    # 사내 동료(kaflix-channel) 메시지를 (me) liki tmux 로 자동 푸시 — 사이드카 SSE 구독.
-    # 사이드카가 안 떠있거나 (me) 워크스페이스에 token 이 없으면 자체 비활성, 다른 기능엔 영향 X.
-    app["kaflix_pump_task"] = asyncio.create_task(kaflix_pump_loop(backend_url))
+    # 자체 채널 모델 (2026-05~) 도입 후 케플릭스 사이드카 SSE 구독 (kaflix pump) 폐기.
+    # 사내 동료 메시지는 우리 backend SSE 가 reporter_task / sse_task 흐름과 동일 경로로 도달.
     # 임베드 VSCode (code-server) — 대시보드의 사이드 패널이 비활성된 상태라 spawn 도 보류.
     # 30082 포트 + brew install 단계 비용 절감. 복원하려면 아래 한 줄 주석만 해제.
     # app["code_server_proc"] = await start_code_server()
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
-    for key in ("reporter_task", "sse_task", "kaflix_pump_task"):
+    for key in ("reporter_task", "sse_task"):
         task = app.get(key)
         if task is None:
             continue
