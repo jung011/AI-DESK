@@ -56,7 +56,12 @@ public class SseLastMileAdapter implements LastMileAdapter {
 
         int n = broker.publish("message.deliver", payload);
         if (n == 0) {
-            callback.onFailed("Helper 미연결 (SSE 구독자 없음)");
+            // 구독자 0 = helper SSE 가 일시적으로 끊긴 상태 (VPN/네트워크/ingress reconnect).
+            // 옛엔 즉시 onFailed 했지만 그러면 status='failed' 박혀서 RetryScheduler 가
+            // 안 잡고 영구 누락. status='sent' 그대로 두고 retry 가 helper reconnect 후
+            // 재발행하게 위임.
+            log.info("[message-publish] msg={} to={}({}) subscribers=0 — leaving as 'sent' for retry",
+                    message.getMessageId(), to.getAgentName(), to.getTmuxSession());
             return;
         }
         log.info("[message-publish] msg={} to={}({}) subscribers={} — awaiting helper ACK",
