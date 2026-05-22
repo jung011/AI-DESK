@@ -60,7 +60,7 @@
         rows="2"
         :placeholder="`${partner.agentName} 에게 메시지…`"
         :disabled="sending"
-        @keydown.enter.exact.prevent="onSend"
+        @keydown.enter.exact="onEnter"
       />
       <button
         class="cv-send"
@@ -100,6 +100,14 @@ async function onSend(): Promise<void> {
   draft.value = '';
   await nextTick();
   scrollToBottom();
+}
+
+// IME (한글/일본어) 조합 중 Enter 는 무시 — 조합 완료 후 다음 Enter 가 전송.
+// 조합 중 Enter 를 잡으면 send 직후 composition end 결과가 textarea 에 다시 들어가 초기화가 안 보임.
+function onEnter(e: KeyboardEvent): void {
+  if (e.isComposing) return;
+  e.preventDefault();
+  void onSend();
 }
 
 function scrollToBottom(): void {
