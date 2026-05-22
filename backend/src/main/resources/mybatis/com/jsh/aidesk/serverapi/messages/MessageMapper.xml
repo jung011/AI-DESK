@@ -239,4 +239,19 @@
             OR to_agent_id   = #{agentId}
     </delete>
 
+    <!--
+      partners[] 합성 — agentId 가 최근 windowSec 초 내에 보내거나 받은 메시지의 distinct 상대.
+      GET /api/agents/realtime 의 talking state + partners 필드용.
+    -->
+    <select id="selectRecentPartners" resultType="string">
+        SELECT DISTINCT
+            CASE WHEN m.from_agent_id = #{agentId}
+                 THEN m.to_agent_id
+                 ELSE m.from_agent_id
+            END
+          FROM t_ai_message m
+         WHERE (m.from_agent_id = #{agentId} OR m.to_agent_id = #{agentId})
+           AND m.created_at > NOW() - (#{windowSec} || ' seconds')::INTERVAL
+    </select>
+
 </mapper>

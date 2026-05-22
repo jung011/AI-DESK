@@ -122,6 +122,55 @@ public class AgentService {
         return a.getTmuxSession() != null && a.getTmuxSession().startsWith("aidesk-self-");
     }
 
+    /** 메타버스 등 외부 시각화 BE 가 소비하는 통합 realtime 응답.
+     *  partners 윈도우 + offline 판정 window. */
+    private static final int PARTNERS_WINDOW_SEC = 60;
+    private static final int OFFLINE_THRESHOLD_SEC = 60;
+
+    /**
+     * GET /api/agents/realtime — 본인 user 의 agent 들을 state/partners/lastSeenAt 으로 합성해 반환.
+     * 인증 미상이면 빈 list (SecurityConfig 가 비인증 호출 차단).
+     */
+    @Transactional(readOnly = true)
+    public List<com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo> getRealtime() {
+        Long me = AuthContext.currentAccountSn();
+        if (me == null) return List.of();
+        List<AgentVo> rows = agentMapper.selectList(me, null);
+        return rows.stream().map(this::toRealtime).toList();
+    }
+
+    private com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo toRealtime(AgentVo v) {
+        List<String> partners = messageMapper.selectRecentPartners(v.getAgentId(), PARTNERS_WINDOW_SEC);
+        var r = new com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo();
+        r.setAgentId(v.getAgentId());
+        r.setName(v.getAgentName());
+        r.setLastSeenAt(v.getUpdatedAt());
+        r.setPartners(partners == null ? List.of() : partners);
+        r.setState(resolveState(v, partners));
+        return r;
+    }
+
+    private static String resolveState(AgentVo v, List<String> partners) {
+        var updated = v.getUpdatedAt();
+        if (updated != null
+                && updated.isBefore(java.time.OffsetDateTime.now().minusSeconds(OFFLINE_THRESHOLD_SEC))) {
+            return "offline";
+        }
+        if ("error".equalsIgnoreCase(v.getStatus())) {
+            return "offline";
+        }
+        if (partners != null && !partners.isEmpty()) {
+            return "talking";
+        }
+        String s = v.getStatus() == null ? "" : v.getStatus().toLowerCase();
+        return switch (s) {
+            case "active"  -> "working";
+            case "waiting" -> "awaiting_input";
+            case "idle"    -> "idle";
+            default        -> "idle";
+        };
+    }
+
     @Transactional
     public AgentItemRsVo create(AgentCreateRqVo req) {
         Long me = AuthContext.currentAccountSn();

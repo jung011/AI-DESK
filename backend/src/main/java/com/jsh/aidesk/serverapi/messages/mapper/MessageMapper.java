@@ -88,6 +88,13 @@ public interface MessageMapper {
     int deleteByAgent(@Param("agentId") String agentId);
 
     /**
+     * 최근 windowSec 초 안에 agentId 가 보내거나 받은 메시지의 distinct 상대 agentId 목록.
+     * GET /api/agents/realtime 의 partners[] 합성에 사용.
+     */
+    List<String> selectRecentPartners(@Param("agentId") String agentId,
+                                       @Param("windowSec") int windowSec);
+
+    /**
      * Helper 의 ACK 도착 시 호출 — status='sent' 인 메시지만 'delivered' 로 마킹 + delivered_at = NOW().
      * 이미 'delivered'/'replied'/'failed' 인 메시지는 0 rows update.
      * @return 1 = 정상 마킹, 0 = 매치 없음 (이미 다른 status 또는 잘못된 messageId)
