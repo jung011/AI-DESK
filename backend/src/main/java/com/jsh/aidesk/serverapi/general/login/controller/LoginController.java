@@ -41,6 +41,14 @@ public class LoginController {
     @Value("${cookie.secure:false}")
     private boolean cookieSecure;
 
+    /**
+     * subdomain 공유를 위한 cookie Domain 속성. 예: ".example.com".
+     * 미설정 (빈 값) = 옛 host-only 동작 — 로컬 dev 호환.
+     * 외부화: env AIDESK_COOKIE_DOMAIN 또는 application.yml 의 cookie.domain.
+     */
+    @Value("${cookie.domain:}")
+    private String cookieDomain;
+
     /** 회원가입 — API only (페이지 없음). 1단계 비인증 호출 허용. */
     @PostMapping("/signup")
     public ResponseJson<LoginSignupRsVo> signup(@RequestBody @Valid LoginSignupRqVo rq) {
@@ -81,9 +89,9 @@ public class LoginController {
         // access 쿠키 Max-Age 를 refresh 만료와 동일하게 — JWT 자체는 access 만료 시점에 끊기지만
         // 쿠키가 살아있어야 만료 토큰이 BE 에 도달해 ET 응답 → axios 자동 refresh 시도 가능.
         CookieUtil.setAuthCookie(response, CookieUtil.ACCESS_TOKEN_COOKIE,
-                accessToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure);
+                accessToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure, cookieDomain);
         CookieUtil.setAuthCookie(response, CookieUtil.REFRESH_TOKEN_COOKIE,
-                refreshToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure);
+                refreshToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure, cookieDomain);
 
         LoginAuthenticateRsVo rs = new LoginAuthenticateRsVo();
         rs.setAccountSn(account.getAccountSn());
@@ -142,9 +150,9 @@ public class LoginController {
                 account.getLoginId(), account.getAccountSn(), account.getRole());
 
         CookieUtil.setAuthCookie(response, CookieUtil.ACCESS_TOKEN_COOKIE,
-                newAccessToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure);
+                newAccessToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure, cookieDomain);
         CookieUtil.setAuthCookie(response, CookieUtil.REFRESH_TOKEN_COOKIE,
-                newRefreshToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure);
+                newRefreshToken, jwtProvider.getRefreshExpirationSeconds(), cookieSecure, cookieDomain);
 
         LoginAuthenticateRsVo rs = new LoginAuthenticateRsVo();
         rs.setAccountSn(account.getAccountSn());
@@ -162,8 +170,8 @@ public class LoginController {
         if (principal != null && principal.getLoginId() != null) {
             loginService.deleteAllRefreshTokens(principal.getLoginId());
         }
-        CookieUtil.clearAuthCookie(response, CookieUtil.ACCESS_TOKEN_COOKIE, cookieSecure);
-        CookieUtil.clearAuthCookie(response, CookieUtil.REFRESH_TOKEN_COOKIE, cookieSecure);
+        CookieUtil.clearAuthCookie(response, CookieUtil.ACCESS_TOKEN_COOKIE, cookieSecure, cookieDomain);
+        CookieUtil.clearAuthCookie(response, CookieUtil.REFRESH_TOKEN_COOKIE, cookieSecure, cookieDomain);
         return ResponseJson.ok(ResponseCode.SUCCESS);
     }
 

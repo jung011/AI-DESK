@@ -16,7 +16,7 @@ public final class CookieUtil {
     private CookieUtil() {}
 
     public static void setAuthCookie(HttpServletResponse response, String name, String value,
-                                     int maxAgeSeconds, boolean secure) {
+                                     int maxAgeSeconds, boolean secure, String domain) {
         StringBuilder sb = new StringBuilder();
         sb.append(name).append('=').append(value);
         sb.append("; Path=/");
@@ -24,10 +24,12 @@ public final class CookieUtil {
         sb.append("; HttpOnly");
         sb.append("; SameSite=Lax");
         if (secure) sb.append("; Secure");
+        if (domain != null && !domain.isBlank()) sb.append("; Domain=").append(domain);
         response.addHeader("Set-Cookie", sb.toString());
     }
 
-    public static void clearAuthCookie(HttpServletResponse response, String name, boolean secure) {
+    public static void clearAuthCookie(HttpServletResponse response, String name,
+                                       boolean secure, String domain) {
         StringBuilder sb = new StringBuilder();
         sb.append(name).append('=');
         sb.append("; Path=/");
@@ -35,6 +37,7 @@ public final class CookieUtil {
         sb.append("; HttpOnly");
         sb.append("; SameSite=Lax");
         if (secure) sb.append("; Secure");
+        if (domain != null && !domain.isBlank()) sb.append("; Domain=").append(domain);
         response.addHeader("Set-Cookie", sb.toString());
     }
 
