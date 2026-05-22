@@ -129,13 +129,14 @@ public class AgentService {
 
     /**
      * GET /api/agents/realtime — 본인 user 의 agent 들을 state/partners/lastSeenAt 으로 합성해 반환.
-     * 인증 미상이면 빈 list (SecurityConfig 가 비인증 호출 차단).
+     * 비인증 호출 (smoke probe 등) 은 빈 list 로 안전 fallback — /api/agents/** 가 permitAll 라
+     * AuthContext.currentAccountSn() 의 throw 를 피해야 한다.
      */
     @Transactional(readOnly = true)
     public List<com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo> getRealtime() {
-        Long me = AuthContext.currentAccountSn();
-        if (me == null) return List.of();
-        List<AgentVo> rows = agentMapper.selectList(me, null);
+        var user = AuthContext.currentUserOrNull();
+        if (user == null) return List.of();
+        List<AgentVo> rows = agentMapper.selectList(user.getAccountSn(), null);
         return rows.stream().map(this::toRealtime).toList();
     }
 
