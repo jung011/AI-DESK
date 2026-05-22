@@ -26,10 +26,25 @@ public final class CookieUtil {
         if (secure) sb.append("; Secure");
         if (domain != null && !domain.isBlank()) sb.append("; Domain=").append(domain);
         response.addHeader("Set-Cookie", sb.toString());
+
+        // Cookie 충돌 방지 — domain 명시 발급 시 host-only 잔재 cookie 가 같이 살아남아 first-match
+        // 으로 잘못 채택되는 silent failure 회피를 위해 host-only 변형도 Max-Age=0 으로 cleanup.
+        // RFC 6265 상 같은 이름이라도 Domain 이 다르면 별개 cookie 라 명시 expire 가 필요.
+        if (domain != null && !domain.isBlank()) {
+            response.addHeader("Set-Cookie", buildExpireHeader(name, secure, null));
+        }
     }
 
     public static void clearAuthCookie(HttpServletResponse response, String name,
                                        boolean secure, String domain) {
+        response.addHeader("Set-Cookie", buildExpireHeader(name, secure, domain));
+        // 동일 이유로 logout/clear 시에도 host-only 잔재까지 함께 expire.
+        if (domain != null && !domain.isBlank()) {
+            response.addHeader("Set-Cookie", buildExpireHeader(name, secure, null));
+        }
+    }
+
+    private static String buildExpireHeader(String name, boolean secure, String domain) {
         StringBuilder sb = new StringBuilder();
         sb.append(name).append('=');
         sb.append("; Path=/");
@@ -38,7 +53,7 @@ public final class CookieUtil {
         sb.append("; SameSite=Lax");
         if (secure) sb.append("; Secure");
         if (domain != null && !domain.isBlank()) sb.append("; Domain=").append(domain);
-        response.addHeader("Set-Cookie", sb.toString());
+        return sb.toString();
     }
 
     public static String readCookie(HttpServletRequest request, String name) {
