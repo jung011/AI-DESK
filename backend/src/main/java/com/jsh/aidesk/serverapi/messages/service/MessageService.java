@@ -319,16 +319,20 @@ public class MessageService {
 
     /**
      * 메시지 목록 조회.
+     *
+     * SQL 은 *최근 N개* 를 DESC 로 가져오고 (오래된 메시지 잘림 방지), 응답은
+     * 채팅창이 위→아래 시간순으로 그릴 수 있게 ASC 로 reverse 해서 돌려준다.
      */
     @Transactional(readOnly = true)
     public MessageListRsVo getList(String agentId, String direction, String withId,
                                    String status, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
-        var list = messageMapper.selectByAgent(agentId, direction, withId, status, safeLimit + 1);
-        boolean hasMore = list.size() > safeLimit;
-        if (hasMore) list = list.subList(0, safeLimit);
+        var rows = messageMapper.selectByAgent(agentId, direction, withId, status, safeLimit + 1);
+        boolean hasMore = rows.size() > safeLimit;
+        var trimmed = new ArrayList<>(hasMore ? rows.subList(0, safeLimit) : rows);
+        java.util.Collections.reverse(trimmed);
         MessageListRsVo rs = new MessageListRsVo();
-        rs.setList(list);
+        rs.setList(trimmed);
         rs.setHasMore(hasMore);
         return rs;
     }
