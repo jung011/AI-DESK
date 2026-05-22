@@ -44,9 +44,10 @@ public class LoginController {
     /**
      * subdomain 공유를 위한 cookie Domain 속성. 예: ".example.com".
      * 미설정 (빈 값) = 옛 host-only 동작 — 로컬 dev 호환.
-     * 외부화: env AIDESK_COOKIE_DOMAIN 또는 application.yml 의 cookie.domain.
+     * 외부화: 다음 우선순위로 읽음 — application.yml `cookie.domain` > env `COOKIE_DOMAIN` (Spring relaxed binding) > env `AIDESK_COOKIE_DOMAIN` (명시 fallback).
+     * `AIDESK_*` prefix env 는 Spring 이 `aidesk.cookie.domain` property 로 매핑하므로 `cookie.domain` 과 충돌 X — 명시 fallback 으로 직접 읽음.
      */
-    @Value("${cookie.domain:}")
+    @Value("${cookie.domain:${AIDESK_COOKIE_DOMAIN:}}")
     private String cookieDomain;
 
     /** 회원가입 — API only (페이지 없음). 1단계 비인증 호출 허용. */
