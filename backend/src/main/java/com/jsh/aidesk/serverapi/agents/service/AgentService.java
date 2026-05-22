@@ -131,13 +131,19 @@ public class AgentService {
      * GET /api/agents/realtime — 본인 user 의 agent 들을 state/partners/lastSeenAt 으로 합성해 반환.
      * 비인증 호출 (smoke probe 등) 은 빈 list 로 안전 fallback — /api/agents/** 가 permitAll 라
      * AuthContext.currentAccountSn() 의 throw 를 피해야 한다.
+     *
+     * 휴먼 entity (model='human') 는 외부 시각화 BE 에 전달하지 않는다 — 사용자(인간) 본인을
+     * AI 와 같은 캐릭터로 그리지 않기 위함.
      */
     @Transactional(readOnly = true)
     public List<com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo> getRealtime() {
         var user = AuthContext.currentUserOrNull();
         if (user == null) return List.of();
         List<AgentVo> rows = agentMapper.selectList(user.getAccountSn(), null);
-        return rows.stream().map(this::toRealtime).toList();
+        return rows.stream()
+                .filter(v -> !"human".equalsIgnoreCase(v.getModel()))
+                .map(this::toRealtime)
+                .toList();
     }
 
     private com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo toRealtime(AgentVo v) {
