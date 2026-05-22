@@ -1,5 +1,6 @@
 package com.jsh.aidesk.serverapi.messages.retry;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,9 @@ public class MessageRetryScheduler {
     /** 한 번에 처리할 최대 메시지 수 — DB 부담 방지. */
     @Value("${messages.retry.batch-limit:50}")
     private int batchLimit;
+    /** 수신자 helper offline 판정 임계 (last_seen stale 초). 이 이상이면 재시도 안 하고 즉시 failed. */
+    @Value("${messages.retry.recipient-offline-sec:60}")
+    private int recipientOfflineSec;
 
     private final MessageMapper messageMapper;
     private final AgentMapper agentMapper;
@@ -84,6 +88,27 @@ public class MessageRetryScheduler {
             messageMapper.markFailed(m.getMessageId(), "발신자/수신자 에이전트 조회 실패");
             return;
         }
+
+        // 수신자 휴먼: tmux 없음 → 채팅 UI 폴링이 가져감. 'delivered' 마킹으로 흐름 복구.
+        if ("human".equalsIgnoreCase(to.getModel())) {
+            messageMapper.markDelivered(m.getMessageId());
+            log.info("retry: msg={} recipient is human — marked delivered (UI polling will pick up)",
+                    m.getMessageId());
+            return;
+        }
+
+        // 옵션 1: 수신자 helper 가 offline 이면 재시도해도 도달 불가 → 즉시 failed.
+        // last_seen_at 은 helper reporter 의 마지막 touch (현재는 agent.updated_at 매핑).
+        OffsetDateTime lastSeen = to.getUpdatedAt();
+        if (lastSeen != null
+                && lastSeen.isBefore(OffsetDateTime.now().minusSeconds(recipientOfflineSec))) {
+            messageMapper.markFailed(m.getMessageId(),
+                    "수신자 helper 오프라인 (last_seen " + recipientOfflineSec + "초 이상 stale)");
+            log.warn("retry: msg={} marked failed — recipient {}({}) offline (lastSeen={})",
+                    m.getMessageId(), to.getAgentName(), to.getAgentId(), lastSeen);
+            return;
+        }
+
         messageMapper.bumpRetry(m.getMessageId());
         lastMile.deliver(m, from, to, new LastMileAdapter.DeliveryCallback() {
             @Override
