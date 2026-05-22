@@ -51,7 +51,10 @@ export default defineNuxtConfig({
       apiBase: 'http://localhost:30081',
       // 데스크톱 헬퍼 (각 사용자 PC 의 localhost) — 로컬 OS 조작 (터미널/VSCode/폴더 다이얼로그).
       // 백엔드가 Docker 화돼도 이건 사용자 PC 그대로 가리킴.
-      helperBase: 'http://localhost:30083'
+      helperBase: 'http://localhost:30083',
+      // 메타버스 3D 사무실 외부 BE URL — env NUXT_PUBLIC_METAVERSE_URL 로 주입.
+      // 미설정 (빈 문자열) 시 헤더의 🌐 METAVERSE 버튼이 hide 됨.
+      metaverseUrl: ''
     }
   }
 })

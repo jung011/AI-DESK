@@ -12,6 +12,14 @@
       <span class="header-title">AI 사무실</span>
     </div>
     <div class="header-top-right">
+      <a
+        v-if="metaverseUrl"
+        :href="metaverseUrl"
+        class="header-metaverse"
+        target="_self"
+        rel="noopener">
+        🌐 METAVERSE
+      </a>
       <div class="header-status-badge">
         <span class="dot"></span>
         <span>시스템 운영중</span>
@@ -48,6 +56,10 @@ const auth = useAuthStore();
 const { signOut } = useAuth();
 const router = useRouter();
 
+// 메타버스 3D 사무실 진입 링크. NUXT_PUBLIC_METAVERSE_URL 미설정 시 버튼 hide.
+const runtime = useRuntimeConfig();
+const metaverseUrl = (runtime.public.metaverseUrl as string | undefined) || '';
+
 const signingOut = ref(false);
 
 async function onLogout() {
@@ -76,7 +88,15 @@ async function onLogout() {
   background: #0062ff; display: flex; align-items: center; justify-content: center;
 }
 .header-title { font-size: 15px; font-weight: 600; color: #333; }
-.header-top-right { display: flex; align-items: center; }
+.header-top-right { display: flex; align-items: center; gap: 10px; }
+.header-metaverse {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: 20px;
+  background: rgba(59, 91, 219, .08); border: 1px solid rgba(59, 91, 219, .25);
+  color: #3B5BDB; font-size: 12px; font-weight: 600;
+  text-decoration: none;
+}
+.header-metaverse:hover { background: rgba(59, 91, 219, .15); }
 .header-status-badge {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 10px; border-radius: 20px;
