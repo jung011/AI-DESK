@@ -100,8 +100,23 @@ const onSubmit = async () => {
   errorMsg.value = '';
   try {
     await signIn({ loginId: loginId.value, password: password.value });
-    const redirect = (route.query.redirect as string) || '/dashboard';
-    await router.replace(redirect);
+    // 로그인 성공 직후 redirect — 절대 URL (http/https) 이고 whitelist (kaflix parent) 면 *외부 browser navigation*.
+    // 미들웨어의 resolveRedirect 와 동일 정책 (auth.global.ts). open-redirect 차단 위해 whitelist 외엔 /dashboard.
+    const raw = (route.query.redirect as string) || '/dashboard';
+    const isAbsolute = /^https?:\/\//i.test(raw);
+    if (isAbsolute) {
+      try {
+        const url = new URL(raw);
+        const allowed = /\.kaflix\.lan$/i.test(url.hostname) || /\.kaflix\.local$/i.test(url.hostname);
+        if (allowed) {
+          window.location.href = raw;
+          return;
+        }
+      } catch { /* malformed URL — fallback */ }
+      await router.replace('/dashboard');
+    } else {
+      await router.replace(raw);
+    }
   } catch (e) {
     errorMsg.value = e instanceof Error
       ? e.message
