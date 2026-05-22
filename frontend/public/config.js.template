@@ -1,0 +1,6 @@
+// 런타임 환경 변수를 SPA 에 주입하기 위한 placeholder 파일.
+// nginx entrypoint 가 envsubst 로 ${VAR} 들을 치환한 결과를 /config.js 로 서빙.
+// → image 한 번 빌드 후 deployment 의 env 만 바꿔서 URL 갱신 가능 (rebuild 불필요).
+window.__APP_CONFIG__ = {
+  metaverseUrl: "${METAVERSE_URL}"
+};

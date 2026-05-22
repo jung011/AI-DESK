@@ -21,12 +21,11 @@ ARG NUXT_PUBLIC_HELPER_BASE=http://localhost:30083
 # 빌드 예: docker build --build-arg NUXT_APP_BASE_URL=/ai-desk/ \
 #                       --build-arg NUXT_PUBLIC_API_BASE=/ai-desk ...
 ARG NUXT_APP_BASE_URL=/
-# 메타버스 진입 버튼 (헤더) URL. 빈 값이면 버튼 hide.
-ARG NUXT_PUBLIC_METAVERSE_URL=
 ENV NUXT_PUBLIC_API_BASE=$NUXT_PUBLIC_API_BASE
 ENV NUXT_PUBLIC_HELPER_BASE=$NUXT_PUBLIC_HELPER_BASE
 ENV NUXT_APP_BASE_URL=$NUXT_APP_BASE_URL
-ENV NUXT_PUBLIC_METAVERSE_URL=$NUXT_PUBLIC_METAVERSE_URL
+# NUXT_PUBLIC_METAVERSE_URL 은 build-arg 가 아닌 *runtime env* — runtime stage 의 envsubst 가
+# config.js 안에 치환해서 SPA 에 주입한다. 빌드 한 번 + 환경별 URL 갱신 가능.
 
 # postinstall(nuxt prepare) 가 소스를 참조하므로 일괄 복사 후 install.
 COPY . .
@@ -44,7 +43,22 @@ RUN sed -i "s|__BASE_URL__|${NUXT_APP_BASE_URL}|g" .output/public/manifest.webma
 # ────────────────────────────────────────────────────────────────────────────────
 FROM nginx:1.27-alpine AS runtime
 
+# envsubst 는 alpine 의 gettext 패키지 안에 들어 있다.
+RUN apk add --no-cache gettext
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/.output/public /usr/share/nginx/html
+
+# config.js.template 은 build stage 가 .output/public 으로 복사하지 않으므로 별도 source 디렉토리에 둠.
+COPY public/config.js.template /etc/templates/config.js.template
+
+# 컨테이너 시작 시 환경변수 (예: METAVERSE_URL) 를 config.js 에 치환 후 nginx 기동.
+# 미설정 env 는 빈 문자열로 치환 → SPA 가 hide 처리.
+RUN { \
+      echo '#!/bin/sh'; \
+      echo 'set -e'; \
+      echo 'envsubst < /etc/templates/config.js.template > /usr/share/nginx/html/config.js'; \
+      echo 'exec nginx -g "daemon off;"'; \
+    } > /docker-entrypoint.d/99-runtime-config.sh && chmod +x /docker-entrypoint.d/99-runtime-config.sh
 
 EXPOSE 80

@@ -56,9 +56,15 @@ const auth = useAuthStore();
 const { signOut } = useAuth();
 const router = useRouter();
 
-// 메타버스 3D 사무실 진입 링크. NUXT_PUBLIC_METAVERSE_URL 미설정 시 버튼 hide.
+// 메타버스 3D 사무실 진입 링크. runtime env 우선 — window.__APP_CONFIG__ 가 nginx envsubst 결과.
+// fallback: dev mode 의 NUXT_PUBLIC_METAVERSE_URL (npm run dev 시 runtimeConfig.public 으로 들어옴).
 const runtime = useRuntimeConfig();
-const metaverseUrl = (runtime.public.metaverseUrl as string | undefined) || '';
+const metaverseUrl = computed<string>(() => {
+  const fromWindow = (typeof window !== 'undefined'
+    ? (window as unknown as { __APP_CONFIG__?: { metaverseUrl?: string } }).__APP_CONFIG__?.metaverseUrl
+    : '') ?? '';
+  return fromWindow || (runtime.public.metaverseUrl as string | undefined) || '';
+});
 
 const signingOut = ref(false);
 

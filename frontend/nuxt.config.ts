@@ -36,6 +36,12 @@ export default defineNuxtConfig({
       link: [
         // baseURL 기반 절대 경로 — subpath 배포 (예: /ai-desk/) 에선 자동으로 /ai-desk/manifest.webmanifest.
         { rel: 'manifest', href: `${process.env.NUXT_APP_BASE_URL ?? '/'}manifest.webmanifest` }
+      ],
+      script: [
+        // runtime 환경변수 주입용 — nginx entrypoint 가 envsubst 로 치환한 결과를 서빙.
+        // window.__APP_CONFIG__ 로 SPA 코드가 참조. SPA module script 보다 먼저 평가되도록
+        // <head> body 안에 둔다 (defer 없음).
+        { src: `${process.env.NUXT_APP_BASE_URL ?? '/'}config.js` }
       ]
     }
   },
