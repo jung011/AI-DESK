@@ -12,6 +12,25 @@ import { useHelperVersionStore } from '~/stores/helperVersion';
  * SSR 단계에선 sessionStorage 가 없으므로 client 에서만 동작.
  */
 const PUBLIC_PATHS = new Set<string>(['/login']);
+
+/**
+ * 로그인 후 redirect 처리 — 절대 URL (http/https) 이면 *kaflix parent domain* 만 통과시켜
+ * brower navigation, 아니면 router path 로 처리.
+ * 메타버스 등 cross-domain 진입 흐름에서 navigateTo 가 절대 URL 을 path 로 잘못 해석하는 버그 회피.
+ * Open-redirect 차단 위해 whitelist 정책 (`*.kaflix.lan` / `*.kaflix.local`).
+ */
+function resolveRedirect(raw: string | undefined): { target: string; external: boolean } {
+  const fallback = { target: '/dashboard', external: false };
+  if (!raw) return fallback;
+  if (!/^https?:\/\//i.test(raw)) return { target: raw, external: false };
+  try {
+    const u = new URL(raw);
+    const allowed = /\.kaflix\.lan$/i.test(u.hostname) || /\.kaflix\.local$/i.test(u.hostname);
+    return allowed ? { target: raw, external: true } : fallback;
+  } catch {
+    return fallback;
+  }
+}
 /**
  * helper 가 본 PC 에 있어야 동작하는 페이지에서 제외할 경로.
  * - /login, /helper-install : helper 없이 진입 가능해야 다운로드 흐름 시작 가능.
@@ -29,8 +48,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
   }
   if (auth.isAuthenticated && isPublic) {
-    const redirect = (to.query.redirect as string) || '/dashboard';
-    return navigateTo(redirect);
+    const r = resolveRedirect(to.query.redirect as string | undefined);
+    return r.external ? navigateTo(r.target, { external: true }) : navigateTo(r.target);
   }
 
   // helper 미설치면 /helper-install 로 — 인증된 사용자가 helper 의존 페이지 진입 시.
