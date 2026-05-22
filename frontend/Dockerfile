@@ -21,9 +21,12 @@ ARG NUXT_PUBLIC_HELPER_BASE=http://localhost:30083
 # 빌드 예: docker build --build-arg NUXT_APP_BASE_URL=/ai-desk/ \
 #                       --build-arg NUXT_PUBLIC_API_BASE=/ai-desk ...
 ARG NUXT_APP_BASE_URL=/
+# 메타버스 진입 버튼 (헤더) URL. 빈 값이면 버튼 hide.
+ARG NUXT_PUBLIC_METAVERSE_URL=
 ENV NUXT_PUBLIC_API_BASE=$NUXT_PUBLIC_API_BASE
 ENV NUXT_PUBLIC_HELPER_BASE=$NUXT_PUBLIC_HELPER_BASE
 ENV NUXT_APP_BASE_URL=$NUXT_APP_BASE_URL
+ENV NUXT_PUBLIC_METAVERSE_URL=$NUXT_PUBLIC_METAVERSE_URL
 
 # postinstall(nuxt prepare) 가 소스를 참조하므로 일괄 복사 후 install.
 COPY . .
