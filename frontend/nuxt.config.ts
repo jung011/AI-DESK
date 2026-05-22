@@ -34,7 +34,8 @@ export default defineNuxtConfig({
         { name: 'apple-mobile-web-app-title', content: 'AI Desk' }
       ],
       link: [
-        { rel: 'manifest', href: '/manifest.webmanifest' }
+        // baseURL 기반 절대 경로 — subpath 배포 (예: /ai-desk/) 에선 자동으로 /ai-desk/manifest.webmanifest.
+        { rel: 'manifest', href: `${process.env.NUXT_APP_BASE_URL ?? '/'}manifest.webmanifest` }
       ]
     }
   },

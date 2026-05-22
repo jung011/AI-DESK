@@ -12,8 +12,12 @@ import { useHelperVersionStore } from '~/stores/helperVersion';
  * SSR 단계에선 sessionStorage 가 없으므로 client 에서만 동작.
  */
 const PUBLIC_PATHS = new Set<string>(['/login']);
-/** helper 가 본 PC 에 있어야 동작하는 페이지에서 제외할 경로 — 자기 자신 + login. */
-const HELPER_OPTIONAL_PATHS = new Set<string>(['/login', '/helper-install']);
+/**
+ * helper 가 본 PC 에 있어야 동작하는 페이지에서 제외할 경로.
+ * - /login, /helper-install : helper 없이 진입 가능해야 다운로드 흐름 시작 가능.
+ * - /chat : 모바일 PWA. backend API 만 사용 — helper 없는 환경 (모바일/외부 PC) 에서도 풀 동작.
+ */
+const HELPER_OPTIONAL_PATHS = new Set<string>(['/login', '/helper-install', '/chat']);
 
 export default defineNuxtRouteMiddleware(async (to) => {
   if (import.meta.server) return;

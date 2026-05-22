@@ -32,6 +32,10 @@ RUN npm install --no-audit --no-fund
 # `nuxt build` (default) 는 SPA 모드에서 Nitro 서버에 의존하므로 nginx 만으로 못 서빙.
 RUN npm run generate
 
+# PWA manifest 안의 __BASE_URL__ placeholder 를 빌드 baseURL 로 치환.
+# root 배포: /chat, /, /favicon.ico ↔ subpath 배포: /ai-desk/chat, /ai-desk/, /ai-desk/favicon.ico
+RUN sed -i "s|__BASE_URL__|${NUXT_APP_BASE_URL}|g" .output/public/manifest.webmanifest
+
 # ────────────────────────────────────────────────────────────────────────────────
 # 정적 호스팅 (nginx) + /api/* same-origin reverse proxy
 # ────────────────────────────────────────────────────────────────────────────────
