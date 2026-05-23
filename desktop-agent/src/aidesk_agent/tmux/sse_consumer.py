@@ -83,16 +83,31 @@ async def _tmux_send(session: str, text: str) -> bool:
 
 async def _send_ack(backend_url: str, message_id: str) -> None:
     """tmux send-keys 가 도달했음을 backend 에 통보 — end-to-end ACK.
-    backend 는 이걸 받아야 status='delivered' 마킹. 실패해도 메시지 흐름엔 영향 X (retry 가 처리)."""
+
+    backend 는 이걸 받아야 status='delivered' 마킹. ACK 가 실패하면 backend retry 가
+    같은 메시지를 다시 발송하므로 *사용자 터미널에 같은 메시지가 두 번 박히는 storm* 의
+    원인이 된다. 한 번의 일시 hang/slow 응답으로 storm 이 발생하지 않도록:
+      - timeout 을 10s 로 늘려 backend 지연 (.local TLD 해석 지연, network 일시 정체 등) 흡수
+      - 첫 시도 실패 시 3초 후 1회 재시도. 둘 다 실패해야 backend retry 에 위임.
+    """
     if not message_id:
         return
     url = f"{backend_url.rstrip('/')}/api/messages/{message_id}/ack"
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            r = await client.post(url)
-            log.info("[message-ack] sent msg=%s http=%s", message_id, r.status_code)
-    except (httpx.HTTPError, OSError) as e:
-        log.warning("[message-ack] FAILED msg=%s err=%s — backend retry 가 처리할 것", message_id, e)
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.post(url)
+                log.info("[message-ack] sent msg=%s http=%s attempt=%d",
+                         message_id, r.status_code, attempt + 1)
+                return
+        except (httpx.HTTPError, OSError) as e:
+            if attempt == 0:
+                log.warning("[message-ack] attempt 1 failed msg=%s err=%s — retrying in 3s",
+                            message_id, e)
+                await asyncio.sleep(3.0)
+                continue
+            log.warning("[message-ack] FAILED msg=%s err=%s — backend retry 가 처리할 것",
+                        message_id, e)
 
 
 async def _session_worker(session: str, backend_url: str) -> None:
