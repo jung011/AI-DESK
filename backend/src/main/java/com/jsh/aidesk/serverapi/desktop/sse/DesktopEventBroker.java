@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -69,5 +70,34 @@ public class DesktopEventBroker {
             }
         }
         return delivered;
+    }
+
+    /**
+     * SSE 채널 활성 유지용 heartbeat.
+     *
+     * SSE 의 *comment line* (`: heartbeat`) 만 발송 — 클라이언트의 event 핸들러는 안 탐.
+     * 목적: 중간 layer (ingress proxy, LB idle timeout, VPN DPD 등) 가 *event 없는 idle 연결*
+     *      을 silent 하게 끊는 zombie TCP 패턴 방지. helper 0.6.20 의 read timeout (120s) 이
+     *      매번 발동되기 전에 우리 쪽에서 30초마다 활성 신호를 보내 둠으로써:
+     *        - 중간 layer 의 idle timeout 회피 (대부분 60s~10분)
+     *        - 진짜로 끊긴 emitter 는 IOException 으로 즉시 감지 + 자동 정리
+     */
+    @Scheduled(fixedDelay = 30_000L, initialDelay = 30_000L)
+    public void heartbeat() {
+        if (emitters.isEmpty()) return;
+        int alive = 0;
+        for (SseEmitter emitter : emitters) {
+            try {
+                emitter.send(SseEmitter.event().comment("hb"));
+                alive++;
+            } catch (IOException ex) {
+                emitters.remove(emitter);
+                log.warn("[sse-heartbeat] DROP — emitter 끊김 감지, subscriber 제거 (남은={}): {}",
+                        emitters.size(), ex.getMessage());
+            }
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("[sse-heartbeat] sent to {} emitter(s)", alive);
+        }
     }
 }
