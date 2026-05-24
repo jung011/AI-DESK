@@ -40,11 +40,26 @@
         </div>
       </div>
     </div>
+    <TerminalModeDialog
+      :open="modeDialogOpen"
+      :busy="modeDialogBusy"
+      @confirm="onModeConfirm"
+      @cancel="onModeCancel"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { AgentItem } from '~/vo/agents/AgentVo';
+import TerminalModeDialog from '~/components/dashboard/TerminalModeDialog.vue';
+
+type OpenTerminalEnv = {
+  rc: number;
+  message?: string;
+  needsModeSelection?: boolean;
+};
+type WorkroleEnv = { result: number; data?: { path: string } | null };
+
 const props = defineProps<{ agent: AgentItem }>();
 const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
@@ -101,22 +116,60 @@ async function onOpenVscode(): Promise<void> {
   }
 }
 
+/**
+ * 외부 터미널 열기 호출.
+ * - mode 미지정 (첫 시도): 살아있으면 attach + 포커스 (200), 죽었으면 helper 가 412 (needsModeSelection)
+ * - mode 지정 (모달 confirm 후): helper 가 그 모드로 tmux+claude 시작 + attach
+ *
+ * helper 가 새로 띄울 때 첫 부팅이면 identity/workrole 자동 주입 — 그래서 mode 지정 호출 시에만
+ * agentName / workroleFile 도 같이 전달한다.
+ */
+async function callOpenTerminal(
+  mode = '',
+  customOpts = '',
+): Promise<OpenTerminalEnv & { needsModeSelection?: boolean }> {
+  const { $helper, $api } = useNuxtApp();
+  const body: Record<string, unknown> = {
+    workspaceDir: props.agent.workspaceDir,
+    tmuxSession: props.agent.tmuxSession,
+    title: props.agent.agentName,
+  };
+  if (mode) {
+    body.mode = mode;
+    if (customOpts) body.customOpts = customOpts;
+    body.agentName = props.agent.agentName;
+    // workrole 은 인증 cookie 가 있는 $api 로 조회. 실패해도 진행 (identity 만 주입됨).
+    try {
+      const wrEnv = await $api<WorkroleEnv>('/api/settings/workrole-file');
+      if (wrEnv.result === 0 && wrEnv.data) body.workroleFile = wrEnv.data.path || '';
+    } catch {
+      /* workrole 조회 실패 무시 */
+    }
+  }
+  try {
+    return await $helper<OpenTerminalEnv>('/api/open-terminal', { method: 'POST', body });
+  } catch (e: unknown) {
+    // $fetch 는 412 같은 non-2xx 를 throw — 모드 선택 신호를 분리 처리.
+    const err = e as { statusCode?: number; status?: number; data?: OpenTerminalEnv };
+    const status = err?.statusCode ?? err?.status;
+    const data = err?.data;
+    if (status === 412 && data?.needsModeSelection) {
+      return { ...data };
+    }
+    throw e;
+  }
+}
+
+const modeDialogOpen = ref(false);
+const modeDialogBusy = ref(false);
+
 async function onOpenTerminal(): Promise<void> {
   menuOpen.value = false;
   try {
-    const { $helper } = useNuxtApp();
-    const env = await $helper<{ rc: number; message: string }>(
-      '/api/open-terminal',
-      {
-        method: 'POST',
-        body: {
-          workspaceDir: props.agent.workspaceDir,
-          tmuxSession: props.agent.tmuxSession,
-          title: props.agent.agentName,
-        },
-      }
-    );
-    if (env.rc !== 0) {
+    const env = await callOpenTerminal();
+    if (env.needsModeSelection) {
+      modeDialogOpen.value = true;
+    } else if (env.rc !== 0) {
       // eslint-disable-next-line no-alert
       alert(env.message || '터미널 열기에 실패했습니다.');
     }
@@ -124,6 +177,28 @@ async function onOpenTerminal(): Promise<void> {
     // eslint-disable-next-line no-alert
     alert(`터미널 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
+}
+
+async function onModeConfirm(payload: { mode: string; customOpts: string }): Promise<void> {
+  modeDialogBusy.value = true;
+  try {
+    const env = await callOpenTerminal(payload.mode, payload.customOpts);
+    if (env.rc === 0) {
+      modeDialogOpen.value = false;
+    } else {
+      // eslint-disable-next-line no-alert
+      alert(env.message || '터미널 시작에 실패했습니다.');
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-alert
+    alert(`터미널 시작 실패: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    modeDialogBusy.value = false;
+  }
+}
+
+function onModeCancel(): void {
+  modeDialogOpen.value = false;
 }
 
 function onDelete(): void {
