@@ -172,6 +172,32 @@ def _mark_folder_trusted(workspace_dir: str) -> bool:
     return True
 
 
+def _resolve_user_path() -> str | None:
+    """사용자의 interactive login zsh 에서 실제 PATH 한 번 조회.
+
+    helper 의 launchd 환경 PATH 는 plist 에 hardcoded — 사용자가 `.zprofile` / `.zshrc` 에서
+    추가한 경로 (예: `~/.bun/bin`, `~/.cargo/bin`, nvm 의 node 경로) 는 누락된다. claude code
+    의 MCP plugin 이 거기 있는 도구 (예: `bun run ...`) 를 spawn 하면 *command not found* 로
+    실패. 이 함수가 사용자 zsh 의 실제 PATH 를 가져와 tmux session env 로 주입할 수 있게 한다.
+
+    실패 시 None — 호출자가 helper 의 기본 PATH 그대로 사용 (회귀 없음).
+    """
+    try:
+        result = subprocess.run(
+            ["/bin/zsh", "-l", "-i", "-c", "echo -n $PATH"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            log.warning("bootstrap: user PATH resolve failed rc=%d stderr=%s",
+                        result.returncode, (result.stderr or "").strip())
+            return None
+        path = (result.stdout or "").strip()
+        return path or None
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.warning("bootstrap: user PATH resolve exception: %s", e)
+        return None
+
+
 def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> str:
     """mode 별 tmux 안에서 실행할 claude 명령 구성.
 
@@ -212,18 +238,19 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str)
 
     # tmux new-session -d  → detached (사용자 화면에 안 뜸)
     # -A 와 함께 쓰면 안 됨 (-A 는 attach 의도) — -d 만 쓰면 새로 만들고 안 붙음
+    # -e PATH=... → 사용자 zsh 의 실제 PATH 를 새 session env 에 주입 (있을 때만).
+    # 그래야 claude code 가 spawn 하는 MCP plugin (예: telegram 의 `bun run ...`) 이
+    # 사용자가 `~/.bun/bin` 등에 깐 도구를 찾을 수 있다. plist 의 hardcoded PATH 만으론
+    # 사용자별 dev tool 위치를 못 잡음.
+    user_path = _resolve_user_path()
+    cmd_list = ["tmux", "new-session", "-d", "-s", tmux_session, "-c", workspace_dir]
+    if user_path:
+        cmd_list.extend(["-e", f"PATH={user_path}"])
+    cmd_list.append(claude_cmd)
     try:
-        subprocess.run(
-            [
-                "tmux", "new-session", "-d", "-s", tmux_session,
-                "-c", workspace_dir,
-                claude_cmd,
-            ],
-            check=True,
-            capture_output=True,
-        )
-        log.info("bootstrap: tmux started detached ws=%s session=%s cmd=%s",
-                 workspace_dir, tmux_session, claude_cmd)
+        subprocess.run(cmd_list, check=True, capture_output=True)
+        log.info("bootstrap: tmux started detached ws=%s session=%s cmd=%s user_path=%s",
+                 workspace_dir, tmux_session, claude_cmd, "yes" if user_path else "no")
         return True
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode("utf-8", "replace") if e.stderr else ""
