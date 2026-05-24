@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shlex
 import subprocess
 import tempfile
 import threading
@@ -238,19 +239,26 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str)
 
     # tmux new-session -d  → detached (사용자 화면에 안 뜸)
     # -A 와 함께 쓰면 안 됨 (-A 는 attach 의도) — -d 만 쓰면 새로 만들고 안 붙음
-    # -e PATH=... → 사용자 zsh 의 실제 PATH 를 새 session env 에 주입 (있을 때만).
-    # 그래야 claude code 가 spawn 하는 MCP plugin (예: telegram 의 `bun run ...`) 이
-    # 사용자가 `~/.bun/bin` 등에 깐 도구를 찾을 수 있다. plist 의 hardcoded PATH 만으론
-    # 사용자별 dev tool 위치를 못 잡음.
+    #
+    # PATH 주입 — *shell-command 자체에 prefix* 로 박는다 (`-e PATH=...` 도 같이 두지만 보조).
+    # 사용자 환경에 따라 tmux server env 가 이미 baked-in (예: 사용자가 처음 tmux 를 띄운
+    # iTerm 의 환경) 인 경우 `-e PATH=...` 는 *session env* 에만 들어가고 *실제 child process
+    # env 에는 안 닿는다*. 그러면 claude 가 spawn 하는 MCP plugin (예: telegram 의 `bun ...`)
+    # 이 `bun` 을 PATH 에서 못 찾아 `ENOENT` 로 실패.
+    # → `PATH=<user-path> exec <claude_cmd>` 형태로 sh syntax 의 env-prefix 사용해서
+    #   claude process 의 env.PATH 를 직접 set. 그 자식 process (bun MCP server) 도 inherit.
     user_path = _resolve_user_path()
     cmd_list = ["tmux", "new-session", "-d", "-s", tmux_session, "-c", workspace_dir]
     if user_path:
         cmd_list.extend(["-e", f"PATH={user_path}"])
-    cmd_list.append(claude_cmd)
+        shell_cmd = f"PATH={shlex.quote(user_path)} exec {claude_cmd}"
+    else:
+        shell_cmd = claude_cmd
+    cmd_list.append(shell_cmd)
     try:
         subprocess.run(cmd_list, check=True, capture_output=True)
-        log.info("bootstrap: tmux started detached ws=%s session=%s cmd=%s user_path=%s",
-                 workspace_dir, tmux_session, claude_cmd, "yes" if user_path else "no")
+        log.info("bootstrap: tmux started detached ws=%s session=%s shell_cmd=%s user_path=%s",
+                 workspace_dir, tmux_session, shell_cmd, "yes" if user_path else "no")
         return True
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode("utf-8", "replace") if e.stderr else ""
