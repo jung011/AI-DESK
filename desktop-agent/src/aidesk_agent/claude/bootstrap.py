@@ -200,20 +200,27 @@ def _resolve_user_path() -> str | None:
 
 
 def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> str:
-    """mode 별 tmux 안에서 실행할 claude 명령 구성.
+    """mode 별 tmux 안에서 실행할 명령 구성.
 
     - mode='claude'   : `claude` (또는 재실행이면 `claude -c`)
     - mode='telegram' : `claude --channels plugin:telegram@claude-plugins-official` (+`-c`)
-    - mode='custom'   : `claude <custom_opts>` (+`-c`)
+    - mode='custom'   : 사용자 입력을 `exec zsh -ic '<입력>'` 으로 wrap — alias / shell function /
+                        .zshrc 정의 env 모두 expand. 사용자가 `myclaude` 같은 alias 든
+                        `claude --channels plugin:slack@... -c` 같은 옵션이든 자유 입력.
 
     `-c` (continue) 는 .claude/projects/<ws>/ 안에 이전 jsonl 대화가 있으면 자동 추가 —
     사용자가 exit/Ctrl+C 후 다시 모드 선택해서 띄우는 시나리오에서 컨텍스트를 살리기 위함.
+    단 mode='custom' 은 사용자가 명령을 통째로 적는 모드라 `-c` 자동 추가 X (필요하면 본인이 명시).
     """
+    if mode == "custom":
+        user_cmd = (custom_opts or "").strip()
+        if not user_cmd:
+            # 입력 없으면 안전 fallback — 사용자가 직접 띄울 수 있게 login interactive zsh.
+            user_cmd = "exec zsh -li"
+        return f"exec zsh -ic {shlex.quote(user_cmd)}"
     extra = ""
     if mode == "telegram":
         extra = "--channels plugin:telegram@claude-plugins-official"
-    elif mode == "custom":
-        extra = (custom_opts or "").strip()
     cmd = "claude"
     if extra:
         cmd = f"{cmd} {extra}"
@@ -222,11 +229,12 @@ def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> s
     return cmd
 
 
-def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str) -> bool:
+def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str, mode: str = "claude") -> bool:
     """tmux 세션을 detached 로 띄우고 안에서 주어진 claude_cmd 를 실행. 이미 있으면 그대로 둠.
 
     claude_cmd 는 호출자가 _build_claude_cmd 로 구성해서 넘긴다 — mode (클로드/텔레그램/custom) 결정은
-    상위에서 한다.
+    상위에서 한다. mode 는 PATH= prefix 적용 여부 결정에 사용 — custom 모드는 이미 `exec zsh -ic`
+    안에서 .zshrc 가 PATH 를 다시 set 하므로 prefix 가 불필요/충돌.
     """
     # 이미 있으면 그대로 (idempotent — 같은 AI 재생성 시 무동작)
     check = subprocess.run(
@@ -251,6 +259,11 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str)
     cmd_list = ["tmux", "new-session", "-d", "-s", tmux_session, "-c", workspace_dir]
     if user_path:
         cmd_list.extend(["-e", f"PATH={user_path}"])
+    if mode == "custom":
+        # claude_cmd 가 이미 `exec zsh -ic '...'` 형태 — zsh 가 .zshrc 거치며 PATH/env 다시
+        # set 하므로 sh 단계의 PATH= prefix 가 무의미하고 오히려 zsh 의 export 와 섞일 위험.
+        shell_cmd = claude_cmd
+    elif user_path:
         shell_cmd = f"PATH={shlex.quote(user_path)} exec {claude_cmd}"
     else:
         shell_cmd = claude_cmd
@@ -413,9 +426,12 @@ def start_claude_with_mode(
     """
     is_first_boot = not has_past_session(workspace_dir)
     claude_cmd = _build_claude_cmd(workspace_dir, mode, custom_opts)
-    tmux_ok = _start_tmux_detached(tmux_session, workspace_dir, claude_cmd)
+    tmux_ok = _start_tmux_detached(tmux_session, workspace_dir, claude_cmd, mode)
     prompt_scheduled = False
-    if tmux_ok and is_first_boot:
+    # mode='custom' 은 사용자가 명령을 직접 적는 모드 — 그 명령이 claude 일지 다른 거(예: htop)일지
+    # helper 가 알 수 없음. 잘못된 대상에 send-keys 하면 노이즈가 박히므로 identity/workrole
+    # 자동 주입은 skip (사용자가 필요하면 본인이 첫 메시지로 입력).
+    if tmux_ok and is_first_boot and mode != "custom":
         parts: list[str] = []
         if agent_name and agent_name.strip():
             parts.append(_build_identity_prompt(agent_name.strip()))
