@@ -29,8 +29,8 @@
             <div class="mode-text">
               <div class="mode-title">사용자 지정 명령</div>
               <div class="mode-desc">
-                실행할 명령을 직접 입력 — <code>.zshrc</code> 의 <strong>alias / 함수 / 환경변수</strong> 모두 동작합니다.
-                예: <code>myclaude</code>, <code>claude --channels plugin:slack@… -c</code>
+                클로드를 실행할 명령을 직접 입력하세요. 본인이 쓰는 단축 명령도 그대로 동작합니다.
+                예: <code>myclaude</code>, <code>claude --channels plugin:xxx@… -c</code>
               </div>
               <input
                 v-if="mode === 'custom'"
