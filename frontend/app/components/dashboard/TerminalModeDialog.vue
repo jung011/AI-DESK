@@ -27,14 +27,17 @@
           <label class="mode-option" :class="{ selected: mode === 'custom' }">
             <input type="radio" value="custom" v-model="mode" />
             <div class="mode-text">
-              <div class="mode-title">사용자 지정 옵션</div>
-              <div class="mode-desc">claude 의 추가 옵션을 직접 입력 (예: <code>--channels plugin:slack@…</code>)</div>
+              <div class="mode-title">사용자 지정 명령</div>
+              <div class="mode-desc">
+                실행할 명령을 직접 입력 — <code>.zshrc</code> 의 <strong>alias / 함수 / 환경변수</strong> 모두 동작합니다.
+                예: <code>myclaude</code>, <code>claude --channels plugin:slack@… -c</code>
+              </div>
               <input
                 v-if="mode === 'custom'"
                 v-model="customOpts"
                 class="custom-input"
                 type="text"
-                placeholder="--channels plugin:xxx@…"
+                placeholder="예: myclaude   또는   claude --channels plugin:xxx@… -c"
                 @click.stop
               />
             </div>
