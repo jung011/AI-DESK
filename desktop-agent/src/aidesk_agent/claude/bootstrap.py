@@ -428,10 +428,10 @@ def start_claude_with_mode(
     claude_cmd = _build_claude_cmd(workspace_dir, mode, custom_opts)
     tmux_ok = _start_tmux_detached(tmux_session, workspace_dir, claude_cmd, mode)
     prompt_scheduled = False
-    # mode='custom' 은 사용자가 명령을 직접 적는 모드 — 그 명령이 claude 일지 다른 거(예: htop)일지
-    # helper 가 알 수 없음. 잘못된 대상에 send-keys 하면 노이즈가 박히므로 identity/workrole
-    # 자동 주입은 skip (사용자가 필요하면 본인이 첫 메시지로 입력).
-    if tmux_ok and is_first_boot and mode != "custom":
+    # 모드 무관하게 첫 부팅이면 identity/workrole 자동 주입 — 대다수 사용자가 custom 모드에서도
+    # claude 시작용 alias 를 쓰기 때문. 비-claude 명령 (htop 등) 을 의도적으로 입력한 경우엔
+    # 그 명령 화면에 텍스트가 박히지만 사용자 의도 영역으로 받아들인다.
+    if tmux_ok and is_first_boot:
         parts: list[str] = []
         if agent_name and agent_name.strip():
             parts.append(_build_identity_prompt(agent_name.strip()))
