@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from aiohttp import web
 
 from . import __version__
-from .claude.bootstrap import bootstrap_agent
+from .claude.bootstrap import bootstrap_agent, start_claude_with_mode
 from .claude.scanner import scan_workspaces
 from .vscode.code_server import DEFAULT_PORT as CODE_SERVER_PORT
 from .vscode.code_server import start_code_server, stop_code_server
@@ -244,10 +244,59 @@ async def setup_handler(request: web.Request) -> web.Response:
 
 
 async def open_terminal_handler(request: web.Request) -> web.Response:
+    """외부 터미널 열기 — tmux 세션 살아있으면 attach + 포커스, 죽었으면 모드 선택 요구.
+
+    body:
+      workspaceDir, tmuxSession, title : 필수
+      mode (optional)                  : 'claude' / 'telegram' / 'custom'
+      customOpts (optional)            : mode='custom' 일 때 claude 의 추가 옵션
+      agentName, workroleFile (optional): 첫 부팅 시 identity/workrole 주입에 사용
+
+    응답:
+      - tmux 살아있음 → 기존 open_terminal 호출 (attach + 포커스). 200 rc=0
+      - tmux 부재 + mode 미제공 → 412 needsModeSelection=true (frontend 가 팝업 띄움)
+      - tmux 부재 + mode 제공 → start_claude_with_mode 로 새로 띄운 뒤 open_terminal. 200
+    """
     body = await request.json()
     workspace_dir = (body.get("workspaceDir") or "").strip()
     tmux_session = (body.get("tmuxSession") or "").strip()
     title = (body.get("title") or "").strip()
+    mode = (body.get("mode") or "").strip()
+    custom_opts = (body.get("customOpts") or "").strip()
+    agent_name = (body.get("agentName") or "").strip()
+    workrole_file = (body.get("workroleFile") or "").strip()
+
+    if not workspace_dir or not tmux_session:
+        return web.json_response(
+            {"rc": 2, "message": "workspaceDir 와 tmuxSession 이 모두 필요합니다."},
+            status=400,
+        )
+
+    session_alive = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    ).returncode == 0
+
+    if not session_alive:
+        if not mode:
+            # frontend 가 이 신호를 보고 *터미널 모드 선택 모달* 을 띄운다.
+            return web.json_response(
+                {
+                    "rc": 3,
+                    "message": "tmux session not running — mode selection required",
+                    "needsModeSelection": True,
+                },
+                status=412,
+            )
+        start_result = start_claude_with_mode(
+            workspace_dir, tmux_session, mode, custom_opts, agent_name, workrole_file,
+        )
+        if not start_result.get("tmuxStarted"):
+            return web.json_response(
+                {"rc": 1, "message": "tmux start failed", **start_result},
+                status=500,
+            )
+
     rc, msg = open_terminal(workspace_dir, tmux_session, title)
     status = 200 if rc == 0 else (400 if rc == 2 else 500)
     return web.json_response({"rc": rc, "message": msg}, status=status)
@@ -325,9 +374,12 @@ async def cleanup_agent_handler(request: web.Request) -> web.Response:
 
 
 async def agent_bootstrap_handler(request: web.Request) -> web.Response:
-    """신규 AI 생성 직후 프론트가 호출 — .claude/settings.local.json + headless tmux 시작.
+    """신규 AI 생성 직후 프론트가 호출 — workspace trust + .claude/settings.local.json 권한 부여만.
 
-    이 둘이 끝나야 사용자가 외부/임베드 터미널을 안 열어도 다른 AI 와 즉시 통신 가능.
+    옛 정책: 여기서 headless tmux + claude 자동 시작 → 외부 터미널 안 열어도 즉시 통신 가능.
+    새 정책: 실제 claude 시작은 사용자가 *외부 터미널 열기* 에서 모드를 고른 시점에 일어남
+    (open_terminal_handler → start_claude_with_mode). 그 전엔 다른 AI 가 보낸 메시지가
+    옵션 2 분기로 즉시 failed 처리된다.
     """
     body = await request.json()
     workspace_dir = (body.get("workspaceDir") or "").strip()

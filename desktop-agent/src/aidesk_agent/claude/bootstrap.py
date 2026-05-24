@@ -1,12 +1,19 @@
-"""신규 에이전트 부트스트랩 — 사용자가 터미널을 안 열어도 즉시 통신 가능하게.
+"""신규 에이전트 부트스트랩 + 외부 터미널 열기 시점의 claude 시작.
 
-세 가지를 처리:
-  1) {workspaceDir}/.claude/settings.local.json 에 aidesk-channel MCP 권한 미리 부여
-     → claude 시작 시 "Always allow" 프롬프트 자체가 안 뜸.
-  2) `tmux new-session -d` 로 백그라운드 세션 시작 + claude 띄움
-     → TmuxLastMileAdapter 의 last-mile delivery 가 바로 도달 가능.
-  3) 백엔드 설정의 `bootstrap_prompt` 텍스트를 claude 가 입력 준비된 시점에 send-keys 로 주입
-     → 모든 신규 AI 가 공통 작업 규칙 문서 등을 자동 학습.
+정책: 신규 AI 생성 시점엔 *준비 작업만* 수행. 실제 claude 실행은 사용자가
+*외부 터미널 열기* 를 누르고 모드 (클로드 / 텔레그램 / 사용자 지정 옵션) 를 선택했을 때
+시작한다. 외부 터미널 열기 전엔 claude 가 안 떠 있어서 메시지 수신 불가 (옵션 2 분기로
+즉시 failed) — 의도된 동작.
+
+두 진입점:
+  bootstrap_agent()        — agent 생성 직후 호출. trust + permissions 만.
+  start_claude_with_mode() — 외부 터미널 열기 시점 호출. mode 별 claude_cmd 구성 →
+                             tmux+claude 시작 → 첫 부팅이면 identity/workrole send-keys 주입.
+
+mode:
+  - 'claude'   (default) : `claude` (첫 실행) / `claude -c` (재실행)
+  - 'telegram'           : `claude --channels plugin:telegram@claude-plugins-official` (+`-c`)
+  - 'custom'             : `claude <custom_opts>` (+`-c`)
 
 Helper 가 호스트 사용자 권한으로 도니까 ~/.claude/* 및 사용자 워크스페이스에 자유롭게 쓸 수 있다.
 """
@@ -165,8 +172,35 @@ def _mark_folder_trusted(workspace_dir: str) -> bool:
     return True
 
 
-def _start_tmux_detached(tmux_session: str, workspace_dir: str) -> bool:
-    """tmux 세션을 detached 로 띄우고 안에서 claude 를 실행. 이미 있으면 그대로 둠."""
+def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> str:
+    """mode 별 tmux 안에서 실행할 claude 명령 구성.
+
+    - mode='claude'   : `claude` (또는 재실행이면 `claude -c`)
+    - mode='telegram' : `claude --channels plugin:telegram@claude-plugins-official` (+`-c`)
+    - mode='custom'   : `claude <custom_opts>` (+`-c`)
+
+    `-c` (continue) 는 .claude/projects/<ws>/ 안에 이전 jsonl 대화가 있으면 자동 추가 —
+    사용자가 exit/Ctrl+C 후 다시 모드 선택해서 띄우는 시나리오에서 컨텍스트를 살리기 위함.
+    """
+    extra = ""
+    if mode == "telegram":
+        extra = "--channels plugin:telegram@claude-plugins-official"
+    elif mode == "custom":
+        extra = (custom_opts or "").strip()
+    cmd = "claude"
+    if extra:
+        cmd = f"{cmd} {extra}"
+    if has_past_session(workspace_dir):
+        cmd = f"{cmd} -c"
+    return cmd
+
+
+def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str) -> bool:
+    """tmux 세션을 detached 로 띄우고 안에서 주어진 claude_cmd 를 실행. 이미 있으면 그대로 둠.
+
+    claude_cmd 는 호출자가 _build_claude_cmd 로 구성해서 넘긴다 — mode (클로드/텔레그램/custom) 결정은
+    상위에서 한다.
+    """
     # 이미 있으면 그대로 (idempotent — 같은 AI 재생성 시 무동작)
     check = subprocess.run(
         ["tmux", "has-session", "-t", tmux_session],
@@ -175,9 +209,6 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str) -> bool:
     if check.returncode == 0:
         log.info("bootstrap: tmux already exists session=%s — skipping start", tmux_session)
         return True
-
-    # 신규 AI 라도 사용자가 같은 워크스페이스로 재생성하는 케이스가 있을 수 있어 jsonl 체크.
-    claude_cmd = "claude -c" if has_past_session(workspace_dir) else "claude"
 
     # tmux new-session -d  → detached (사용자 화면에 안 뜸)
     # -A 와 함께 쓰면 안 됨 (-A 는 attach 의도) — -d 만 쓰면 새로 만들고 안 붙음
@@ -299,23 +330,57 @@ def bootstrap_agent(
     agent_name: str = "",
     workrole_file: str = "",
 ) -> dict:
-    """엔드포인트 본체. trust + 권한 + tmux + 프롬프트 주입 모두 시도하고 결과 dict 반환.
+    """신규 AI 생성 직후 호출 — 준비 작업만 수행 (claude/tmux 시작 안 함).
 
-    순서가 중요: trust 마커가 tmux 시작 전에 박혀야 claude 첫 부팅 때 프롬프트가 안 뜬다.
-    프롬프트 주입은 tmux 가 성공적으로 시작된 경우에만, 백그라운드 스레드에서 비동기로 수행 —
-    호출자(HTTP 핸들러) 가 즉시 응답할 수 있게.
+    옛 정책: 여기서 tmux + claude 자동 시작 + 워크롤/identity 자동 주입.
+    새 정책: 사용자가 외부 터미널 열기 → 모드 선택 시점에 start_claude_with_mode 가 처리.
 
-    agent_name 이 주어지면 identity prompt (자기 이름 인지) 를 항상 주입하고,
-    workrole_file 이 설정되어 있으면 그 안내문을 뒤에 합쳐서 한 번에 보낸다.
+    이 함수는 trust + permissions 만 보장 — claude 가 처음 뜰 때 "trust this folder?" 와
+    "Always allow this tool?" 프롬프트가 안 뜨도록 미리 ~/.claude.json 과
+    {ws}/.claude/settings.local.json 에 마커/권한을 박아둔다.
 
-    workrole_file 인자는 frontend 가 인증 cookie 로 미리 조회한 값. 없으면 helper 가
-    비인증으로 backend 직접 호출하지만 그 endpoint 가 인증 가드 안에 있어 보통 빈 응답.
+    agent_name / workrole_file 인자는 BC 위해 받지만 사용 안 함 — 외부 터미널 열기 시점에
+    start_claude_with_mode 에 다시 전달된다.
     """
     trust_ok = _mark_folder_trusted(workspace_dir)
     perms_ok, perms_added = _write_default_permissions(workspace_dir)
-    tmux_ok = _start_tmux_detached(tmux_session, workspace_dir)
+    return {
+        "trustMarked": trust_ok,
+        "permissionsWritten": perms_ok,
+        "permissionsAdded": perms_added,
+        "tmuxStarted": False,   # 새 정책 — 외부 터미널 열기 시점에 시작
+        "promptScheduled": False,
+    }
+
+
+def start_claude_with_mode(
+    workspace_dir: str,
+    tmux_session: str,
+    mode: str = "claude",
+    custom_opts: str = "",
+    agent_name: str = "",
+    workrole_file: str = "",
+) -> dict:
+    """외부 터미널 열기 시점에 호출 — mode 별 claude 시작 + (첫 부팅이면) identity/workrole 주입.
+
+    이미 동일 tmux 세션이 살아있으면 _start_tmux_detached 가 skip 하고 True 반환 (idempotent) —
+    이 경우 mode 는 무시되고 기존 claude 가 그대로 유지된다. 모드 변경하려면 사용자가
+    exit/Ctrl+C 로 종료해서 tmux 세션을 죽인 뒤 다시 외부 터미널 열기에서 모드를 고르는 흐름.
+
+    mode:
+      - 'claude'   (default) — 그냥 claude
+      - 'telegram'           — `claude --channels plugin:telegram@claude-plugins-official`
+      - 'custom'             — `claude <custom_opts>`
+    이전 jsonl 대화가 있으면 모든 모드에 자동으로 `-c` 가 추가된다 (컨텍스트 살리기).
+
+    identity/workrole 은 *첫 부팅* (이전 jsonl 없는 상태) 에만 주입 — `-c` 로 재실행할 땐 이미
+    이전 컨텍스트에 들어가 있으므로 중복 X.
+    """
+    is_first_boot = not has_past_session(workspace_dir)
+    claude_cmd = _build_claude_cmd(workspace_dir, mode, custom_opts)
+    tmux_ok = _start_tmux_detached(tmux_session, workspace_dir, claude_cmd)
     prompt_scheduled = False
-    if tmux_ok:
+    if tmux_ok and is_first_boot:
         parts: list[str] = []
         if agent_name and agent_name.strip():
             parts.append(_build_identity_prompt(agent_name.strip()))
@@ -333,9 +398,9 @@ def bootstrap_agent(
             ).start()
             prompt_scheduled = True
     return {
-        "trustMarked": trust_ok,
-        "permissionsWritten": perms_ok,
-        "permissionsAdded": perms_added,
+        "claudeCmd": claude_cmd,
+        "mode": mode,
         "tmuxStarted": tmux_ok,
         "promptScheduled": prompt_scheduled,
+        "isFirstBoot": is_first_boot,
     }
