@@ -27,21 +27,33 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# onedir 빌드 — onefile 의 _MEI 임시 폴더 cleanup 경합 위험 회피.
+# onefile (옛) 은 실행 시점에 임시 폴더에 dep 풀고 cleanup. self-kill 반복 시 cleanup 경합으로
+# libpython3.11.dylib 등이 사라지는 사고 발생 (우드 mac 사례). onedir 는 모든 dep 가 영구
+# 위치 (.pkg 안의 폴더) 에 있어 self-kill 반복에 안전.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='aidesk-helper',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    runtime_tmpdir=None,
     console=True,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='aidesk-helper',
 )

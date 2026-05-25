@@ -37,15 +37,22 @@ uv run pyinstaller \
     --workpath "$BUILD/pyi-work" \
     "$ROOT/aidesk-helper.spec"
 
-BINARY="$BUILD/pyi-dist/aidesk-helper"
-[[ -x "$BINARY" ]] || { echo "✗ PyInstaller binary not found: $BINARY"; exit 1; }
+HELPER_DIR="$BUILD/pyi-dist/aidesk-helper"
+[[ -d "$HELPER_DIR" && -x "$HELPER_DIR/aidesk-helper" ]] || { echo "✗ PyInstaller onedir not found: $HELPER_DIR"; exit 1; }
 
 echo "→ [2/4] Composing payload"
 mkdir -p "$PAYLOAD/usr/local/bin"
 mkdir -p "$PAYLOAD/usr/local/share/aidesk/hooks"
+mkdir -p "$PAYLOAD/usr/local/share/aidesk/helper-app"
 
-cp "$BINARY" "$PAYLOAD/usr/local/bin/aidesk-helper"
-chmod 755 "$PAYLOAD/usr/local/bin/aidesk-helper"
+# onedir 폴더 전체 (binary + _internal/ 의 libpython 등 dep 영구 위치) 복사.
+# onefile 의 _MEI 임시 폴더 cleanup 경합 위험 회피.
+cp -R "$HELPER_DIR"/. "$PAYLOAD/usr/local/share/aidesk/helper-app/"
+chmod 755 "$PAYLOAD/usr/local/share/aidesk/helper-app/aidesk-helper"
+
+# /usr/local/bin/aidesk-helper 는 helper-app 의 binary 로 symlink — LaunchAgent plist 의
+# ProgramArguments (/usr/local/bin/aidesk-helper) 와 호환 유지.
+ln -sf "/usr/local/share/aidesk/helper-app/aidesk-helper" "$PAYLOAD/usr/local/bin/aidesk-helper"
 
 cp "$DESKTOP_AGENT/scripts/aidesk-action-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 cp "$DESKTOP_AGENT/scripts/aidesk-prompt-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"

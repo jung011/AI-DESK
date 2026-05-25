@@ -26,6 +26,12 @@ log = logging.getLogger(__name__)
 # 이 즉시 self-kill 하지 않게 buffer.
 _last_sse_event_at = time.monotonic()
 
+# 첫 SSE event 한 번이라도 받았는지. *Initial-bootstrap guard*:
+# 환경 이슈로 SSE 연결 자체가 안 되는 mac 에서 무한 self-kill 반복으로 PyInstaller 의 _MEI
+# 임시 폴더가 손상되는 사고를 방지 — 첫 event 받기 전엔 watchdog 가 self-kill 발동 안 함.
+# *진짜 좀비* (한 번 정상 연결 후 끊김) 는 그대로 잡힘.
+_seen_first_event = False
+
 # 감지 임계 — backend SSE heartbeat 30s 주기 가정 + 일시 reconnect buffer.
 # 90초 = heartbeat 3회 누락 = 명확한 dead.
 DEAD_SSE_THRESHOLD_SEC = 90.0
@@ -36,12 +42,19 @@ WATCHDOG_INTERVAL_SEC = 30.0
 
 def mark_sse_event() -> None:
     """sse_consumer 가 backend 로부터 어떤 event 든 받을 때 호출. idle timer 갱신."""
-    global _last_sse_event_at
+    global _last_sse_event_at, _seen_first_event
     _last_sse_event_at = time.monotonic()
+    _seen_first_event = True
 
 
 async def watchdog_loop() -> None:
-    """SSE idle 이 너무 길면 process self-kill — LaunchAgent KeepAlive 가 자동 재기동."""
+    """SSE idle 이 너무 길면 process self-kill — LaunchAgent KeepAlive 가 자동 재기동.
+
+    단 *첫 SSE event 한 번이라도 받기 전엔* self-kill 안 함 (initial-bootstrap guard).
+    환경 이슈로 SSE 연결 자체가 안 되는 mac 에서는 watchdog 가 *조용히 대기* — process 는
+    alive 유지되지만 동작 안 함. 사용자가 외부 진단/fix 가능. 무한 self-kill 로 인한 binary
+    손상 방지.
+    """
     log.info("watchdog: starting (threshold=%.0fs, interval=%.0fs)",
              DEAD_SSE_THRESHOLD_SEC, WATCHDOG_INTERVAL_SEC)
     while True:
@@ -50,6 +63,10 @@ async def watchdog_loop() -> None:
         except asyncio.CancelledError:
             log.info("watchdog: cancelled — exiting cleanly")
             raise
+        if not _seen_first_event:
+            # 첫 SSE event 못 받은 상태 — 환경 이슈 가능성. self-kill 안 함.
+            log.debug("watchdog: no SSE event seen yet — guard active (no self-kill)")
+            continue
         idle = time.monotonic() - _last_sse_event_at
         if idle > DEAD_SSE_THRESHOLD_SEC:
             log.error(
