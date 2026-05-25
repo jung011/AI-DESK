@@ -31,6 +31,7 @@ from .workspace import browse_file, browse_workspace, cleanup_agent, scope_works
 # from .tmux.pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .tmux import consumer_loop, scan_sessions
+from .watchdog import watchdog_loop
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
 from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
 from .claude.usage import (
@@ -476,6 +477,8 @@ async def _start_background_tasks(app: web.Application) -> None:
     action_hook_auto_install()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
+    # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
+    app["watchdog_task"] = asyncio.create_task(watchdog_loop())
     # 자체 채널 모델 (2026-05~) 도입 후 케플릭스 사이드카 SSE 구독 (kaflix pump) 폐기.
     # 사내 동료 메시지는 우리 backend SSE 가 reporter_task / sse_task 흐름과 동일 경로로 도달.
     # 임베드 VSCode (code-server) — 대시보드의 사이드 패널이 비활성된 상태라 spawn 도 보류.

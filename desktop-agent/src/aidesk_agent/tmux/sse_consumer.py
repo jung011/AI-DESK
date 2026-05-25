@@ -12,6 +12,8 @@ import logging
 import httpx
 from httpx_sse import aconnect_sse
 
+from ..watchdog import mark_sse_event
+
 log = logging.getLogger(__name__)
 
 # 백엔드 TmuxLastMileAdapter 와 동일한 렌더 포맷 (adesk_cli.md 와 정합).
@@ -170,7 +172,9 @@ async def _consume_once(backend_url: str) -> None:
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with aconnect_sse(client, "GET", url) as event_source:
             log.info("SSE connected: %s", url)
+            mark_sse_event()  # 연결 직후 idle timer 리셋 — watchdog 의 false-positive 방지
             async for sse in event_source.aiter_sse():
+                mark_sse_event()  # 어떤 event 든 (heartbeat comment / message.deliver) 갱신
                 if sse.event != "message.deliver":
                     log.debug("SSE skip event: %s", sse.event)
                     continue
