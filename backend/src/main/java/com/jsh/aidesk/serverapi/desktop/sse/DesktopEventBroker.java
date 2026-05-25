@@ -73,14 +73,17 @@ public class DesktopEventBroker {
     }
 
     /**
-     * SSE 채널 활성 유지용 heartbeat.
+     * SSE 채널 활성 유지용 heartbeat — *named event* 로 발송.
      *
-     * SSE 의 *comment line* (`: heartbeat`) 만 발송 — 클라이언트의 event 핸들러는 안 탐.
-     * 목적: 중간 layer (ingress proxy, LB idle timeout, VPN DPD 등) 가 *event 없는 idle 연결*
-     *      을 silent 하게 끊는 zombie TCP 패턴 방지. helper 0.6.20 의 read timeout (120s) 이
-     *      매번 발동되기 전에 우리 쪽에서 30초마다 활성 신호를 보내 둠으로써:
-     *        - 중간 layer 의 idle timeout 회피 (대부분 60s~10분)
-     *        - 진짜로 끊긴 emitter 는 IOException 으로 즉시 감지 + 자동 정리
+     * 옛엔 *comment line* (`: hb`) 만 보냈는데, helper (httpx-sse) 의 `aiter_sse()` 가
+     * comment-only line 을 *event 로 yield 하지 않아* helper 0.7.5+ 의 watchdog 의
+     * `mark_sse_event()` 가 호출 안 됨 → 90s 후 false-positive self-kill.
+     *
+     * 해결: `event: heartbeat\ndata: {}\n\n` 형태의 *named event* 로 발송 → helper 의
+     * `aiter_sse()` 가 정상 yield → mark_sse_event() 호출 → idle timer 갱신 → self-kill 차단.
+     *
+     * 효과는 동일 — 중간 layer (ingress / LB / VPN DPD) idle timeout 회피 + 끊긴 emitter 는
+     * IOException 으로 즉시 감지 + 자동 정리.
      */
     @Scheduled(fixedDelay = 30_000L, initialDelay = 30_000L)
     public void heartbeat() {
@@ -88,7 +91,7 @@ public class DesktopEventBroker {
         int alive = 0;
         for (SseEmitter emitter : emitters) {
             try {
-                emitter.send(SseEmitter.event().comment("hb"));
+                emitter.send(SseEmitter.event().name("heartbeat").data("{}"));
                 alive++;
             } catch (IOException ex) {
                 emitters.remove(emitter);
