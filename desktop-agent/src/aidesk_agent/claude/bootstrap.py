@@ -224,7 +224,11 @@ def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> s
     cmd = "claude"
     if extra:
         cmd = f"{cmd} {extra}"
-    if has_past_session(workspace_dir):
+    # 텔레그램 모드는 plugin channel 통신이라 local jsonl 저장 timing 이 다른 듯 —
+    # has_past_session 가 False 반환하는 케이스가 있어 *exit 후 다시 텔레그램 모드 진입* 시
+    # 대화가 안 이어지는 문제 발생. claude 는 -c 받았는데 이전 대화 없으면 새 대화로 시작
+    # (graceful fallback) 하므로 텔레그램 모드는 항상 -c 추가해서 안전하게 이어가기.
+    if mode == "telegram" or has_past_session(workspace_dir):
         cmd = f"{cmd} -c"
     return cmd
 
