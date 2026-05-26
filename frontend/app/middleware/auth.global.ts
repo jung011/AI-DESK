@@ -14,10 +14,10 @@ import { useHelperVersionStore } from '~/stores/helperVersion';
 const PUBLIC_PATHS = new Set<string>(['/login']);
 
 /**
- * 로그인 후 redirect 처리 — 절대 URL (http/https) 이면 *kaflix parent domain* 만 통과시켜
- * brower navigation, 아니면 router path 로 처리.
+ * 로그인 후 redirect 처리 — 절대 URL (http/https) 이면 whitelist (`isExternalRedirectAllowed`) 통과만
+ * 외부 browser navigation, 아니면 router path 로 처리.
  * 메타버스 등 cross-domain 진입 흐름에서 navigateTo 가 절대 URL 을 path 로 잘못 해석하는 버그 회피.
- * Open-redirect 차단 위해 whitelist 정책 (`*.kaflix.lan` / `*.kaflix.local`).
+ * Whitelist 는 runtime config (ConfigMap env) — 코드에 도메인 hardcode X.
  */
 function resolveRedirect(raw: string | undefined): { target: string; external: boolean } {
   const fallback = { target: '/dashboard', external: false };
@@ -25,8 +25,7 @@ function resolveRedirect(raw: string | undefined): { target: string; external: b
   if (!/^https?:\/\//i.test(raw)) return { target: raw, external: false };
   try {
     const u = new URL(raw);
-    const allowed = /\.kaflix\.lan$/i.test(u.hostname) || /\.kaflix\.local$/i.test(u.hostname);
-    return allowed ? { target: raw, external: true } : fallback;
+    return isExternalRedirectAllowed(u.hostname) ? { target: raw, external: true } : fallback;
   } catch {
     return fallback;
   }
