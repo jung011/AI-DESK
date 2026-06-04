@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * AI Desk per-AI WebSocket bot adapter (PoC v0).
+ * AI Desk per-AI WebSocket bot adapter (PoC v1 Step B).
  *
  * 흐름:
  *   helper 가 (me) workspace cold-start 시 자식 process 로 spawn
@@ -9,42 +9,84 @@
  *   ↓
  *   message.deliver 이벤트 수신 (단방향 push from backend)
  *   ↓
- *   v0 = console.log only (인프라 검증). 실 send-keys 는 helper sse_consumer 그대로.
+ *   evt.toAgentId === AGENT_ID 매칭 시:
+ *     1) tmux send-keys -l (header + content) → AI stdin
+ *     2) Enter (별도 keystroke)
+ *     3) ack POST → backend
  *
- * 인증: agentId query — backend 의 JwtHandshakeInterceptor 가 cookie 없으면
- *       agentId 로 owner accountSn 추출 (내부 AI 우회 path).
+ * Helper sse_consumer 의 `_tmux_send` + `_ack_delivered` 와 동일 패턴 — render
+ * 포맷도 동일 (adesk_cli.md / TmuxLastMileAdapter 와 정합).
  *
  * Env:
- *   AIDESK_AGENT_ID  (필수)  — 본 봇이 담당할 t_ai_agent.agent_id (UUID)
- *   AIDESK_HUB_URL   (필수)  — backend hub URL (예: http://aidesk.kaflix.internal)
- *
- * 동작:
- *   - 첫 연결 시도 → open / close 둘 다 console.log
- *   - close 시 3s 후 자동 재연결 (지수 백오프 없는 단순 retry — helper watchdog 이 outer guard)
- *   - 60s 마다 heartbeat 로그 (process 살아있음 확인용)
+ *   AIDESK_AGENT_ID    (필수) — 본 봇이 담당할 t_ai_agent.agent_id
+ *   AIDESK_HUB_URL     (필수) — backend hub URL
+ *   AIDESK_TMUX_SESSION(필수) — 본 봇이 send-keys 할 tmux session 이름
  */
 'use strict';
 
 const WebSocket = require('ws');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileP = promisify(execFile);
 
 const AGENT_ID = process.env.AIDESK_AGENT_ID;
 const HUB_URL = process.env.AIDESK_HUB_URL;
+const TMUX_SESSION = process.env.AIDESK_TMUX_SESSION;
 
-if (!AGENT_ID || !HUB_URL) {
-  console.error('[bot-adapter] required env missing: AIDESK_AGENT_ID, AIDESK_HUB_URL');
+if (!AGENT_ID || !HUB_URL || !TMUX_SESSION) {
+  console.error('[bot-adapter] required env missing: AIDESK_AGENT_ID, AIDESK_HUB_URL, AIDESK_TMUX_SESSION');
   process.exit(2);
 }
 
 const wsBase = HUB_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
 const wsUrl = `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
 
-console.log(`[bot-adapter] starting agentId=${AGENT_ID} url=${wsUrl}`);
+console.log(`[bot-adapter] starting agentId=${AGENT_ID} tmux=${TMUX_SESSION} url=${wsUrl}`);
 
 const RECONNECT_DELAY_MS = 3000;
 const HEARTBEAT_INTERVAL_MS = 60000;
+const ENTER_DELAY_MS = 200;
 
 let ws = null;
 let reconnectTimer = null;
+
+/**
+ * Helper sse_consumer 와 동일한 render — `[aidesk · FROM:... | MSG:...] content  ↳ 응답: ...`
+ * adesk_cli.md 의 TmuxLastMileAdapter 와 정합.
+ */
+function renderMessage(evt) {
+  return `[aidesk · FROM:${evt.fromAgentName || ''} | MSG:${evt.messageId || ''}] ${evt.content || ''}` +
+         `  ↳ 응답: adesk reply ${evt.messageId || ''} '<답변>'`;
+}
+
+/**
+ * `tmux send-keys -l` (literal) + delay + `Enter` — sse_consumer 와 같은 패턴.
+ * Claude TUI 가 bracketed-paste 로 Enter 를 흡수 안 하도록 분리 송신.
+ */
+async function tmuxSend(session, text) {
+  try {
+    await execFileP('tmux', ['send-keys', '-l', '-t', session, text]);
+    await new Promise(r => setTimeout(r, ENTER_DELAY_MS));
+    await execFileP('tmux', ['send-keys', '-t', session, 'Enter']);
+    return true;
+  } catch (e) {
+    console.warn('[bot-adapter] tmux send-keys failed:', e.message);
+    return false;
+  }
+}
+
+async function ackDelivered(messageId) {
+  try {
+    const res = await fetch(`${HUB_URL.replace(/\/$/, '')}/api/messages/${messageId}/ack`, {
+      method: 'POST',
+    });
+    console.log(`[bot-adapter] ack msg=${messageId} status=${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.warn(`[bot-adapter] ack failed msg=${messageId}: ${e.message}`);
+    return false;
+  }
+}
 
 function connect() {
   if (reconnectTimer) {
@@ -57,7 +99,7 @@ function connect() {
     console.log('[bot-adapter] connected');
   });
 
-  ws.on('message', (data) => {
+  ws.on('message', async (data) => {
     let evt;
     try {
       evt = JSON.parse(data.toString());
@@ -68,11 +110,14 @@ function connect() {
     if (evt.type !== 'message.deliver') {
       return;
     }
-    if (evt.toAgentId === AGENT_ID) {
-      // PoC v0 — log only. 실 send-keys 는 helper sse_consumer 그대로.
-      console.log(`[bot-adapter] FOR-ME msg=${evt.messageId} from=${evt.fromAgentName} content=${(evt.content || '').slice(0, 100)}`);
-    } else {
-      console.log(`[bot-adapter] (skip) to=${evt.toAgentName} msg=${evt.messageId}`);
+    if (evt.toAgentId !== AGENT_ID) {
+      return;
+    }
+    const rendered = renderMessage(evt);
+    const sent = await tmuxSend(TMUX_SESSION, rendered);
+    console.log(`[bot-adapter] FOR-ME msg=${evt.messageId} from=${evt.fromAgentName} sent=${sent}`);
+    if (sent) {
+      await ackDelivered(evt.messageId);
     }
   });
 
@@ -84,7 +129,6 @@ function connect() {
 
   ws.on('error', (err) => {
     console.warn('[bot-adapter] error:', err.message);
-    // close 가 이어서 호출됨 — 거기서 재연결.
   });
 }
 
@@ -93,7 +137,6 @@ setInterval(() => {
   console.log(`[bot-adapter] heartbeat state=${state}`);
 }, HEARTBEAT_INTERVAL_MS);
 
-// Graceful shutdown — helper 가 SIGTERM 으로 종료 신호 보냈을 때 깔끔 종료.
 function shutdown(signal) {
   console.log(`[bot-adapter] shutdown signal=${signal}`);
   if (reconnectTimer) clearTimeout(reconnectTimer);
