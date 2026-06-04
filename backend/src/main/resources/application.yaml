@@ -26,8 +26,8 @@ vscode:
 # JWT_SECRET_KEY 환경변수 미설정 시 부팅 실패 (운영 안전장치). dev 는 .env / IDE 에 32B+ 임시값 세팅.
 jwt:
   secret-key: ${JWT_SECRET_KEY:dev-only-32-byte-or-longer-secret-replace-in-prod!}
-  access-expiration-seconds: 3600       # 1h
-  refresh-expiration-seconds: 604800    # 7d
+  access-expiration-seconds: ${JWT_ACCESS_EXPIRATION:3600}       # default 1h, env override 가능
+  refresh-expiration-seconds: ${JWT_REFRESH_EXPIRATION:604800}    # default 7d, env override 가능
 
 # 인증 쿠키 — prod HTTPS 환경에서는 true 로 (.env 또는 profile 별 override).
 cookie:
