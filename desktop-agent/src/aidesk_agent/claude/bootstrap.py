@@ -501,12 +501,23 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
     return True
 
 
+# 봇 어댑터 자식 stdout/stderr 를 per-agent log file 로 redirect.
+# DEVNULL 이면 ack POST 결과 / ws connect 상태 확인 불가 — 디버깅 + 자가치유 monitor 의 기반.
+_BOT_ADAPTER_LOG_DIR = Path.home() / "Library" / "Logs"
+
+
+def _bot_adapter_log_path(agent_id: str) -> Path:
+    return _BOT_ADAPTER_LOG_DIR / f"aidesk-bot-adapter-{agent_id}.log"
+
+
 def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | None:
-    """봇 어댑터 자식 process spawn (PoC v1 Step A — log only).
+    """봇 어댑터 자식 process spawn.
 
     - binary: helper-pkg payload 의 `/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter`
               (운영 .pkg 배포 시). 개발자 mac 에선 workspace path fallback.
-    - env: AIDESK_AGENT_ID + AIDESK_HUB_URL (helper plist 의 AIDESK_HUB_URL 사용).
+    - env: AIDESK_AGENT_ID + AIDESK_HUB_URL + AIDESK_TMUX_SESSION.
+    - stdout/stderr: ~/Library/Logs/aidesk-bot-adapter-<agent_id>.log (append) — ack POST
+      결과, ws connect/disconnect, tmux send-keys 결과를 self-contained 로 확인 가능.
     - detached subprocess (start_new_session=True) — helper 종료 시 자식도 함께 종료되지만
       session 분리로 tmux send-keys 와 충돌 X.
     - 실패 시 log warning + 어댑터 없이 helper sse_consumer 만으로 fallback (회귀 방지).
@@ -530,17 +541,35 @@ def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | N
     env["AIDESK_AGENT_ID"] = agent_id
     env["AIDESK_HUB_URL"] = hub_url
     env["AIDESK_TMUX_SESSION"] = tmux_session
+
+    log_path = _bot_adapter_log_path(agent_id)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fh = open(log_path, "a", buffering=1)
+    except OSError as e:
+        log.warning("bot-adapter: log file open failed path=%s err=%s — using DEVNULL", log_path, e)
+        log_fh = None
+
     try:
         proc = subprocess.Popen(
             [bin_path],
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if log_fh is not None else subprocess.DEVNULL,
             start_new_session=True,
         )
-        log.info("bot-adapter: spawned pid=%d agent_id=%s tmux=%s bin=%s",
-                 proc.pid, agent_id, tmux_session, bin_path)
+        log.info("bot-adapter: spawned pid=%d agent_id=%s tmux=%s bin=%s log=%s",
+                 proc.pid, agent_id, tmux_session, bin_path,
+                 str(log_path) if log_fh is not None else "DEVNULL")
         return proc
     except OSError as e:
+        if log_fh is not None:
+            try: log_fh.close()
+            except OSError: pass
         log.warning("bot-adapter: spawn failed agent_id=%s: %s", agent_id, e)
         return None
+    finally:
+        # Popen 가 fd 를 dup 했으므로 parent 쪽 fd 는 닫아도 자식은 계속 씀.
+        if log_fh is not None:
+            try: log_fh.close()
+            except OSError: pass
