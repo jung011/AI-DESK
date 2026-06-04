@@ -33,6 +33,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+	// Jackson — spring-boot-starter-webmvc 는 lightweight 라 json starter 가 transitive 로
+	// 안 들어옴. ObjectMapper auto-config 위해 명시. controller 의 응답 직렬화는 webmvc
+	// 자체 ConversionService 가 처리하지만 우리가 직접 ObjectMapper inject 하는 곳
+	// (예: MessageService 의 WS payload 직렬화) 가 있어서 필수.
+	implementation 'org.springframework.boot:spring-boot-starter-json'
+
 	// WebSocket — frontend ↔ backend 실시간 메시지 push. helper 측 SSE 와 dual-path 운영.
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 
