@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 public class MessageWebSocketHandler extends TextWebSocketHandler {
 
     public static final String ATTR_ACCOUNT_SN = "accountSn";
+    public static final String ATTR_AGENT_ID = "agentId";
 
     private final MessageWebSocketBroker broker;
 
