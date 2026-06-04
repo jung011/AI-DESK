@@ -468,9 +468,17 @@ def start_claude_with_mode(
     }
 
 
-# agent_id → (process, tmux_session) registry. helper module global — 단일 process 의 in-memory.
-# tmux_session 도 같이 들고 있어야 죽었을 때 sse_consumer skip set 에서 unregister 가능.
-_bot_adapter_procs: dict[str, tuple[subprocess.Popen, str]] = {}
+# agent_id → (process, tmux_session, spawn_time_monotonic) registry. helper module global.
+# tmux_session 은 죽었을 때 skip set unregister 용. spawn_time 은 안정 동작 판정용 (fail_count reset).
+_bot_adapter_procs: dict[str, tuple[subprocess.Popen, str, float]] = {}
+
+# agent_id → 연속 crash 카운트. 안정 동작 (>= _BOT_ADAPTER_STABLE_SEC) 이면 reset.
+_bot_adapter_fail_counts: dict[str, int] = {}
+
+# 5분 이상 살아있으면 안정 — 다음 crash 시 fail_count 가 1 부터 시작.
+_BOT_ADAPTER_STABLE_SEC = 300.0
+# 최대 연속 재spawn 시도. 초과 시 fallback 만 유지 (sse_consumer 가 last-mile).
+_BOT_ADAPTER_MAX_RESPAWN = 5
 
 
 def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
@@ -481,10 +489,12 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
 
     spawn 성공 시 sse_consumer 의 skip set 에 등록 — 그 session 의 last-mile 은
     봇 어댑터가 담당, sse_consumer 는 fallback 으로만.
+
+    사용자 의도적 호출이므로 fail_count 도 reset.
     """
     existing = _bot_adapter_procs.get(agent_id)
     if existing is not None:
-        proc, _ = existing
+        proc, _, _ = existing
         if proc.poll() is None:
             log.debug("bot-adapter: already running agent_id=%s pid=%d", agent_id, proc.pid)
             return True
@@ -495,7 +505,9 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
     proc = _spawn_bot_adapter(agent_id, tmux_session)
     if proc is None:
         return False
-    _bot_adapter_procs[agent_id] = (proc, tmux_session)
+    _bot_adapter_procs[agent_id] = (proc, tmux_session, time.monotonic())
+    # 사용자 액션으로 새로 spawn — backoff 상태 reset.
+    _bot_adapter_fail_counts.pop(agent_id, None)
     # 봇 어댑터가 last-mile 담당 → sse_consumer 는 이 session 제외.
     from ..tmux.sse_consumer import register_bot_adapter_session
     register_bot_adapter_session(tmux_session)
@@ -503,25 +515,56 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
 
 
 def monitor_bot_adapters() -> int:
-    """봇 어댑터 자식 process 가 살아있는지 점검.
+    """봇 어댑터 자식 process 가 살아있는지 점검 + 죽었으면 즉시 자동 재spawn.
 
-    background task 에서 주기적으로 호출. 죽은 process 가 있으면:
-      - registry 에서 제거
-      - sse_consumer skip set 에서 unregister → fallback 활성화
-        (다음 메시지부터 sse_consumer 가 다시 send-keys 함)
+    background task 에서 주기적으로 호출 (server.py 의 _bot_adapter_monitor_loop).
+    죽은 process 가 있으면:
+      1. registry 에서 제거
+      2. fail_count 갱신 (안정 동작 5분+ 이었으면 1 로 reset, 아니면 +1)
+      3. fail_count <= MAX_RESPAWN 이면 즉시 재spawn + skip set 다시 등록
+      4. MAX_RESPAWN 초과면 fallback 만 유지 (sse_consumer 가 send-keys + ack)
+         외부 AI (24/7) 환경에서 사용자 액션 없이도 자동 복구 보장.
 
     반환값: 정리한 죽은 process 개수.
     """
     dead = 0
-    for agent_id, (proc, tmux_session) in list(_bot_adapter_procs.items()):
+    for agent_id, (proc, tmux_session, spawn_time) in list(_bot_adapter_procs.items()):
         if proc.poll() is None:
             continue
-        log.warning("bot-adapter: monitor detected dead process agent_id=%s rc=%d tmux=%s — falling back to sse_consumer",
-                    agent_id, proc.returncode, tmux_session)
+        rc = proc.returncode
+        alive_sec = time.monotonic() - spawn_time
         _bot_adapter_procs.pop(agent_id, None)
-        from ..tmux.sse_consumer import unregister_bot_adapter_session
-        unregister_bot_adapter_session(tmux_session)
         dead += 1
+
+        # 안정 동작 5분 넘었으면 backoff reset — 외부 영향 (network blip 등) 으로 죽은 것 가정.
+        if alive_sec >= _BOT_ADAPTER_STABLE_SEC:
+            _bot_adapter_fail_counts.pop(agent_id, None)
+        fail_count = _bot_adapter_fail_counts.get(agent_id, 0) + 1
+        _bot_adapter_fail_counts[agent_id] = fail_count
+
+        log.warning("bot-adapter: monitor detected dead agent_id=%s rc=%d tmux=%s alive=%.1fs attempt=%d",
+                    agent_id, rc, tmux_session, alive_sec, fail_count)
+
+        from ..tmux.sse_consumer import register_bot_adapter_session, unregister_bot_adapter_session
+
+        if fail_count > _BOT_ADAPTER_MAX_RESPAWN:
+            log.warning("bot-adapter: max respawn attempts (%d) reached agent_id=%s — staying on sse_consumer fallback",
+                        _BOT_ADAPTER_MAX_RESPAWN, agent_id)
+            unregister_bot_adapter_session(tmux_session)
+            continue
+
+        # 즉시 자동 재spawn 시도.
+        new_proc = _spawn_bot_adapter(agent_id, tmux_session)
+        if new_proc is None:
+            log.warning("bot-adapter: auto-respawn failed agent_id=%s — fallback to sse_consumer", agent_id)
+            unregister_bot_adapter_session(tmux_session)
+            continue
+        _bot_adapter_procs[agent_id] = (new_proc, tmux_session, time.monotonic())
+        # skip set 은 ensure_bot_adapter 가 register 했던 그대로 유지하지만, 죽었다가 살아나는 경계라
+        # 명시적으로 다시 register (idempotent — set.add 라 중복 무해).
+        register_bot_adapter_session(tmux_session)
+        log.info("bot-adapter: auto-respawned pid=%d agent_id=%s attempt=%d",
+                 new_proc.pid, agent_id, fail_count)
     return dead
 
 
