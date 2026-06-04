@@ -7,12 +7,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 import com.jsh.aidesk.serverapi.messages.lastmile.LastMileAdapter;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 import com.jsh.aidesk.serverapi.messages.policy.MessagePolicyChecker;
 import com.jsh.aidesk.serverapi.messages.policy.PolicyResult;
+import com.jsh.aidesk.serverapi.messages.websocket.MessageWebSocketBroker;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import lombok.extern.slf4j.Slf4j;
 import java.util.List;
@@ -42,6 +48,8 @@ public class MessageService {
     private final AgentMapper agentMapper;
     private final MessagePolicyChecker policy;
     private final LastMileAdapter lastMile;
+    private final MessageWebSocketBroker wsBroker;
+    private final ObjectMapper objectMapper;
 
     /**
      * 메시지 발신.
@@ -143,6 +151,11 @@ public class MessageService {
         }
 
         final String messageId = entity.getMessageId();
+
+        // Frontend WS push — recipient 와 sender 의 owner 양쪽 push (multi-tab 동기화).
+        // Helper SSE last-mile 과 별개. WS 가 끊긴 사용자는 next polling / reconnect 으로 동기화.
+        publishToFrontend(entity, from, to);
+
         if (toIsHuman) {
             // 휴먼 수신자: tmux send-keys 의미 없음 → 즉시 delivered 마킹. 채팅 UI 폴링이 가져감.
             messageMapper.markDelivered(messageId);
@@ -167,6 +180,41 @@ public class MessageService {
         }
 
         return messageMapper.selectItemById(messageId);
+    }
+
+    /**
+     * 새 메시지를 frontend WS 채널로 push — recipient + sender 의 owner 양쪽 보냄.
+     * 같은 user 면 broker 가 ConcurrentMap 의 같은 key 라 자동 한 번만 송신.
+     * 실패는 broker 가 흡수 (dead session 은 다음 close 콜백으로 정리).
+     */
+    private void publishToFrontend(MessageVo message, AgentVo from, AgentVo to) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "message.deliver");
+        payload.put("messageId", message.getMessageId());
+        payload.put("fromAgentId", from.getAgentId());
+        payload.put("fromAgentName", from.getAgentName());
+        payload.put("toAgentId", to.getAgentId());
+        payload.put("toAgentName", to.getAgentName());
+        payload.put("fromAccountSn", from.getOwnerAccountSn());
+        payload.put("toAccountSn", to.getOwnerAccountSn());
+        payload.put("content", message.getContent());
+        payload.put("status", message.getStatus());
+        payload.put("createdAt", message.getCreatedAt());
+
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            log.warn("[ws-publish] payload serialize failed msg={}: {}", message.getMessageId(), e.getMessage());
+            return;
+        }
+
+        if (to.getOwnerAccountSn() != null) {
+            wsBroker.publishToAccount(to.getOwnerAccountSn(), json);
+        }
+        if (from.getOwnerAccountSn() != null && !from.getOwnerAccountSn().equals(to.getOwnerAccountSn())) {
+            wsBroker.publishToAccount(from.getOwnerAccountSn(), json);
+        }
     }
 
     /**

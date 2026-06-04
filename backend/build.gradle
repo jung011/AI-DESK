@@ -33,6 +33,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
+	// WebSocket — frontend ↔ backend 실시간 메시지 push. helper 측 SSE 와 dual-path 운영.
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+
 	// Persistence
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1'
 	runtimeOnly 'org.postgresql:postgresql'

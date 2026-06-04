@@ -72,6 +72,9 @@ public class SecurityConfig {
                 // 비인증 허용 + service 가 sender_agent_id 의 owner 로 user 컨텍스트 fallback.
                 .requestMatchers("/api/agents/**").permitAll()
                 .requestMatchers("/api/messages/**").permitAll()
+                // Frontend ↔ Backend WebSocket — handshake 단계 JwtAuthenticationFilter 가 cookie 검증
+                // + JwtHandshakeInterceptor 가 AuthenticatedUser 없으면 거부. 여기선 permit + interceptor 위임.
+                .requestMatchers("/ws/messages").permitAll()
                 .requestMatchers("/api/auth/sign-out").authenticated()
                 .anyRequest().authenticated()
             )
