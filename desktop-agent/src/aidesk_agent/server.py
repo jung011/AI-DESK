@@ -485,6 +485,9 @@ async def _start_background_tasks(app: web.Application) -> None:
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
     app["watchdog_task"] = asyncio.create_task(watchdog_loop())
+    # 봇 어댑터 자가치유 — 30s 주기로 살아있는지 점검. 죽었으면 skip set 에서 빼서
+    # sse_consumer 가 fallback 으로 last-mile 인수. 다음 ensure_bot_adapter 호출 시 재spawn.
+    app["bot_adapter_monitor_task"] = asyncio.create_task(_bot_adapter_monitor_loop())
     # 자체 채널 모델 (2026-05~) 도입 후 케플릭스 사이드카 SSE 구독 (kaflix pump) 폐기.
     # 사내 동료 메시지는 우리 backend SSE 가 reporter_task / sse_task 흐름과 동일 경로로 도달.
     # 임베드 VSCode (code-server) — 대시보드의 사이드 패널이 비활성된 상태라 spawn 도 보류.
@@ -493,7 +496,7 @@ async def _start_background_tasks(app: web.Application) -> None:
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
-    for key in ("reporter_task", "sse_task"):
+    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task"):
         task = app.get(key)
         if task is None:
             continue
@@ -504,6 +507,22 @@ async def _stop_background_tasks(app: web.Application) -> None:
             pass
     # code-server 자동 spawn 비활성 상태 — 정리할 proc 도 없음. 복원 시 같이 풀기.
     # await stop_code_server(app.get("code_server_proc"))
+
+
+# 봇 어댑터 자가치유 — 30s 주기로 죽은 process 검출 + sse_consumer fallback 복구.
+_BOT_ADAPTER_MONITOR_INTERVAL_SEC = 30.0
+
+
+async def _bot_adapter_monitor_loop() -> None:
+    from .claude.bootstrap import monitor_bot_adapters
+    while True:
+        try:
+            dead = monitor_bot_adapters()
+            if dead:
+                log.info("bot-adapter monitor: cleaned %d dead process(es)", dead)
+        except Exception:  # noqa: BLE001 — background loop, never fatal
+            log.exception("bot-adapter monitor: tick failed")
+        await asyncio.sleep(_BOT_ADAPTER_MONITOR_INTERVAL_SEC)
 
 
 def build_app() -> web.Application:

@@ -468,8 +468,9 @@ def start_claude_with_mode(
     }
 
 
-# agent_id → 동작 중 process registry. helper module global — 단일 process 의 in-memory.
-_bot_adapter_procs: dict[str, subprocess.Popen] = {}
+# agent_id → (process, tmux_session) registry. helper module global — 단일 process 의 in-memory.
+# tmux_session 도 같이 들고 있어야 죽었을 때 sse_consumer skip set 에서 unregister 가능.
+_bot_adapter_procs: dict[str, tuple[subprocess.Popen, str]] = {}
 
 
 def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
@@ -482,23 +483,46 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
     봇 어댑터가 담당, sse_consumer 는 fallback 으로만.
     """
     existing = _bot_adapter_procs.get(agent_id)
-    if existing is not None and existing.poll() is None:
-        log.debug("bot-adapter: already running agent_id=%s pid=%d", agent_id, existing.pid)
-        return True
-
     if existing is not None:
+        proc, _ = existing
+        if proc.poll() is None:
+            log.debug("bot-adapter: already running agent_id=%s pid=%d", agent_id, proc.pid)
+            return True
         log.info("bot-adapter: previous instance exited (rc=%d) agent_id=%s — respawning",
-                 existing.returncode, agent_id)
+                 proc.returncode, agent_id)
         _bot_adapter_procs.pop(agent_id, None)
 
     proc = _spawn_bot_adapter(agent_id, tmux_session)
     if proc is None:
         return False
-    _bot_adapter_procs[agent_id] = proc
+    _bot_adapter_procs[agent_id] = (proc, tmux_session)
     # 봇 어댑터가 last-mile 담당 → sse_consumer 는 이 session 제외.
     from ..tmux.sse_consumer import register_bot_adapter_session
     register_bot_adapter_session(tmux_session)
     return True
+
+
+def monitor_bot_adapters() -> int:
+    """봇 어댑터 자식 process 가 살아있는지 점검.
+
+    background task 에서 주기적으로 호출. 죽은 process 가 있으면:
+      - registry 에서 제거
+      - sse_consumer skip set 에서 unregister → fallback 활성화
+        (다음 메시지부터 sse_consumer 가 다시 send-keys 함)
+
+    반환값: 정리한 죽은 process 개수.
+    """
+    dead = 0
+    for agent_id, (proc, tmux_session) in list(_bot_adapter_procs.items()):
+        if proc.poll() is None:
+            continue
+        log.warning("bot-adapter: monitor detected dead process agent_id=%s rc=%d tmux=%s — falling back to sse_consumer",
+                    agent_id, proc.returncode, tmux_session)
+        _bot_adapter_procs.pop(agent_id, None)
+        from ..tmux.sse_consumer import unregister_bot_adapter_session
+        unregister_bot_adapter_session(tmux_session)
+        dead += 1
+    return dead
 
 
 # 봇 어댑터 자식 stdout/stderr 를 per-agent log file 로 redirect.
