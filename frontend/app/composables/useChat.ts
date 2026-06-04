@@ -8,7 +8,9 @@
  * 즉 (me) ↔ partner 페어 뿐 아니라 다른AI ↔ partner 메시지까지 통합.
  * → 위임된 일도 partner 채팅창에서 흔적 확인 가능 (= 임베디드 터미널과 유사한 시야).
  *
- * 메시지 수신은 polling 5초. SSE/WebSocket 으로 격상은 후속.
+ * 메시지 수신은 polling 5초 + WebSocket push dual-path (Phase 0 — per-AI 봇 어댑터 plan 의 첫 단추).
+ * WS 가 새 메시지 push 받으면 즉시 fetchMessages 호출 — polling 과 같은 흐름 재사용.
+ * WS 끊김 시 polling fallback 자동 동작.
  */
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 import type { AgentItem, AgentListResponse } from '~/vo/agents/AgentVo';
@@ -27,6 +29,8 @@ export function useChat() {
   const error = ref<string | null>(null);
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let ws: WebSocket | null = null;
+  let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function fetchAgents(): Promise<void> {
     loadingAgents.value = true;
@@ -115,12 +119,60 @@ export function useChat() {
     pollTimer = setInterval(() => {
       void fetchMessages();
     }, POLL_INTERVAL_MS);
+    // WS 도 함께 시작 — push 받으면 즉시 fetchMessages 호출 → 5초 polling 대기 안 하고 반영.
+    startWebSocket();
   }
 
   function stopPolling(): void {
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
+    }
+    stopWebSocket();
+  }
+
+  /**
+   * Backend WebSocket 채널 (/ws/messages) 구독.
+   * message.deliver 이벤트 수신 시 fetchMessages() — polling 흐름 재사용.
+   * 연결 끊김 시 지수 백오프 없이 단순 3초 후 재시도. polling 이 fallback 이라 OK.
+   */
+  function startWebSocket(): void {
+    if (import.meta.server) return;
+    stopWebSocket();
+    try {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${proto}//${window.location.host}/ws/messages`;
+      ws = new WebSocket(url);
+      ws.addEventListener('message', (e) => {
+        try {
+          const evt = JSON.parse(e.data as string);
+          if (evt?.type === 'message.deliver') {
+            // 어떤 partner 와 관여된 메시지든 일단 fetchMessages 가 contact-centric 으로 필터.
+            void fetchMessages();
+          }
+        } catch { /* malformed payload — ignore */ }
+      });
+      ws.addEventListener('close', () => {
+        ws = null;
+        // pollTimer 가 살아있는 동안만 재시도 — stopPolling 호출 후엔 silent.
+        if (pollTimer) {
+          wsReconnectTimer = setTimeout(() => startWebSocket(), 3000);
+        }
+      });
+      ws.addEventListener('error', () => {
+        // close 가 따라옴 — 그쪽에서 처리.
+      });
+    } catch { /* WebSocket 미지원 환경 — polling 만으로 동작 */ }
+  }
+
+  function stopWebSocket(): void {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (ws) {
+      try { ws.close(); } catch { /* noop */ }
+      ws = null;
     }
   }
 
