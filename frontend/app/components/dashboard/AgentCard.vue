@@ -133,6 +133,8 @@ async function callOpenTerminal(
     workspaceDir: props.agent.workspaceDir,
     tmuxSession: props.agent.tmuxSession,
     title: props.agent.agentName,
+    // PoC v1 — helper 가 봇 어댑터 spawn 시 backend WS 인증용 agentId 필요.
+    agentId: props.agent.agentId,
   };
   if (mode) {
     body.mode = mode;
