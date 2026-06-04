@@ -63,10 +63,13 @@ def build_open_iterm_script(
     tmux mouse 옵션과 무관하게 사용자가 편하게 복사·붙여넣기 가능.
 
     동작 우선순위:
-      1) 같은 tmux 세션에 이미 attach 된 iTerm session 이 있으면 그 윈도우/탭 활성화
-         (tmux list-clients 의 client_tty 와 iTerm session 의 tty 매칭)
-      2) 없으면 새 *윈도우* 생성 (AI 별 분리 워크플로)
-      3) current session 에 cd + tmux 명령 write + 탭 제목 set
+      1) 같은 AI 의 iTerm session (= session name 이 우리가 set 한 tabTitle 과 일치)
+         찾아 활성화. tty 매칭만 쓰던 이전 패턴은 카랑이/챗봇 같이 ttys003 등 동일 tty
+         값이 다른 agent 의 attach 와 충돌하던 케이스가 있어 name 매칭을 1순위로.
+      2) 1) 이 실패해도 같은 tmux session 에 attach 된 client tty 가 있으면 tty 매칭 fallback.
+         (사용자가 iTerm 안에서 session 을 직접 rename 한 케이스 보완)
+      3) 둘 다 실패면 새 *윈도우* 생성 (AI 별 분리 워크플로)
+      4) current session 에 cd + tmux 명령 write + 탭 제목 set
     """
     dir_esc = applescript_escape(workspace_dir)
     title_esc = applescript_escape(title or tmux_session)
@@ -103,7 +106,30 @@ def build_open_iterm_script(
         '    end try\n'
         '  end if\n'
         '  set foundIt to false\n'
-        '  if hadWindows and clientTty is not "" then\n'
+        '  -- 1순위: session name 매칭. 우리가 set name 으로 박은 tabTitle 과 일치 = 같은 AI 창.\n'
+        '  -- tty 매칭만 쓸 때 ttys003 같은 동일 tty 값이 다른 agent 와 충돌하던 케이스 차단.\n'
+        '  if hadWindows then\n'
+        '    repeat with w in windows\n'
+        '      repeat with t in tabs of w\n'
+        '        repeat with s in sessions of t\n'
+        '          try\n'
+        '            if name of s is tabTitle then\n'
+        '              select w\n'
+        '              select t\n'
+        '              select s\n'
+        '              set foundIt to true\n'
+        '              exit repeat\n'
+        '            end if\n'
+        '          end try\n'
+        '        end repeat\n'
+        '        if foundIt then exit repeat\n'
+        '      end repeat\n'
+        '      if foundIt then exit repeat\n'
+        '    end repeat\n'
+        '  end if\n'
+        '  -- 2순위: tty 매칭 fallback. 사용자가 iTerm 에서 session 을 직접 rename 해 1순위가\n'
+        '  -- 실패한 경우만 진입. 여기서도 다른 session 충돌 가능성은 있지만 1순위로 거의 흡수됨.\n'
+        '  if not foundIt and hadWindows and clientTty is not "" then\n'
         '    repeat with w in windows\n'
         '      repeat with t in tabs of w\n'
         '        repeat with s in sessions of t\n'
