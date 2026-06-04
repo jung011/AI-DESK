@@ -29,6 +29,24 @@ _ENTER_DELAY_SEC = 0.2
 # 텍스트가 interleave 되거나 한 turn 에 묻혀 일부 메시지에 reply 가 안 가는 문제를 막는다.
 _session_queues: dict[str, asyncio.Queue] = {}
 _session_workers: dict[str, asyncio.Task] = {}
+
+# PoC v1 Step B — 봇 어댑터가 담당한 tmux session 은 sse_consumer 가 last-mile 안 함.
+# bootstrap.py 의 ensure_bot_adapter 가 spawn 성공 시 register_bot_adapter_session 호출 →
+# 여기 set 에 추가. message.deliver 가 해당 session 향이면 skip (어댑터가 처리).
+# 어댑터 spawn 실패 / 미동작 시엔 set 에 안 들어가 sse_consumer 가 그대로 fallback.
+_bot_adapter_sessions: set[str] = set()
+
+
+def register_bot_adapter_session(session: str) -> None:
+    """봇 어댑터가 담당하기 시작한 tmux session 을 등록 — sse_consumer 가 그 session 제외."""
+    _bot_adapter_sessions.add(session)
+    log.info("[sse-consumer] bot-adapter session registered — skip last-mile here: %s", session)
+
+
+def unregister_bot_adapter_session(session: str) -> None:
+    """봇 어댑터 종료 시 등록 해제 — sse_consumer 가 fallback 으로 다시 처리."""
+    _bot_adapter_sessions.discard(session)
+    log.info("[sse-consumer] bot-adapter session unregistered — fallback to sse_consumer: %s", session)
 # send-keys 직후 다음 메시지를 보내기까지의 grace — claude 가 첫 입력을 prompt 로
 # 인식하고 처리 시작할 시간. 너무 짧으면 두 번째 메시지가 현재 turn 의 추가 input 으로
 # 묻힘. 0.5s 면 일반 케이스 충분.
@@ -145,6 +163,9 @@ async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
     message_id = payload.get("messageId") or ""
     if not session:
         log.warning("message.deliver: empty toTmuxSession, dropping")
+        return
+    if session in _bot_adapter_sessions:
+        log.debug("message.deliver: session=%s handled by bot-adapter — skip", session)
         return
     if not await _tmux_has_session(session):
         log.info("message.deliver: target session %s not on this Mac — ignored", session)

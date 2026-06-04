@@ -477,6 +477,9 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
 
     open_terminal 시점 (tmux 살아있어도) 마다 호출 가능 — 이미 동작 중이면 idempotent.
     helper 가 spawn 한 process 가 (수동 kill / crash 로) 죽었으면 새로 spawn.
+
+    spawn 성공 시 sse_consumer 의 skip set 에 등록 — 그 session 의 last-mile 은
+    봇 어댑터가 담당, sse_consumer 는 fallback 으로만.
     """
     existing = _bot_adapter_procs.get(agent_id)
     if existing is not None and existing.poll() is None:
@@ -492,6 +495,9 @@ def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
     if proc is None:
         return False
     _bot_adapter_procs[agent_id] = proc
+    # 봇 어댑터가 last-mile 담당 → sse_consumer 는 이 session 제외.
+    from ..tmux.sse_consumer import register_bot_adapter_session
+    register_bot_adapter_session(tmux_session)
     return True
 
 
@@ -523,6 +529,7 @@ def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | N
     env = os.environ.copy()
     env["AIDESK_AGENT_ID"] = agent_id
     env["AIDESK_HUB_URL"] = hub_url
+    env["AIDESK_TMUX_SESSION"] = tmux_session
     try:
         proc = subprocess.Popen(
             [bin_path],

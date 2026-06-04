@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+/**
+ * AI Desk per-AI WebSocket bot adapter (PoC v0).
+ *
+ * 흐름:
+ *   helper 가 (me) workspace cold-start 시 자식 process 로 spawn
+ *   ↓
+ *   backend `/ws/messages?agentId=<UUID>` 구독
+ *   ↓
+ *   message.deliver 이벤트 수신 (단방향 push from backend)
+ *   ↓
+ *   v0 = console.log only (인프라 검증). 실 send-keys 는 helper sse_consumer 그대로.
+ *
+ * 인증: agentId query — backend 의 JwtHandshakeInterceptor 가 cookie 없으면
+ *       agentId 로 owner accountSn 추출 (내부 AI 우회 path).
+ *
+ * Env:
+ *   AIDESK_AGENT_ID  (필수)  — 본 봇이 담당할 t_ai_agent.agent_id (UUID)
+ *   AIDESK_HUB_URL   (필수)  — backend hub URL (예: http://aidesk.kaflix.internal)
+ *
+ * 동작:
+ *   - 첫 연결 시도 → open / close 둘 다 console.log
+ *   - close 시 3s 후 자동 재연결 (지수 백오프 없는 단순 retry — helper watchdog 이 outer guard)
+ *   - 60s 마다 heartbeat 로그 (process 살아있음 확인용)
+ */
+'use strict';
+
+const WebSocket = require('ws');
+
+const AGENT_ID = process.env.AIDESK_AGENT_ID;
+const HUB_URL = process.env.AIDESK_HUB_URL;
+
+if (!AGENT_ID || !HUB_URL) {
+  console.error('[bot-adapter] required env missing: AIDESK_AGENT_ID, AIDESK_HUB_URL');
+  process.exit(2);
+}
+
+const wsBase = HUB_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
+const wsUrl = `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+
+console.log(`[bot-adapter] starting agentId=${AGENT_ID} url=${wsUrl}`);
+
+const RECONNECT_DELAY_MS = 3000;
+const HEARTBEAT_INTERVAL_MS = 60000;
+
+let ws = null;
+let reconnectTimer = null;
+
+function connect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  ws = new WebSocket(wsUrl);
+
+  ws.on('open', () => {
+    console.log('[bot-adapter] connected');
+  });
+
+  ws.on('message', (data) => {
+    let evt;
+    try {
+      evt = JSON.parse(data.toString());
+    } catch (e) {
+      console.warn('[bot-adapter] parse error:', e.message);
+      return;
+    }
+    if (evt.type !== 'message.deliver') {
+      return;
+    }
+    if (evt.toAgentId === AGENT_ID) {
+      // PoC v0 — log only. 실 send-keys 는 helper sse_consumer 그대로.
+      console.log(`[bot-adapter] FOR-ME msg=${evt.messageId} from=${evt.fromAgentName} content=${(evt.content || '').slice(0, 100)}`);
+    } else {
+      console.log(`[bot-adapter] (skip) to=${evt.toAgentName} msg=${evt.messageId}`);
+    }
+  });
+
+  ws.on('close', (code, reason) => {
+    console.warn(`[bot-adapter] disconnected code=${code} reason=${reason || '(none)'} — reconnecting in ${RECONNECT_DELAY_MS}ms`);
+    ws = null;
+    reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+  });
+
+  ws.on('error', (err) => {
+    console.warn('[bot-adapter] error:', err.message);
+    // close 가 이어서 호출됨 — 거기서 재연결.
+  });
+}
+
+setInterval(() => {
+  const state = ws ? ws.readyState : 'no-socket';
+  console.log(`[bot-adapter] heartbeat state=${state}`);
+}, HEARTBEAT_INTERVAL_MS);
+
+// Graceful shutdown — helper 가 SIGTERM 으로 종료 신호 보냈을 때 깔끔 종료.
+function shutdown(signal) {
+  console.log(`[bot-adapter] shutdown signal=${signal}`);
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (ws) try { ws.close(); } catch { /* noop */ }
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+connect();
