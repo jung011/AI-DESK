@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from aiohttp import web
 
 from . import __version__
-from .claude.bootstrap import bootstrap_agent, start_claude_with_mode
+from .claude.bootstrap import bootstrap_agent, ensure_bot_adapter, start_claude_with_mode
 from .claude.scanner import scan_workspaces
 from .vscode.code_server import DEFAULT_PORT as CODE_SERVER_PORT
 from .vscode.code_server import start_code_server, stop_code_server
@@ -299,6 +299,10 @@ async def open_terminal_handler(request: web.Request) -> web.Response:
                 {"rc": 1, "message": "tmux start failed", **start_result},
                 status=500,
             )
+    elif agent_id:
+        # tmux 살아있는 케이스 — start_claude_with_mode 안 거치므로 봇 어댑터 별도 보장.
+        # ensure_bot_adapter 는 idempotent — 이미 동작 중이면 skip.
+        ensure_bot_adapter(agent_id, tmux_session)
 
     rc, msg = open_terminal(workspace_dir, tmux_session, title)
     status = 200 if rc == 0 else (400 if rc == 2 else 500)
