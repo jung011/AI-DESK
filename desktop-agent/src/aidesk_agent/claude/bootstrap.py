@@ -482,7 +482,7 @@ def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> bool:
     """
     bin_candidates = [
         "/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter",
-        str(Path.home() / "Documents/jsh/workspace/aidesk-bot-adapter/bin/aidesk-bot-adapter"),
+        str(Path.home() / "Documents/jsh/workspace/ai-desk/aidesk-bot-adapter/bin/aidesk-bot-adapter"),
     ]
     bin_path = next((p for p in bin_candidates if Path(p).exists()), None)
     if not bin_path:
