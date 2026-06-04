@@ -412,6 +412,7 @@ def start_claude_with_mode(
     custom_opts: str = "",
     agent_name: str = "",
     workrole_file: str = "",
+    agent_id: str = "",
 ) -> dict:
     """외부 터미널 열기 시점에 호출 — mode 별 claude 시작 + (첫 부팅이면) identity/workrole 주입.
 
@@ -452,10 +453,62 @@ def start_claude_with_mode(
                 daemon=True,
             ).start()
             prompt_scheduled = True
+    # PoC v1 — tmux 시작 성공 + agent_id 가 있으면 봇 어댑터 자식 process spawn.
+    # 메시지 last-mile 의 일부 책임 (PoC v0 는 log only) 을 어댑터에게 위임하는 첫 단추.
+    # helper sse_consumer 와 dual-path 운영 — 회귀 위험 작음 (어댑터 log 만).
+    bot_spawned = False
+    if tmux_ok and agent_id:
+        bot_spawned = _spawn_bot_adapter(agent_id, tmux_session)
+
     return {
         "claudeCmd": claude_cmd,
         "mode": mode,
         "tmuxStarted": tmux_ok,
         "promptScheduled": prompt_scheduled,
         "isFirstBoot": is_first_boot,
+        "botAdapterSpawned": bot_spawned,
     }
+
+
+def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> bool:
+    """봇 어댑터 자식 process spawn (PoC v1 Step A — log only).
+
+    - binary: helper-pkg payload 의 `/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter`
+              (운영 .pkg 배포 시). 개발자 mac 에선 workspace path fallback.
+    - env: AIDESK_AGENT_ID + AIDESK_HUB_URL (helper plist 의 AIDESK_HUB_URL 사용).
+    - detached subprocess (start_new_session=True) — helper 종료 시 자식도 함께 종료되지만
+      session 분리로 tmux send-keys 와 충돌 X.
+    - 실패 시 log warning + 어댑터 없이 helper sse_consumer 만으로 fallback (회귀 방지).
+    """
+    bin_candidates = [
+        "/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter",
+        str(Path.home() / "Documents/jsh/workspace/aidesk-bot-adapter/bin/aidesk-bot-adapter"),
+    ]
+    bin_path = next((p for p in bin_candidates if Path(p).exists()), None)
+    if not bin_path:
+        log.warning("bot-adapter: binary not found in %s — skip spawn (agent_id=%s)",
+                    bin_candidates, agent_id)
+        return False
+
+    hub_url = os.environ.get("AIDESK_HUB_URL")
+    if not hub_url:
+        log.warning("bot-adapter: AIDESK_HUB_URL env missing — skip spawn (agent_id=%s)", agent_id)
+        return False
+
+    env = os.environ.copy()
+    env["AIDESK_AGENT_ID"] = agent_id
+    env["AIDESK_HUB_URL"] = hub_url
+    try:
+        proc = subprocess.Popen(
+            [bin_path],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        log.info("bot-adapter: spawned pid=%d agent_id=%s tmux=%s bin=%s",
+                 proc.pid, agent_id, tmux_session, bin_path)
+        return True
+    except OSError as e:
+        log.warning("bot-adapter: spawn failed agent_id=%s: %s", agent_id, e)
+        return False

@@ -74,6 +74,20 @@ else
     echo "⚠ aidesk-channel 소스 없음 — 건너뜀: $AIDESK_CHANNEL_SRC"
 fi
 
+# aidesk-bot-adapter — per-AI WebSocket bot adapter (PoC v1). helper bootstrap 이 spawn.
+# aidesk-channel 과 같은 패턴 — node_modules 포함 같이 배포해서 사용자 mac 별도 npm install 불필요.
+AIDESK_BOT_ADAPTER_SRC="$(cd "$DESKTOP_AGENT/.." && pwd)/aidesk-bot-adapter"
+if [[ -d "$AIDESK_BOT_ADAPTER_SRC" ]]; then
+    mkdir -p "$PAYLOAD/usr/local/share/aidesk/aidesk-bot-adapter"
+    cp -R "$AIDESK_BOT_ADAPTER_SRC/bin" \
+          "$AIDESK_BOT_ADAPTER_SRC/node_modules" \
+          "$AIDESK_BOT_ADAPTER_SRC/package.json" \
+          "$PAYLOAD/usr/local/share/aidesk/aidesk-bot-adapter/"
+    chmod 755 "$PAYLOAD/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter"
+else
+    echo "⚠ aidesk-bot-adapter 소스 없음 — 건너뜀: $AIDESK_BOT_ADAPTER_SRC"
+fi
+
 # statusline 은 adesk-cli/bin 에 있는 별도 패키지 — monorepo 형제 디렉토리에서 복사
 STATUSLINE_SRC="$(cd "$DESKTOP_AGENT/.." && pwd)/adesk-cli/bin/aidesk-statusline.cjs"
 if [[ -f "$STATUSLINE_SRC" ]]; then

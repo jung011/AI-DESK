@@ -266,6 +266,8 @@ async def open_terminal_handler(request: web.Request) -> web.Response:
     custom_opts = (body.get("customOpts") or "").strip()
     agent_name = (body.get("agentName") or "").strip()
     workrole_file = (body.get("workroleFile") or "").strip()
+    # PoC v1 — 봇 어댑터 spawn 시 backend WS 인증용 agentId 필요. frontend 가 본 카드의 agentId 전달.
+    agent_id = (body.get("agentId") or "").strip()
 
     if not workspace_dir or not tmux_session:
         return web.json_response(
@@ -290,7 +292,7 @@ async def open_terminal_handler(request: web.Request) -> web.Response:
                 status=412,
             )
         start_result = start_claude_with_mode(
-            workspace_dir, tmux_session, mode, custom_opts, agent_name, workrole_file,
+            workspace_dir, tmux_session, mode, custom_opts, agent_name, workrole_file, agent_id,
         )
         if not start_result.get("tmuxStarted"):
             return web.json_response(
