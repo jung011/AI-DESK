@@ -471,6 +471,11 @@ async def _start_background_tasks(app: web.Application) -> None:
         os.environ.get("AIDESK_REPORT_INTERVAL_SEC", DEFAULT_REPORT_INTERVAL_SEC)
     )
     log.info("background tasks starting: backend=%s interval=%.1fs", backend_url, interval)
+    # helper 재기동 시 살아남은 옛 봇 어댑터 (orphan) 일괄 정리. 같은 agentId 봇 어댑터 두 개
+    # 동시 동작 + 메시지 중복 send-keys 차단. 외부 AI 의 daemon 봇 어댑터 (다른 path) 와는
+    # 충돌 X — bootstrap._BOT_ADAPTER_HELPER_BIN_PATHS 만 매칭.
+    from .claude.bootstrap import cleanup_orphan_bot_adapters
+    cleanup_orphan_bot_adapters()
     # iTerm Dynamic Profile 'AI Desk' 자동 생성 — Title Components 만 Session Name 으로
     # override 한 derivative profile. 외부 터미널 열기 시 이 profile 사용 → AI 이름이
     # title bar 에 표시됨. iTerm 미설치 환경이면 noop.

@@ -577,6 +577,41 @@ def _bot_adapter_log_path(agent_id: str) -> Path:
     return _BOT_ADAPTER_LOG_DIR / f"aidesk-bot-adapter-{agent_id}.log"
 
 
+# helper 가 spawn 한 봇 어댑터를 식별하는 binary path 들.
+# Phase 2 후 외부 AI 의 daemon 봇 어댑터는 npm install 위치라 path 가 달라 충돌 X.
+_BOT_ADAPTER_HELPER_BIN_PATHS = (
+    "/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter",
+    str(Path.home() / "Documents/jsh/workspace/ai-desk/aidesk-bot-adapter/bin/aidesk-bot-adapter"),
+)
+
+
+def cleanup_orphan_bot_adapters() -> int:
+    """이전 helper 가 spawn 한 봇 어댑터들 cleanup.
+
+    helper 재기동 시점 (예: 새 .pkg 설치) 에 launchd 가 옛 helper 만 죽이고
+    그 자식 봇 어댑터들은 살아남음 (orphan). 새 helper 의 _bot_adapter_procs 에는
+    없는 process 들이 backend ws 유지 + 메시지 수신 → 사용자가 외부 터미널 클릭
+    시 같은 agentId 봇 어댑터가 두 개 동시 동작 + 같은 메시지 2번 send-keys.
+
+    helper startup 시 *helper 가 띄우는 정확한 binary path* 의 process 만 pkill.
+    외부 AI 의 daemon 봇 어댑터 (npm install 위치) 와는 path 다름 → 충돌 X.
+
+    반환값: cleanup 시도한 target path 중 매칭이 있던 개수.
+    """
+    killed_any = 0
+    for target in _BOT_ADAPTER_HELPER_BIN_PATHS:
+        try:
+            # pkill -f → full command line 에서 target path substring 매칭.
+            # exit code: 0 = match + killed, 1 = no match, >=2 = error.
+            result = subprocess.run(["pkill", "-f", target], check=False, capture_output=True)
+            if result.returncode == 0:
+                killed_any += 1
+                log.info("orphan bot-adapter cleanup: killed any matching target=%s", target)
+        except OSError as e:
+            log.warning("orphan bot-adapter cleanup: pkill failed target=%s err=%s", target, e)
+    return killed_any
+
+
 def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | None:
     """봇 어댑터 자식 process spawn.
 
