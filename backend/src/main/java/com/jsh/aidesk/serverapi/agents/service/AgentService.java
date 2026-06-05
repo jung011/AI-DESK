@@ -19,6 +19,7 @@ import com.jsh.aidesk.serverapi.agents.vo.AgentSummaryRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 import com.jsh.aidesk.serverapi.common.jwt.AuthContext;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
+import com.jsh.aidesk.serverapi.messages.websocket.MessageWebSocketBroker;
 
 import lombok.RequiredArgsConstructor;
 
@@ -42,6 +43,7 @@ public class AgentService {
 
     private final AgentMapper agentMapper;
     private final MessageMapper messageMapper;
+    private final MessageWebSocketBroker wsBroker;
 
     @Transactional(readOnly = true)
     public AgentListRsVo getList(String status) {
@@ -219,7 +221,12 @@ public class AgentService {
         int msgs = messageMapper.deleteByAgent(agentId);
         int agents = agentMapper.hardDelete(agentId, me);
         if (agents > 0) {
-            log.info("agent hard-deleted: agent_id={} cascaded_messages={}", agentId, msgs);
+            // 외부 AI 의 bot daemon (aidesk-bot-claude) 과 internal bot-adapter 가
+            // agent.deleted event 를 받고 자가 종료하도록 ws session close.
+            // ws close 자체가 봇의 reconnect-loop 도 차단 (handshake 단계 401).
+            int closed = wsBroker.closeForAgent(agentId, "agent deleted");
+            log.info("agent hard-deleted: agent_id={} cascaded_messages={} ws_closed={}",
+                    agentId, msgs, closed);
         }
         return agents > 0;
     }

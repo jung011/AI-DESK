@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -65,6 +66,39 @@ public class MessageWebSocketBroker {
                         accountSn, s.getId(), e.getMessage());
             }
         }
+    }
+
+    /**
+     * 특정 agent_id 로 연결된 ws session 들에 agent.deleted event 를 push 한 뒤 close.
+     * external AI 의 bot daemon 또는 internal bot-adapter 가 *backend agent 삭제 시* 자동 종료
+     * 하도록 신호. 봇 측은 event 또는 ws close 를 자가 종료 trigger 로 사용.
+     *
+     * @return 종료된 session 개수.
+     */
+    public int closeForAgent(String agentId, String reason) {
+        if (agentId == null || agentId.isBlank()) return 0;
+        int closed = 0;
+        for (Set<WebSocketSession> set : sessionsByAccount.values()) {
+            for (WebSocketSession s : set) {
+                String sa = (String) s.getAttributes().get(MessageWebSocketHandler.ATTR_AGENT_ID);
+                if (!agentId.equals(sa)) continue;
+                try {
+                    if (s.isOpen()) {
+                        s.sendMessage(new TextMessage(
+                            "{\"type\":\"agent.deleted\",\"agentId\":\"" + agentId + "\"}"));
+                        s.close(CloseStatus.NORMAL.withReason(reason));
+                        closed++;
+                    }
+                } catch (IOException e) {
+                    log.warn("[ws-broker] close failed agentId={} session={}: {}",
+                            agentId, s.getId(), e.getMessage());
+                }
+            }
+        }
+        if (closed > 0) {
+            log.info("[ws-broker] closed {} session(s) for deleted agentId={}", closed, agentId);
+        }
+        return closed;
     }
 
     private int totalSessionCount() {
