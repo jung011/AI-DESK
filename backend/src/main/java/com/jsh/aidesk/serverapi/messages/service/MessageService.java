@@ -396,11 +396,13 @@ public class MessageService {
      * 두 agent 간 통신 허용 여부.
      * <ul>
      *   <li>self → self: 차단</li>
-     *   <li>브릿지 (BOTH) 가 한쪽이면 통과 — (me)/휴먼은 모든 곳과 통신</li>
-     *   <li>둘 다 Channel A: 같은 user 안에서만 (internal cross-user 차단)</li>
-     *   <li>둘 다 Channel B: cross-user 허용 (사내 동료 + external 간 협업)</li>
-     *   <li>다른 channel: 차단 (internal ↔ external 직접 통신 차단)</li>
+     *   <li>둘 다 BOTH ((me)/휴먼): cross-user 허용 — 사내 동료 채널의 브릿지 간 통신</li>
+     *   <li>BOTH + A/B: sameUser 만 — internal/external 은 본인 user 의 사유 worker/service</li>
+     *   <li>A/A internal 끼리: sameUser 만</li>
+     *   <li>B/B external 끼리: sameUser 만 — 외부 AI = 등록 user 의 사유 service</li>
+     *   <li>다른 channel (A↔B): 차단 — internal ↔ external 직접 통신은 (me) 브릿지 경유</li>
      * </ul>
+     * 핵심 — 외부 AI 는 backend 전체 공개가 아닌 등록 user 격리. dashboard list 와 통신 정책 대칭.
      */
     public static boolean canCommunicate(AgentVo from, AgentVo to, String fromCh, String toCh) {
         if (from == null || to == null) return false;
@@ -412,16 +414,11 @@ public class MessageService {
             return true;
         }
         if ("BOTH".equals(fromCh) || "BOTH".equals(toCh)) {
-            // 한쪽만 브릿지 — internal 은 본인 user 의 (me) 만, external 은 모든 (me) OK
-            String otherCh = "BOTH".equals(fromCh) ? toCh : fromCh;
-            if ("A".equals(otherCh)) {
-                return sameUser;   // internal ↔ (me) 는 same user 만. 다른 user (me)=콜리그 차단.
-            }
-            return true;            // external ↔ (me) — cross-user 허용
+            // 한쪽만 브릿지 — internal (A) 도 external (B) 도 본인 user 의 (me)/휴먼 만.
+            return sameUser;
         }
         if (!fromCh.equals(toCh)) return false;        // internal ↔ external 차단
-        if ("A".equals(fromCh)) return sameUser;       // internal 끼리는 same user 만
-        return true;                                    // external 끼리는 cross-user OK
+        return sameUser;                                // A/A, B/B 모두 sameUser 만
     }
 
     /**
