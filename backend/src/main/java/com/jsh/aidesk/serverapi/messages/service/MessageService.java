@@ -79,16 +79,20 @@ public class MessageService {
         if (!actor.equals(from.getOwnerAccountSn())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인의 에이전트로만 메시지 발신 가능");
         }
-        boolean crossUser = !from.getOwnerAccountSn().equals(to.getOwnerAccountSn());
-        if (crossUser) {
-            // 사내 동료 통신 — (me)/휴먼 ↔ (me)/휴먼 만 허용. 워커끼리 cross-user 직접 통신 차단.
-            if (!isMeOrHuman(from) || !isMeOrHuman(to)) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "사내 동료 통신은 (me) 또는 휴먼만 가능합니다 — 워커 AI 는 본인 user 안에서만 통신");
-            }
-        }
+        // 채널 분리 정책 (Phase 2 후):
+        //   Channel A (내부)   = 본인 user 의 internal 끼리 (cross-user 차단)
+        //   Channel B (사내동료) = (me)/external (cross-user 허용 — 사내 동료 사이의 협업)
+        //   브릿지 BOTH        = (me) + 휴먼 — 두 채널 모두 접근 (브릿지)
+        //   internal ↔ external 직접 통신 차단. (me) 가 유일한 게이트웨이.
         if (from.getAgentId().equals(to.getAgentId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "self-message");
+        }
+        String fromCh = channelOf(from);
+        String toCh = channelOf(to);
+        if (!canCommunicate(from, to, fromCh, toCh)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "통신 채널 위반 — from=" + fromCh + " to=" + toCh
+                    + " (internal↔external 직접 통신 차단, internal 은 본인 user 안에서만)");
         }
 
         MessageVo parent = null;
@@ -117,6 +121,10 @@ public class MessageService {
         // 휴먼(인간 사용자) entity 는 tmux 가 없음 — last-mile 우회.
         // 채팅 UI 가 폴링으로 가져가서 사용자에게 표시하면 됨. 즉시 status='delivered' 마킹.
         boolean toIsHuman = "human".equalsIgnoreCase(to.getModel());
+        // 외부 AI service — helper 없는 환경. mcp pollInbox / 봇 어댑터 ws 가 받아감.
+        // helper SSE retry policy 적용하면 영원히 ACK 안 와서 60회 후 failed → 휴먼처럼 즉시 delivered.
+        boolean toIsExternal = "external".equalsIgnoreCase(to.getAgentType());
+        boolean skipHelperLastMile = toIsHuman || toIsExternal;
 
         // 멀티 mac 환경에서 backend → host.docker.internal:30083 preflight 는 *backend 가 도는
         // mac 의 helper* 만 호출하므로 수신자 helper 가 다른 mac 에 있으면 항상 fail.
@@ -135,7 +143,7 @@ public class MessageService {
 
         // 5. INSERT + last mile (virtual thread 로 비동기)
         // pre-flight 통과 → 이전에 'error' 로 박혀있던 수신자라면 'active' 로 자동 복귀.
-        if (!toIsHuman && "error".equals(to.getStatus())) {
+        if (!skipHelperLastMile && "error".equals(to.getStatus())) {
             agentMapper.updateStatusFromWatcher(to.getAgentId(), "active", null);
             log.info("[message-preflight] cleared 'error' status for to={}({}) — send unblocked",
                     to.getAgentName(), to.getAgentId());
@@ -156,11 +164,13 @@ public class MessageService {
         // Helper SSE last-mile 과 별개. WS 가 끊긴 사용자는 next polling / reconnect 으로 동기화.
         publishToFrontend(entity, from, to);
 
-        if (toIsHuman) {
-            // 휴먼 수신자: tmux send-keys 의미 없음 → 즉시 delivered 마킹. 채팅 UI 폴링이 가져감.
+        if (skipHelperLastMile) {
+            // 휴먼 / 외부 AI: helper SSE last-mile 의미 없음 → 즉시 delivered 마킹.
+            // 채팅 UI 폴링 (휴먼) 또는 mcp pollInbox (external) 가 가져감.
             messageMapper.markDelivered(messageId);
-            log.info("[message-deliver-skip] to={}({}) is human — marked delivered immediately",
-                    to.getAgentName(), to.getAgentId());
+            log.info("[message-deliver-skip] to={}({}) type={} — marked delivered immediately",
+                    to.getAgentName(), to.getAgentId(),
+                    toIsHuman ? "human" : "external");
         } else {
             final AgentVo fromAgent = from;
             final AgentVo toAgent = to;
@@ -363,6 +373,55 @@ public class MessageService {
         String ts = a.getTmuxSession();
         if (ts != null && ts.startsWith("aidesk-self-")) return true;
         return "human".equalsIgnoreCase(a.getModel());
+    }
+
+    /**
+     * 통신 채널 분류 — Phase 2 채널 분리 정책.
+     * <ul>
+     *   <li>{@code BOTH} — (me) / 휴먼 = 두 채널의 브릿지</li>
+     *   <li>{@code A}    — internal AI (helper 환경 worker)</li>
+     *   <li>{@code B}    — external AI (mcp service, 사내 동료 채널)</li>
+     * </ul>
+     */
+    public static String channelOf(AgentVo a) {
+        if (a == null) return null;
+        if ("human".equalsIgnoreCase(a.getModel())) return "BOTH";
+        String ts = a.getTmuxSession();
+        if (ts != null && ts.startsWith("aidesk-self-")) return "BOTH";
+        if ("external".equalsIgnoreCase(a.getAgentType())) return "B";
+        return "A";
+    }
+
+    /**
+     * 두 agent 간 통신 허용 여부.
+     * <ul>
+     *   <li>self → self: 차단</li>
+     *   <li>브릿지 (BOTH) 가 한쪽이면 통과 — (me)/휴먼은 모든 곳과 통신</li>
+     *   <li>둘 다 Channel A: 같은 user 안에서만 (internal cross-user 차단)</li>
+     *   <li>둘 다 Channel B: cross-user 허용 (사내 동료 + external 간 협업)</li>
+     *   <li>다른 channel: 차단 (internal ↔ external 직접 통신 차단)</li>
+     * </ul>
+     */
+    public static boolean canCommunicate(AgentVo from, AgentVo to, String fromCh, String toCh) {
+        if (from == null || to == null) return false;
+        if (from.getAgentId().equals(to.getAgentId())) return false;
+        boolean sameUser = from.getOwnerAccountSn() != null
+                && from.getOwnerAccountSn().equals(to.getOwnerAccountSn());
+        if ("BOTH".equals(fromCh) && "BOTH".equals(toCh)) {
+            // (me)/human 끼리 — 본인이든 사내 동료든 OK (사내 동료 채널의 브릿지 간 통신)
+            return true;
+        }
+        if ("BOTH".equals(fromCh) || "BOTH".equals(toCh)) {
+            // 한쪽만 브릿지 — internal 은 본인 user 의 (me) 만, external 은 모든 (me) OK
+            String otherCh = "BOTH".equals(fromCh) ? toCh : fromCh;
+            if ("A".equals(otherCh)) {
+                return sameUser;   // internal ↔ (me) 는 same user 만. 다른 user (me)=콜리그 차단.
+            }
+            return true;            // external ↔ (me) — cross-user 허용
+        }
+        if (!fromCh.equals(toCh)) return false;        // internal ↔ external 차단
+        if ("A".equals(fromCh)) return sameUser;       // internal 끼리는 same user 만
+        return true;                                    // external 끼리는 cross-user OK
     }
 
     /**

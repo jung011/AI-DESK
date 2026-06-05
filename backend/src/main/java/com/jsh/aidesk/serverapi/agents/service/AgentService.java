@@ -71,15 +71,21 @@ public class AgentService {
         if (me == null) {
             // 비인증 + caller 모름 — mcp ensureAgentId 의 fallback cwd 매칭용. 전체 list.
             rows = agentMapper.selectAllForSystem();
+        } else if (caller != null) {
+            // mcp 의 list_agents 호출 — caller 의 channel 기준 권한 필터.
+            // Channel A (internal): 같은 user 안 + 본인 (me) 만
+            // Channel B (external): 본인 (me) + 사내 동료 + 다른 user external 까지 (cross-user 허용)
+            // 브릿지 (me/human): 양쪽 채널 다 보임
+            final AgentVo callerForFilter = caller;
+            final String callerCh = com.jsh.aidesk.serverapi.messages.service.MessageService.channelOf(caller);
+            rows = agentMapper.selectAllForSystem().stream()
+                .filter(a -> com.jsh.aidesk.serverapi.messages.service.MessageService.canCommunicate(
+                        callerForFilter, a, callerCh,
+                        com.jsh.aidesk.serverapi.messages.service.MessageService.channelOf(a)))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         } else {
+            // dashboard 의 cookie 인증 호출 — 본인 user 의 agent 만. frontend 가 type 별 분류.
             rows = new ArrayList<>(agentMapper.selectList(me, status));
-            // 사내 동료 (me) 노출은 *외부 터미널의 claude 의 list_agents* 전용 (mcp 가 callerAgentId 동봉).
-            // 대시보드 AI 그리드 / /chat partner 는 본인 user 안만 보임 — 기존 케플릭스 UX 유지.
-            // 사내 동료 디렉토리는 별도 /api/colleagues (조회 전용 패널).
-            boolean exposeColleagues = caller != null && isMeOrHuman(caller);
-            if (exposeColleagues) {
-                rows.addAll(agentMapper.selectMeAgents(me));
-            }
         }
 
         final AgentVo callerFinal = caller;
