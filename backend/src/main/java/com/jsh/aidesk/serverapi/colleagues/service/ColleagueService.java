@@ -28,7 +28,12 @@ public class ColleagueService {
 
     public ColleagueListRsVo getList() {
         Long me = AuthContext.currentAccountSn();
-        List<ColleagueRsVo> rows = mapper.selectColleagues(me);
+        List<ColleagueRsVo> base = mapper.selectColleagues(me);
+        // 본인 user 의 외부 AI 도 사내 동료 list 에 합류 (Phase 2). frontend 가 type='external' 분기.
+        List<ColleagueRsVo> external = mapper.selectMyExternalAgents(me);
+        List<ColleagueRsVo> rows = new java.util.ArrayList<>(base.size() + external.size());
+        rows.addAll(base);
+        rows.addAll(external);
         OffsetDateTime now = OffsetDateTime.now();
         for (ColleagueRsVo r : rows) {
             r.setOnline(isOnline(r.getMeUpdatedAt(), now));

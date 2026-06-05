@@ -6,6 +6,8 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -17,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * 인증 — {@link JwtHandshakeInterceptor} 가 handshake 단계에서 SecurityContext 의 AuthenticatedUser 추출
  * → session.attributes 에 `accountSn` 저장. 여기서 그것 읽어 broker 에 등록.
+ *
+ * Status 토글 — connect/disconnect 시점에 ATTR_AGENT_ID 가 있으면 t_ai_agent.status 를
+ * idle/offline 으로 갱신. 외부 AI 의 dashboard 표시 (초록/회색 아이콘) 의 source.
  */
 @Component
 @RequiredArgsConstructor
@@ -27,6 +32,7 @@ public class MessageWebSocketHandler extends TextWebSocketHandler {
     public static final String ATTR_AGENT_ID = "agentId";
 
     private final MessageWebSocketBroker broker;
+    private final AgentMapper agentMapper;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -37,6 +43,13 @@ public class MessageWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         broker.register(accountSn, session);
+
+        // ws connect 시점에 그 agent 가 active (idle) 임을 DB 에 마킹. 봇 어댑터 / 외부 AI 가 같은 경로.
+        String agentId = (String) session.getAttributes().get(ATTR_AGENT_ID);
+        if (agentId != null) {
+            agentMapper.updateStatusSystem(agentId, "idle");
+            log.info("[ws-handler] connect → status=idle agentId={}", agentId);
+        }
     }
 
     @Override
@@ -44,6 +57,13 @@ public class MessageWebSocketHandler extends TextWebSocketHandler {
         Long accountSn = (Long) session.getAttributes().get(ATTR_ACCOUNT_SN);
         if (accountSn != null) {
             broker.unregister(accountSn, session);
+        }
+        String agentId = (String) session.getAttributes().get(ATTR_AGENT_ID);
+        if (agentId != null) {
+            // disconnect → offline. helper 가 살아있는 internal AI 도 봇 어댑터가 끊기면 offline 표시.
+            // 사용자가 외부 터미널 다시 클릭해 봇 어댑터 spawn 하면 idle 로 복귀.
+            agentMapper.updateStatusSystem(agentId, "offline");
+            log.info("[ws-handler] disconnect → status=offline agentId={}", agentId);
         }
         log.info("[ws-handler] closed session={} status={}", session.getId(), status);
     }

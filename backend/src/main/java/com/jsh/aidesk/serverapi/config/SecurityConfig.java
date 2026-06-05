@@ -1,5 +1,6 @@
 package com.jsh.aidesk.serverapi.config;
 
+import com.jsh.aidesk.serverapi.agents.security.BearerTokenAuthenticationFilter;
 import com.jsh.aidesk.serverapi.common.jwt.JwtAuthenticationFilter;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,6 +35,7 @@ import java.io.IOException;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -68,6 +70,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 // helper 보고용 endpoint — 임시 비인증 허용. 후속 helper-user binding 단계에서 별도 인증.
                 .requestMatchers("/api/desktop/**").permitAll()
+                // 외부 AI CRUD + token 발급 — 본인 user 의 쿠키 JWT 필수.
+                .requestMatchers("/api/agents/external/**").authenticated()
                 // aidesk-channel mcp 가 외부 터미널의 claude 안에서 호출 — 쿠키/토큰 없이 fetch.
                 // 비인증 허용 + service 가 sender_agent_id 의 owner 로 user 컨텍스트 fallback.
                 .requestMatchers("/api/agents/**").permitAll()
@@ -84,7 +88,10 @@ public class SecurityConfig {
             );
 
         http
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            // cookie JWT 다음 — Authorization: Bearer aidesk_ext_... 검증. cookie 인증된 사용자엔
+            // 영향 없음 (SecurityContext 이미 set). cookie 없는 외부 AI 만 본 filter 가 인증 부여.
+            .addFilterAfter(bearerTokenAuthenticationFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

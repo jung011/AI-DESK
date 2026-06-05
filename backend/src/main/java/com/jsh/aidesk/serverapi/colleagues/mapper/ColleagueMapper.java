@@ -15,4 +15,10 @@ public interface ColleagueMapper {
      * (me) AI 가 없는 user 도 row 반환 (meAgentId=null).
      */
     List<ColleagueRsVo> selectColleagues(@Param("excludeAccountSn") Long excludeAccountSn);
+
+    /**
+     * 본인 user 의 외부 AI list — agent_type='external' row 만. 사내 동료 응답에 합쳐 노출.
+     * frontend 가 type='external' 로 카드 구분.
+     */
+    List<ColleagueRsVo> selectMyExternalAgents(@Param("ownerAccountSn") Long ownerAccountSn);
 }

@@ -100,6 +100,10 @@ public class AgentService {
         if (caller != null && agent.getAgentId().equals(caller.getAgentId())) {
             return "self";
         }
+        // Phase 2 — 외부 AI (mcp 만 동작, helper 환경 아님). 사내 동료 섹션에 표시.
+        if ("external".equalsIgnoreCase(agent.getAgentType())) {
+            return "external";
+        }
         if ("human".equalsIgnoreCase(agent.getModel())) {
             return "human";
         }

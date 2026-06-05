@@ -91,6 +91,25 @@ CREATE INDEX IF NOT EXISTS idx_ai_agent_deleted
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_agent_tmux_session
     ON t_ai_agent (tmux_session) WHERE deleted_at IS NULL;
 
+-- Phase 2 — 외부 AI 합류용 컬럼 (idempotent ALTER, prod DB 자동 마이그레이션).
+-- agent_type: 'internal' (helper 동작 환경, default) / 'external' (mcp 만, 외부 service) / 'me' / 'human'.
+-- bearer_token_hash: 외부 AI 의 Bearer token (BCrypt hash). raw token 은 발급 시 1회만 admin UI 에 표시.
+-- bearer_token_created_at: token 발급 시각 (감사 + UI 표시 용도).
+ALTER TABLE t_ai_agent
+    ADD COLUMN IF NOT EXISTS agent_type VARCHAR(20) NOT NULL DEFAULT 'internal';
+ALTER TABLE t_ai_agent
+    ADD COLUMN IF NOT EXISTS bearer_token_hash VARCHAR(255);
+ALTER TABLE t_ai_agent
+    ADD COLUMN IF NOT EXISTS bearer_token_created_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_ai_agent_type ON t_ai_agent (agent_type);
+
+COMMENT ON COLUMN t_ai_agent.agent_type
+    IS '에이전트 분류 — internal(helper 환경) / external(mcp 만 / Bearer token 필수) / me / human';
+COMMENT ON COLUMN t_ai_agent.bearer_token_hash
+    IS '외부 AI 의 Bearer token BCrypt 해시. raw token 은 발급 시 1회만 표시 후 폐기. NULL = 미발급 또는 revoke';
+COMMENT ON COLUMN t_ai_agent.bearer_token_created_at
+    IS '현재 활성 Bearer token 발급 시각. revoke 또는 rotate 시 갱신';
+
 -- 휴먼 entity 는 *user 별 1 row* 로 LoginService.signup() 에서 자동 생성.
 -- tmux_session = '__human__:<account_sn>' 형식. model = 'human'.
 -- backend / helper 가 이 row 를 만나면 send-keys skip + 즉시 delivered.

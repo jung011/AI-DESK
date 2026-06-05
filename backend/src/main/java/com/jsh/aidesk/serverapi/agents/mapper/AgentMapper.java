@@ -74,4 +74,27 @@ public interface AgentMapper {
     int updateWorkspaceDir(@Param("agentId") String agentId,
                            @Param("workspaceDir") String workspaceDir,
                            @Param("ownerAccountSn") Long ownerAccountSn);
+
+    // ====================================================================
+    // Phase 2 — 외부 AI 합류 (agent_type='external' + Bearer token)
+    // ====================================================================
+
+    /** 외부 AI 생성 — agent_type='external', bearer_token_hash 포함 INSERT. */
+    int insertExternal(AgentVo agent);
+
+    /** Bearer token hash 컬럼으로 active 외부 AI 조회. 인증 분기에서 사용 (회당 1회 lookup). */
+    AgentVo selectByBearerTokenHash(@Param("tokenHash") String tokenHash);
+
+    /** token rotate — 새 hash 와 발급 시각 저장. 본인 소유 + agent_type='external' 만. */
+    int updateBearerToken(@Param("agentId") String agentId,
+                          @Param("ownerAccountSn") Long ownerAccountSn,
+                          @Param("tokenHash") String tokenHash);
+
+    /** token revoke — hash 와 created_at 모두 NULL 로. 본인 소유 + external 만. */
+    int revokeBearerToken(@Param("agentId") String agentId,
+                          @Param("ownerAccountSn") Long ownerAccountSn);
+
+    /** ws connect/disconnect 시 status 자동 토글 — 시스템 콜 (owner 격리 없음). */
+    int updateStatusSystem(@Param("agentId") String agentId,
+                           @Param("status") String status);
 }
