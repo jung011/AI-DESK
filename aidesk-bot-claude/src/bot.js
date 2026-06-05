@@ -153,8 +153,12 @@ const wsBase = HUB_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
 const wsUrl = `${wsBase}/ws/messages?token=${encodeURIComponent(TOKEN)}`;
 const RECONNECT_MS = 3000;
 let reconnectTimer = null;
+// agent.deleted 이벤트 또는 handshake 401 을 한 번이라도 받으면 켜진다.
+// 이후 reconnect 시도 없이 process.exit(0).
+let terminated = false;
 
 function connect() {
+  if (terminated) return;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -163,6 +167,15 @@ function connect() {
   ws.on('open', () => {
     console.log(`[bot-claude] ws connected agent=${AGENT_ID} name=${myAgentName} model=${MODEL}`);
   });
+  ws.on('unexpected-response', (_req, res) => {
+    // backend handshake 거부 — 401 (token 만료 / agent 삭제됨) 은 reconnect 해도 영원히 fail.
+    // 봇 자가 종료로 zombie process 정리.
+    if (res.statusCode === 401 || res.statusCode === 403) {
+      console.log(`[bot-claude] ws handshake ${res.statusCode} — agent revoked or token invalid, exiting`);
+      terminated = true;
+      process.exit(0);
+    }
+  });
   ws.on('message', async (data) => {
     let evt;
     try {
@@ -170,11 +183,18 @@ function connect() {
     } catch {
       return;
     }
+    if (evt.type === 'agent.deleted' && evt.agentId === AGENT_ID) {
+      console.log(`[bot-claude] agent.deleted received — exiting (agent=${AGENT_ID})`);
+      terminated = true;
+      try { ws.close(); } catch { /* ignore */ }
+      process.exit(0);
+    }
     if (evt.type !== 'message.deliver') return;
     if (evt.toAgentId !== AGENT_ID) return;
     await handleIncoming(evt);
   });
   ws.on('close', (code, reason) => {
+    if (terminated) return;
     console.log(
       `[bot-claude] ws disconnected code=${code} reason=${reason || '(none)'} — reconnect in ${RECONNECT_MS}ms`
     );
