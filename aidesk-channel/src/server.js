@@ -1,10 +1,14 @@
 // AI Desk MCP server.
 //
 // 환경변수:
-//   AIDESK_AGENT_ID    선택. 이 MCP 인스턴스가 어느 t_ai_agent 에 해당하는지를 명시.
-//                      비어있거나 DB 에 없는 ID 면 process.cwd() 로 자동 매칭.
-//   AIDESK_API_URL     선택 (기본 http://localhost:30081).
-//   AIDESK_POLL_MS     선택 (기본 5000). inbox 폴링 주기.
+//   AIDESK_AGENT_ID       선택. 이 MCP 인스턴스가 어느 t_ai_agent 에 해당하는지를 명시.
+//                         비어있거나 DB 에 없는 ID 면 process.cwd() 로 자동 매칭.
+//   AIDESK_API_URL        선택 (기본 http://localhost:30081).
+//   AIDESK_POLL_MS        선택 (기본 5000). inbox 폴링 주기.
+//   AIDESK_BEARER_TOKEN   선택. 외부 AI service (helper 없는 환경) 에서 사용.
+//                         값이 있으면 모든 backend 호출에 Authorization: Bearer 헤더 동봉.
+//                         있을 땐 ensureAgentId 가 ENV_AGENT_ID 를 무조건 신뢰
+//                         (DB 조회 path 가 토큰 기반이라 본인 row 만 보임).
 //
 // 4 도구:
 //   send_to       다른 AI 에게 메시지 발신
@@ -34,10 +38,13 @@ const ENV_AGENT_ID = process.env.AIDESK_AGENT_ID;
 let API_URL  = process.env.AIDESK_API_URL || 'http://localhost:30081';
 const HELPER_URL = process.env.AIDESK_HELPER_URL || 'http://localhost:30083';
 const POLL_MS  = Number(process.env.AIDESK_POLL_MS || 5000);
+// Phase 2 — 외부 AI service (helper 없는 환경). 있으면 모든 backend 호출에 Bearer.
+const BEARER_TOKEN = process.env.AIDESK_BEARER_TOKEN;
 
 // 부팅 시 한 번 결정되며, 결정 실패해도 종료하지 않는다 (백엔드 미기동 시점에 claude 가
 // MCP 를 띄우는 경우 대비). 도구 호출 시점에 다시 시도한다.
 let AGENT_ID = null;
+let MY_AGENT_NAME = null;  // Phase 2 — identity 주입용. ensureAgentId 후 채워짐.
 
 // ---------------------------------------------------------------------
 // 도구 정의
@@ -101,6 +108,8 @@ const TOOLS = [
  * 호출자가 await 하든 안 하든 부수효과로 모듈 내 API_URL 만 업데이트.
  */
 async function refreshApiUrlFromHelper() {
+  // Bearer token 모드 (외부 service) 는 helper 없는 환경이라 호출 무의미.
+  if (BEARER_TOKEN) return;
   try {
     const r = await fetch(`${HELPER_URL}/api/local-info`, {
       signal: AbortSignal.timeout(2000)
@@ -121,6 +130,9 @@ async function refreshApiUrlFromHelper() {
 
 async function api(path, init = {}) {
   const headers = { 'Content-Type': 'application/json', ...(init.headers || {}) };
+  if (BEARER_TOKEN && !headers.Authorization) {
+    headers.Authorization = `Bearer ${BEARER_TOKEN}`;
+  }
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -157,6 +169,26 @@ const isUuid = (s) => typeof s === 'string' && /^[0-9a-f-]{36}$/i.test(s);
  */
 async function ensureAgentId() {
   if (AGENT_ID) return AGENT_ID;
+
+  // Phase 2 — Bearer token 모드 (외부 service). ENV_AGENT_ID 가 필수.
+  // backend 가 token 으로 사용자 컨텍스트 결정하므로 cwd 매칭 path 는 의미 없음.
+  if (BEARER_TOKEN) {
+    if (!ENV_AGENT_ID) {
+      throw new Error(
+        'aidesk-channel: AIDESK_BEARER_TOKEN 사용 시 AIDESK_AGENT_ID 필수. dashboard 의 외부 AI 등록 응답에서 받은 agentId 를 환경변수로 설정하세요.'
+      );
+    }
+    AGENT_ID = ENV_AGENT_ID;
+    // 본인 이름 backend lookup — Bearer 인증으로 본인 row 만 조회 가능.
+    try {
+      const env = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}`);
+      MY_AGENT_NAME = env.data?.agentName || null;
+    } catch (e) {
+      process.stderr.write(`aidesk-channel: name lookup failed: ${e?.message ?? e}\n`);
+    }
+    return AGENT_ID;
+  }
+
   const env = await api('/api/agents');
   const list = env.data?.list || [];
 
@@ -164,6 +196,7 @@ async function ensureAgentId() {
     const byEnv = list.find((a) => a.agentId === ENV_AGENT_ID);
     if (byEnv) {
       AGENT_ID = byEnv.agentId;
+      MY_AGENT_NAME = byEnv.agentName || null;
       return AGENT_ID;
     }
     process.stderr.write(
@@ -181,17 +214,20 @@ async function ensureAgentId() {
     );
   }
   AGENT_ID = prefix.agentId;
+  MY_AGENT_NAME = prefix.agentName || null;
   return AGENT_ID;
 }
 
 async function listAgents() {
   const me = await ensureAgentId();
-  // callerAgentId 동봉 — backend 가 (me)/휴먼 caller 면 사내 동료 (me) 까지 포함해 반환,
-  // 워커 caller 면 본인 user 의 list 만. type 필드도 응답에 포함됨.
+  // callerAgentId 동봉 — backend 가 caller 의 channel 기준으로 reachable 한 AI 만 반환.
   const env = await api(`/api/agents?callerAgentId=${encodeURIComponent(me)}`);
-  // 자기 자신만 제외하고 모든 상태(active/idle/done) 를 그대로 반환한다.
-  // type 필드 (self/me/internal/human/colleague) 는 그대로 통과 — claude 에 노출.
-  return (env.data?.list || []).filter((a) => a.agentId !== me);
+  const others = (env.data?.list || []).filter((a) => a.agentId !== me);
+  // self info 항상 동봉 — Claude 가 자기 정체성을 매 호출 시 재확인 (휴먼/내부 AI 혼동 방지).
+  return {
+    self: { agentId: me, agentName: MY_AGENT_NAME || '(이름 미상)' },
+    others,
+  };
 }
 
 async function resolveAgentId(target) {
@@ -255,8 +291,11 @@ const server = new Server(
     capabilities: { tools: {}, logging: {} },
     instructions:
       '이 서버는 AI Desk 의 AI 협업 채널 어댑터입니다. ' +
-      '다른 AI 에게 메시지를 보낼 때 send_to, 받은 메시지(<channel> 태그)에 답할 때 reply, ' +
-      '미확인 메시지를 점검할 때 check_inbox, 다른 AI 목록은 list_agents 를 사용하세요. ' +
+      '\n\n[정체성] 당신은 AI Desk 에 등록된 *AI 에이전트* 입니다 (휴먼 / 사용자 본인이 아닙니다). ' +
+      'list_agents 호출 결과의 self 필드에서 본인의 agent_name 과 agent_id 를 확인할 수 있고, ' +
+      '다른 AI 가 채팅에서 부르는 이름이 곧 당신의 이름입니다.' +
+      '\n\n[도구] 다른 AI 에게 메시지 → send_to. 받은 메시지(<channel> 태그)에 답 → reply. ' +
+      '미확인 점검 → check_inbox. 다른 AI 목록 → list_agents. ' +
       '답변 시 <channel> 태그의 task_id 를 message_id 로 그대로 전달하세요.'
   }
 );

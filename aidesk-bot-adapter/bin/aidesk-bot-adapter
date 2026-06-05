@@ -21,6 +21,9 @@
  *   AIDESK_AGENT_ID    (필수) — 본 봇이 담당할 t_ai_agent.agent_id
  *   AIDESK_HUB_URL     (필수) — backend hub URL
  *   AIDESK_TMUX_SESSION(필수) — 본 봇이 send-keys 할 tmux session 이름
+ *   AIDESK_BEARER_TOKEN(선택) — Phase 2 외부 AI service 용. 있으면 ws URL 의 ?token= 인증
+ *                              + ack POST 에 Authorization: Bearer 헤더 동봉.
+ *                              없으면 internal 모드 (?agentId= 인증).
  */
 'use strict';
 
@@ -32,6 +35,7 @@ const execFileP = promisify(execFile);
 const AGENT_ID = process.env.AIDESK_AGENT_ID;
 const HUB_URL = process.env.AIDESK_HUB_URL;
 const TMUX_SESSION = process.env.AIDESK_TMUX_SESSION;
+const BEARER_TOKEN = process.env.AIDESK_BEARER_TOKEN;
 
 if (!AGENT_ID || !HUB_URL || !TMUX_SESSION) {
   console.error('[bot-adapter] required env missing: AIDESK_AGENT_ID, AIDESK_HUB_URL, AIDESK_TMUX_SESSION');
@@ -39,9 +43,12 @@ if (!AGENT_ID || !HUB_URL || !TMUX_SESSION) {
 }
 
 const wsBase = HUB_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
-const wsUrl = `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+// Phase 2: BEARER_TOKEN 있으면 외부 mode (?token=), 없으면 internal mode (?agentId=).
+const wsUrl = BEARER_TOKEN
+  ? `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`
+  : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
 
-console.log(`[bot-adapter] starting agentId=${AGENT_ID} tmux=${TMUX_SESSION} url=${wsUrl}`);
+console.log(`[bot-adapter] starting agentId=${AGENT_ID} tmux=${TMUX_SESSION} mode=${BEARER_TOKEN ? 'external' : 'internal'}`);
 
 const RECONNECT_DELAY_MS = 3000;
 const HEARTBEAT_INTERVAL_MS = 60000;
@@ -77,8 +84,10 @@ async function tmuxSend(session, text) {
 
 async function ackDelivered(messageId) {
   try {
+    const headers = BEARER_TOKEN ? { 'Authorization': `Bearer ${BEARER_TOKEN}` } : {};
     const res = await fetch(`${HUB_URL.replace(/\/$/, '')}/api/messages/${messageId}/ack`, {
       method: 'POST',
+      headers,
     });
     console.log(`[bot-adapter] ack msg=${messageId} status=${res.status}`);
     return res.ok;
