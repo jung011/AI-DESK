@@ -97,6 +97,7 @@ async function submit() {
   busy.value = true;
   errorMsg.value = null;
   try {
+    const { $api } = useNuxtApp();
     const env = await $api<ApiEnvelope<ExternalAgentTokenRs>>('/api/agents/external', {
       method: 'POST',
       body: { agentName: trimmed },
