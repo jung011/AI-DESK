@@ -101,6 +101,7 @@ export function useAgents(initialStatus: string = 'all') {
                 workspaceDir: env.data.workspaceDir,
                 tmuxSession: env.data.tmuxSession,
                 agentName: env.data.agentName,
+                agentId: env.data.agentId,
                 workroleFile,
               },
             });
