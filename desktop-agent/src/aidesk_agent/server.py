@@ -178,14 +178,29 @@ def _apply_setup(hub_url: str) -> tuple[int, str]:
     except (OSError, plistlib.InvalidFileException) as e:
         return 3, f"plist 갱신 실패: {e}"
 
-    # 2) ~/.claude.json 의 aidesk-channel mcp env.AIDESK_API_URL 갱신
+    # 2) ~/.claude.json 정리 — 옛 글로벌 aidesk-channel entry 제거 + 모든 project 의 local mcp env.AIDESK_API_URL 갱신
+    # 새 패턴: mcp 서버는 각 workspace 의 projects[ws].mcpServers 에만 등록. 글로벌은 더 이상 사용 안 함.
     try:
         with open(_CLAUDE_JSON_PATH) as f:
             cdata = json.load(f)
-        servers = cdata.setdefault("mcpServers", {})
-        ac = servers.setdefault("aidesk-channel", {})
-        ac_env = ac.setdefault("env", {})
-        ac_env["AIDESK_API_URL"] = backend_url
+        # legacy 글로벌 entry 제거 (마이그레이션) — 옛 helper 가 만든 흔적.
+        legacy = cdata.get("mcpServers")
+        if isinstance(legacy, dict) and "aidesk-channel" in legacy:
+            del legacy["aidesk-channel"]
+        # 각 project 의 local mcp env 갱신 (있는 것만, 없는 곳에 새로 등록은 bootstrap_agent 가 담당).
+        projects = cdata.get("projects", {})
+        if isinstance(projects, dict):
+            for proj in projects.values():
+                if not isinstance(proj, dict):
+                    continue
+                servers = proj.get("mcpServers")
+                if not isinstance(servers, dict):
+                    continue
+                ac = servers.get("aidesk-channel")
+                if isinstance(ac, dict):
+                    ac_env = ac.setdefault("env", {})
+                    if isinstance(ac_env, dict):
+                        ac_env["AIDESK_API_URL"] = backend_url
         with open(_CLAUDE_JSON_PATH, "w") as f:
             json.dump(cdata, f, indent=2, ensure_ascii=False)
             f.write("\n")
@@ -395,12 +410,15 @@ async def agent_bootstrap_handler(request: web.Request) -> web.Response:
     # workroleFile 은 옛엔 helper 가 backend 에 인증 없이 GET 했지만 그 endpoint 가 인증 가드 안에
     # 있어 항상 빈 응답 → 프롬프트 누락. frontend 가 인증 cookie 로 미리 조회해서 같이 넘긴다.
     workrole_file = (body.get("workroleFile") or "").strip()
+    # Phase 6 — workspace local mcp 등록을 위해 agentId 도 받는다. 없으면 mcp 등록 skip
+    # (옛 frontend BC). 외부 터미널 열기 시점에 start_claude_with_mode 가 한 번 더 보장한다.
+    agent_id = (body.get("agentId") or "").strip()
     if not workspace_dir or not tmux_session:
         return web.json_response(
             {"rc": 2, "message": "workspaceDir 와 tmuxSession 이 모두 필요합니다."},
             status=400,
         )
-    result = bootstrap_agent(workspace_dir, tmux_session, agent_name, workrole_file)
+    result = bootstrap_agent(workspace_dir, tmux_session, agent_name, workrole_file, agent_id)
     return web.json_response({"rc": 0, "message": "ok", **result})
 
 

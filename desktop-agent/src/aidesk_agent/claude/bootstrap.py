@@ -119,6 +119,81 @@ def _write_default_permissions(workspace_dir: str) -> tuple[bool, int]:
     return True, added
 
 
+def _resolve_backend_url() -> str:
+    """plist 의 AIDESK_HUB_URL 을 backend URL (:30081) 로 변환. setup 안 끝났으면 default."""
+    hub = os.environ.get("AIDESK_HUB_URL", "").rstrip("/")
+    if not hub:
+        return "http://localhost:30081"
+    if hub.endswith(":30080"):
+        return hub[: -len(":30080")] + ":30081"
+    return hub
+
+
+_LOCAL_MCP_NAME = "aidesk-channel"
+_LOCAL_MCP_BIN = "/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
+
+
+def _register_local_mcp(workspace_dir: str, agent_id: str) -> bool:
+    """`~/.claude.json` 의 `projects[ws].mcpServers["aidesk-channel"]` 에 local mcp 등록.
+
+    - AIDESK_AGENT_ID env 명시 → mcp ensureAgentId 가 cwd fallback 없이 caller 식별
+    - 글로벌 mcpServers["aidesk-channel"] 이 있으면 자동 제거 (마이그레이션)
+
+    Phase 6 의 글로벌 → workspace local 패턴. multi-user 격리 + caller 명확화.
+    """
+    if not agent_id or not workspace_dir:
+        return False
+    if not _CLAUDE_JSON_PATH.exists():
+        try:
+            _CLAUDE_JSON_PATH.write_text("{}\n", encoding="utf-8")
+        except OSError as e:
+            log.warning("bootstrap: ~/.claude.json create failed err=%s", e)
+            return False
+    try:
+        data = json.loads(_CLAUDE_JSON_PATH.read_text(encoding="utf-8")) or {}
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("bootstrap: ~/.claude.json read failed (will overwrite) err=%s", e)
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    # legacy 글로벌 entry 제거 — 옛 패턴 흔적.
+    legacy_servers = data.get("mcpServers")
+    if isinstance(legacy_servers, dict) and _LOCAL_MCP_NAME in legacy_servers:
+        del legacy_servers[_LOCAL_MCP_NAME]
+        log.info("bootstrap: removed legacy global mcpServers.%s", _LOCAL_MCP_NAME)
+
+    projects = data.setdefault("projects", {})
+    if not isinstance(projects, dict):
+        projects = data["projects"] = {}
+    proj = projects.setdefault(workspace_dir, {})
+    if not isinstance(proj, dict):
+        proj = projects[workspace_dir] = {}
+    servers = proj.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        servers = proj["mcpServers"] = {}
+
+    servers[_LOCAL_MCP_NAME] = {
+        "type": "stdio",
+        "command": "node",
+        "args": [_LOCAL_MCP_BIN],
+        "env": {
+            "AIDESK_AGENT_ID": agent_id,
+            "AIDESK_API_URL": _resolve_backend_url(),
+        },
+    }
+    try:
+        _CLAUDE_JSON_PATH.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as e:
+        log.warning("bootstrap: ~/.claude.json write failed err=%s", e)
+        return False
+    log.info("bootstrap: registered local mcp ws=%s agent_id=%s", workspace_dir, agent_id)
+    return True
+
+
 def _mark_folder_trusted(workspace_dir: str) -> bool:
     """`~/.claude.json` 의 projects[workspaceDir] 에 hasTrustDialogAccepted=true 를 박는다.
 
@@ -381,25 +456,28 @@ def bootstrap_agent(
     tmux_session: str,
     agent_name: str = "",
     workrole_file: str = "",
+    agent_id: str = "",
 ) -> dict:
     """신규 AI 생성 직후 호출 — 준비 작업만 수행 (claude/tmux 시작 안 함).
 
     옛 정책: 여기서 tmux + claude 자동 시작 + 워크롤/identity 자동 주입.
     새 정책: 사용자가 외부 터미널 열기 → 모드 선택 시점에 start_claude_with_mode 가 처리.
 
-    이 함수는 trust + permissions 만 보장 — claude 가 처음 뜰 때 "trust this folder?" 와
+    이 함수는 trust + permissions + local mcp 만 보장 — claude 가 처음 뜰 때 "trust this folder?" 와
     "Always allow this tool?" 프롬프트가 안 뜨도록 미리 ~/.claude.json 과
-    {ws}/.claude/settings.local.json 에 마커/권한을 박아둔다.
+    {ws}/.claude/settings.local.json 에 마커/권한/mcp 를 박아둔다.
 
     agent_name / workrole_file 인자는 BC 위해 받지만 사용 안 함 — 외부 터미널 열기 시점에
     start_claude_with_mode 에 다시 전달된다.
     """
     trust_ok = _mark_folder_trusted(workspace_dir)
     perms_ok, perms_added = _write_default_permissions(workspace_dir)
+    mcp_ok = _register_local_mcp(workspace_dir, agent_id) if agent_id else False
     return {
         "trustMarked": trust_ok,
         "permissionsWritten": perms_ok,
         "permissionsAdded": perms_added,
+        "mcpRegistered": mcp_ok,
         "tmuxStarted": False,   # 새 정책 — 외부 터미널 열기 시점에 시작
         "promptScheduled": False,
     }
@@ -430,6 +508,9 @@ def start_claude_with_mode(
     이전 컨텍스트에 들어가 있으므로 중복 X.
     """
     is_first_boot = not has_past_session(workspace_dir)
+    # local mcp 보장 — bootstrap_agent 가 안 호출됐거나 marker 누락 케이스 보강 (idempotent).
+    if agent_id:
+        _register_local_mcp(workspace_dir, agent_id)
     claude_cmd = _build_claude_cmd(workspace_dir, mode, custom_opts)
     tmux_ok = _start_tmux_detached(tmux_session, workspace_dir, claude_cmd, mode)
     prompt_scheduled = False
