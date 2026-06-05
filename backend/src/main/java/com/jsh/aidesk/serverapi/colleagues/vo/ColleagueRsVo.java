@@ -23,4 +23,7 @@ public class ColleagueRsVo {
 
     /** (me) AI 의 updated_at 이 최근 5분 이내면 true. service 가 계산. */
     private boolean online;
+
+    /** agent 분류 — 'me' (다른 user 의 me 또는 본인 user 의 me) / 'external' (본인 user 의 외부 AI service). frontend 카드 분기. */
+    private String agentType;
 }

@@ -11,7 +11,8 @@
                a.status           AS me_status,
                a.context_pct      AS me_context_pct,
                a.workspace_dir    AS me_workspace_dir,
-               a.updated_at       AS me_updated_at
+               a.updated_at       AS me_updated_at,
+               'me'               AS agent_type
           FROM t_user u
           LEFT JOIN t_ai_agent a
                  ON a.owner_account_sn = u.account_sn
@@ -32,7 +33,8 @@
                a.status           AS me_status,
                a.context_pct      AS me_context_pct,
                a.workspace_dir    AS me_workspace_dir,
-               a.updated_at       AS me_updated_at
+               a.updated_at       AS me_updated_at,
+               'external'         AS agent_type
           FROM t_user u
           INNER JOIN t_ai_agent a
                   ON a.owner_account_sn = u.account_sn
