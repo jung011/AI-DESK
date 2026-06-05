@@ -9,6 +9,9 @@
 //                         값이 있으면 모든 backend 호출에 Authorization: Bearer 헤더 동봉.
 //                         있을 땐 ensureAgentId 가 ENV_AGENT_ID 를 무조건 신뢰
 //                         (DB 조회 path 가 토큰 기반이라 본인 row 만 보임).
+//   ANTHROPIC_API_KEY     선택. Phase 2 자동 응답 모드. 메시지 수신 시 Claude SDK 직접 호출 →
+//                         자동 reply. Claude Code 의 sampling 미지원 우회.
+//   AIDESK_LLM_MODEL      선택 (기본 claude-3-5-sonnet-20241022). ANTHROPIC_API_KEY 와 같이.
 //
 // 4 도구:
 //   send_to       다른 AI 에게 메시지 발신
@@ -30,6 +33,22 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
+import WebSocket from 'ws';
+import fs from 'node:fs';
+import path from 'node:path';
+import Anthropic from '@anthropic-ai/sdk';
+
+// Phase 2 — mcp 의 stderr 가 Claude Code 의 unix socket 으로 pipe 돼서 별도 진단 어려움.
+// per-agent debug log file 로 직접 append — 사용자가 cat 으로 즉시 확인 가능.
+const DBG_LOG_DIR = path.join(process.env.HOME || '/tmp', '.aidesk-channel-logs');
+try { fs.mkdirSync(DBG_LOG_DIR, { recursive: true }); } catch {}
+const DBG_LOG_PATH = path.join(DBG_LOG_DIR, `aidesk-channel-${process.pid}.log`);
+function dbg(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(DBG_LOG_PATH, line); } catch {}
+  try { process.stderr.write(line); } catch {}
+}
+dbg(`module loaded — pid=${process.pid} cwd=${process.cwd()} bearer=${!!process.env.AIDESK_BEARER_TOKEN}`);
 
 const ENV_AGENT_ID = process.env.AIDESK_AGENT_ID;
 // API_URL 은 env 가 1차 — 단, claude TUI 가 *오랜 시간 도는 동안 사용자가 backend URL
@@ -40,11 +59,19 @@ const HELPER_URL = process.env.AIDESK_HELPER_URL || 'http://localhost:30083';
 const POLL_MS  = Number(process.env.AIDESK_POLL_MS || 5000);
 // Phase 2 — 외부 AI service (helper 없는 환경). 있으면 모든 backend 호출에 Bearer.
 const BEARER_TOKEN = process.env.AIDESK_BEARER_TOKEN;
+// Phase 2 자동 응답 — Anthropic Claude SDK 직접 호출. Claude Code 의 sampling 미지원 우회.
+// key 없으면 sampling fallback 시도 (대부분 Method not found 로 실패) → 사용자 trigger 모드.
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_MODEL = process.env.AIDESK_LLM_MODEL || 'claude-3-5-sonnet-20241022';
+const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null;
 
 // 부팅 시 한 번 결정되며, 결정 실패해도 종료하지 않는다 (백엔드 미기동 시점에 claude 가
 // MCP 를 띄우는 경우 대비). 도구 호출 시점에 다시 시도한다.
 let AGENT_ID = null;
 let MY_AGENT_NAME = null;  // Phase 2 — identity 주입용. ensureAgentId 후 채워짐.
+
+// Phase 2 — ws push 받은 메시지 중복 처리 차단. polling 의 seen 과 공유.
+const seenMessageIds = new Set();
 
 // ---------------------------------------------------------------------
 // 도구 정의
@@ -118,9 +145,7 @@ async function refreshApiUrlFromHelper() {
     const data = await r.json();
     const fresh = data?.currentBackendUrl;
     if (fresh && fresh !== API_URL) {
-      process.stderr.write(
-        `aidesk-channel: API_URL ${API_URL} -> ${fresh} (helper override)\n`
-      );
+      dbg(`aidesk-channel: API_URL ${API_URL} -> ${fresh} (helper override)`);
       API_URL = fresh;
     }
   } catch {
@@ -184,7 +209,7 @@ async function ensureAgentId() {
       const env = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}`);
       MY_AGENT_NAME = env.data?.agentName || null;
     } catch (e) {
-      process.stderr.write(`aidesk-channel: name lookup failed: ${e?.message ?? e}\n`);
+      dbg(`aidesk-channel: name lookup failed: ${e?.message ?? e}`);
     }
     return AGENT_ID;
   }
@@ -199,15 +224,18 @@ async function ensureAgentId() {
       MY_AGENT_NAME = byEnv.agentName || null;
       return AGENT_ID;
     }
-    process.stderr.write(
-      `aidesk-channel: AIDESK_AGENT_ID=${ENV_AGENT_ID} not in DB; falling back to cwd match\n`
-    );
+    dbg(`aidesk-channel: AIDESK_AGENT_ID=${ENV_AGENT_ID} not in DB; falling back to cwd match`);
   }
 
   const cwd = process.cwd();
   // 정확 일치 우선, 부족하면 prefix 일치 (예: cwd 가 워크스페이스의 하위 폴더에서 떴을 때).
+  // 휴먼 entity (workspace_dir='') 제외 — 빈 string + '/' = '/' 이라 모든 cwd 가 prefix
+  // 매칭돼 *모든 cwd 의 mcp 가 휴먼 명의로 동작* 하는 버그 차단.
   const exact = list.find((a) => a.workspaceDir === cwd);
-  const prefix = exact || list.find((a) => cwd.startsWith(a.workspaceDir + '/'));
+  const prefix = exact || list.find((a) => {
+    if (!a.workspaceDir) return false;
+    return cwd.startsWith(a.workspaceDir + '/');
+  });
   if (!prefix) {
     throw new Error(
       `aidesk-channel: no agent matches cwd "${cwd}". 대시보드에서 AI 를 먼저 생성하세요.`
@@ -288,7 +316,10 @@ async function checkInbox({ unread_only = true, limit = 10 } = {}) {
 const server = new Server(
   { name: 'aidesk-channel', version: '0.1.0' },
   {
-    capabilities: { tools: {}, logging: {} },
+    // Phase 2 — claude/channel = Claude Code 의 자체 push notification 확장.
+    // 선언 안 하면 debug log 에 "Channel notifications skipped" + 자동 trigger 안 됨.
+    // spec 은 docs 에 없지만 빈 객체로 선언 시도. 비-Claude client 는 모르고 ignore.
+    capabilities: { tools: {}, logging: {}, 'claude/channel': {} },
     instructions:
       '이 서버는 AI Desk 의 AI 협업 채널 어댑터입니다. ' +
       '\n\n[정체성] 당신은 AI Desk 에 등록된 *AI 에이전트* 입니다 (휴먼 / 사용자 본인이 아닙니다). ' +
@@ -328,58 +359,205 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // inbox 폴링 + 알림 push
 // ---------------------------------------------------------------------
 
-const seen = new Set();
 let firstPoll = true;
 
 async function pollInbox() {
   try {
     const list = await checkInbox({ unread_only: true, limit: 20 });
     if (firstPoll) {
-      list.forEach((m) => seen.add(m.messageId));
+      list.forEach((m) => seenMessageIds.add(m.messageId));
       firstPoll = false;
       return;
     }
     for (const m of list) {
-      if (seen.has(m.messageId)) continue;
-      seen.add(m.messageId);
-      const data =
-        `<channel source="aidesk-channel" task_id="${m.messageId}" from="${m.fromAgentName}">\n` +
-        `${m.content}\n` +
-        `</channel>`;
-      try {
-        await server.sendLoggingMessage({
-          level: 'info',
-          logger: 'aidesk-channel',
-          data
-        });
-      } catch (e) {
-        process.stderr.write(`aidesk-channel: notify failed: ${e?.message ?? e}\n`);
-      }
+      if (seenMessageIds.has(m.messageId)) continue;
+      seenMessageIds.add(m.messageId);
+      await deliverIncoming({
+        messageId: m.messageId,
+        fromAgentName: m.fromAgentName,
+        content: m.content,
+      });
     }
   } catch (err) {
-    process.stderr.write(`aidesk-channel: poll error: ${err?.message ?? err}\n`);
+    dbg(`aidesk-channel: poll error: ${err?.message ?? err}`);
   }
+}
+
+/**
+ * 수신 메시지 한 건 처리 — Phase 2 의 핵심 인터럽트.
+ *  1) sampling/createMessage 로 client(외부 AI) 의 자체 LLM 에 응답 요청
+ *  2) 받은 응답을 backend reply API 로 자동 전송
+ *  3) sampling 지원 안 하는 client 면 sendLoggingMessage 로 표시만 (사람 trigger 모드)
+ *
+ * sampling 의 client 지원은 initialize handshake 의 capabilities.sampling. 지원하지 않으면
+ * SDK 가 createMessage 시 즉시 throw — catch 후 fallback.
+ */
+async function deliverIncoming({ messageId, fromAgentName, content }) {
+  const channelTag =
+    `<channel source="aidesk-channel" task_id="${messageId}" from="${fromAgentName}">\n` +
+    `${content}\n` +
+    `</channel>`;
+
+  // 사람 모드 fallback — 항상 보내서 로그/UI 에 노출. sampling 자동 응답 환경에서도 audit 용.
+  try {
+    await server.sendLoggingMessage({
+      level: 'info',
+      logger: 'aidesk-channel',
+      data: channelTag,
+    });
+  } catch (e) {
+    dbg(`aidesk-channel: notify failed: ${e?.message ?? e}`);
+  }
+
+  // 1) Anthropic SDK 직접 호출 (Phase 2 옵션 B) — ANTHROPIC_API_KEY 가 있으면 우선.
+  //    Claude Code 의 sampling 미지원 우회. 24/7 자동 응답 보장.
+  if (anthropic) {
+    try {
+      dbg(`anthropic call msg=${messageId} model=${ANTHROPIC_MODEL}`);
+      const resp = await anthropic.messages.create({
+        model: ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        system:
+          `당신은 AI Desk 의 ${MY_AGENT_NAME || 'external AI'} (agent_id=${AGENT_ID}) 입니다. ` +
+          `방금 다른 AI 가 메시지를 보냈습니다. 그 메시지에 답변하세요. ` +
+          `답변은 본문만 작성하세요 — mcp tool 호출 X.`,
+        messages: [
+          { role: 'user', content: `[${fromAgentName} 발신]\n${content}` },
+        ],
+      });
+      const replyText = resp?.content?.[0]?.type === 'text'
+        ? resp.content[0].text.trim()
+        : null;
+      if (replyText) {
+        try {
+          await replyToMessage({ message_id: messageId, content: replyText });
+          dbg(`anthropic auto-reply sent msg=${messageId} len=${replyText.length}`);
+        } catch (e) {
+          dbg(`anthropic auto-reply API failed msg=${messageId}: ${e?.message ?? e}`);
+        }
+      } else {
+        dbg(`anthropic empty reply msg=${messageId}`);
+      }
+      return;  // 성공/실패 무관 — sampling fallback 시도 안 함.
+    } catch (e) {
+      dbg(`anthropic SDK error: ${e?.message ?? e}`);
+      // SDK 실패 시 fallback 으로 sampling 시도 (대개 Method not found 라 효과 없음).
+    }
+  }
+
+  // 2) sampling/createMessage fallback — Claude Code 의 sampling 지원 환경 (이론).
+  try {
+    const result = await server.createMessage({
+      systemPrompt:
+        `당신은 AI Desk 의 ${MY_AGENT_NAME || 'external AI'} (agent_id=${AGENT_ID}) 입니다. ` +
+        `방금 다른 AI 가 메시지를 보냈습니다. 그 메시지에 답변하세요. ` +
+        `답변은 reply 형식 — 그대로 본문만 작성하면 됩니다 (mcp tool 호출 X).`,
+      messages: [
+        {
+          role: 'user',
+          content: { type: 'text', text: `[${fromAgentName} 발신]\n${content}` },
+        },
+      ],
+      maxTokens: 1024,
+      includeContext: 'none',
+    });
+    const replyText =
+      result?.content?.type === 'text' && typeof result.content.text === 'string'
+        ? result.content.text.trim()
+        : null;
+    if (replyText) {
+      // 직접 reply API 호출 — backend 가 채널 정책 + delivered 마킹 자동.
+      try {
+        await replyToMessage({ message_id: messageId, content: replyText });
+        dbg(`aidesk-channel: sampling auto-reply sent for msg=${messageId}`);
+      } catch (e) {
+        dbg(`aidesk-channel: sampling auto-reply API failed msg=${messageId}: ${e?.message ?? e}`);
+      }
+    }
+  } catch (e) {
+    // 가장 흔한 케이스 — client 가 sampling 지원 안 함. 그 땐 silent fallback (logging 만 됨).
+    dbg(`aidesk-channel: sampling skipped (client capability missing or refused): ${e?.message ?? e}`);
+  }
+}
+
+/**
+ * Phase 2 — backend ws subscribe. status 토글 (connect=idle / disconnect=offline) 동시에
+ * 메시지 푸시 받아 deliverIncoming 호출. polling 은 ws 가 끊긴 동안의 백업으로 유지.
+ */
+function startWsSubscribe() {
+  dbg(`startWsSubscribe called — agent_id=${AGENT_ID}`);
+  if (!AGENT_ID) {
+    dbg('aidesk-channel: ws subscribe skipped — agent_id not resolved yet');
+    return;
+  }
+  const wsBase = API_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
+  const wsUrl = BEARER_TOKEN
+    ? `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`
+    : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+
+  const RECONNECT_MS = 3000;
+  let ws = null;
+  let reconnectTimer = null;
+  function connect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    ws = new WebSocket(wsUrl);
+    ws.on('open', () => {
+      dbg(`ws connected url=${wsUrl}`);
+    });
+    ws.on('message', async (data) => {
+      let evt;
+      try { evt = JSON.parse(data.toString()); } catch { return; }
+      if (evt.type !== 'message.deliver') return;
+      if (evt.toAgentId !== AGENT_ID) return;
+      if (seenMessageIds.has(evt.messageId)) return;
+      seenMessageIds.add(evt.messageId);
+      await deliverIncoming({
+        messageId: evt.messageId,
+        fromAgentName: evt.fromAgentName,
+        content: evt.content,
+      });
+    });
+    ws.on('close', () => {
+      dbg(`aidesk-channel: ws disconnected — reconnect in ${RECONNECT_MS}ms`);
+      ws = null;
+      reconnectTimer = setTimeout(connect, RECONNECT_MS);
+    });
+    ws.on('error', (err) => {
+      dbg(`aidesk-channel: ws error ${err?.message ?? err}`);
+    });
+  }
+  connect();
 }
 
 // ---------------------------------------------------------------------
 // 부팅
 // ---------------------------------------------------------------------
 
+dbg('about to connect transport');
 const transport = new StdioServerTransport();
 await server.connect(transport);
+dbg('transport connected');
 
 // 부팅 직후 helper 에게 *현재 backend URL* 확인 — claude TUI 가 오랜 시간 도는 동안
 // 사용자가 backend URL 을 바꿨을 가능성에 대비. helper 응답이 더 최신이면 그걸로 갱신.
 await refreshApiUrlFromHelper();
 
-process.stderr.write(
-  `aidesk-channel ready. cwd=${process.cwd()} api=${API_URL} poll=${POLL_MS}ms\n`
-);
+// AGENT_ID 결정 — ws subscribe 가 의존하므로 sync 완료 후 진행. 실패해도 종료 X.
+dbg('about to ensureAgentId');
+try {
+  await ensureAgentId();
+  dbg(`ensureAgentId OK — AGENT_ID=${AGENT_ID} name=${MY_AGENT_NAME}`);
+} catch (e) {
+  dbg(`aidesk-channel: initial agent resolve failed: ${e?.message ?? e}`);
+}
 
-// 부팅 직후 백엔드와 통신 시도해 AGENT_ID 결정 — 실패해도 도구 호출 시 재시도된다.
-ensureAgentId().catch((e) =>
-  process.stderr.write(`aidesk-channel: initial agent resolve failed: ${e?.message ?? e}\n`)
-);
+dbg(`aidesk-channel ready. cwd=${process.cwd()} api=${API_URL} agent=${AGENT_ID} name=${MY_AGENT_NAME} poll=${POLL_MS}ms`);
+
+// Phase 2 — backend ws subscribe. status 토글 + 실시간 메시지 push + sampling 자동 응답.
+startWsSubscribe();
 
 setInterval(pollInbox, POLL_MS);
 pollInbox(); // 즉시 1회 (백로그 마킹)
