@@ -13,6 +13,8 @@ export interface ColleagueItem {
   meWorkspaceDir: string | null;
   meUpdatedAt: string | null;
   online: boolean;
+  /** 'me' (다른 user 의 me 또는 본인 user 의 me) / 'external' (본인 user 의 외부 AI service). 카드 분기. */
+  agentType?: 'me' | 'external' | null;
 }
 
 export interface ColleagueListRs {

@@ -2,12 +2,17 @@
   <section class="colleague-section">
     <div class="colleague-head">
       <h3 class="colleague-title">사내 동료 AI</h3>
-      <span class="colleague-summary">
-        <span class="online-dot online" /> 온라인 {{ onlineCount }}
-        <span class="colleague-sep">·</span>
-        전체 {{ colleagues.list.value.length }}
-      </span>
+      <div class="colleague-head-right">
+        <span class="colleague-summary">
+          <span class="online-dot online" /> 온라인 {{ onlineCount }}
+          <span class="colleague-sep">·</span>
+          전체 {{ colleagues.list.value.length }}
+        </span>
+        <button class="ext-add-btn" @click="dialogOpen = true">+ 외부 AI</button>
+      </div>
     </div>
+
+    <ExternalAgentDialog v-model="dialogOpen" @created="onExternalCreated" />
 
     <div v-if="colleagues.list.value.length === 0" class="colleague-empty">
       가입한 사내 동료가 없습니다.
@@ -19,16 +24,31 @@
     <div v-else class="colleague-grid">
       <div
         v-for="c in sorted"
-        :key="c.accountSn"
+        :key="c.meAgentId ?? `acc-${c.accountSn}`"
         class="colleague-card"
-        :class="{ offline: !c.online, 'me-unset': !c.meAgentId }">
+        :class="{
+          offline: !c.online,
+          'me-unset': !c.meAgentId,
+          'external': c.agentType === 'external',
+        }">
         <span class="online-dot" :class="{ online: c.online }" />
         <div class="colleague-name">
-          {{ c.displayName || c.loginId }}
-          <span v-if="!c.meAgentId" class="me-unset-tag">(me) 미지정</span>
+          <template v-if="c.agentType === 'external'">
+            {{ c.meAgentName }}
+            <span class="external-tag">외부 AI</span>
+          </template>
+          <template v-else>
+            {{ c.displayName || c.loginId }}
+            <span v-if="!c.meAgentId" class="me-unset-tag">(me) 미지정</span>
+          </template>
         </div>
         <div class="colleague-meta">
-          {{ c.loginId }}
+          <template v-if="c.agentType === 'external'">
+            {{ c.loginId }} · {{ c.meStatus || 'offline' }}
+          </template>
+          <template v-else>
+            {{ c.loginId }}
+          </template>
         </div>
       </div>
     </div>
@@ -36,12 +56,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useColleagues } from '~/composables/useColleagues';
+import ExternalAgentDialog from './ExternalAgentDialog.vue';
 
 const colleagues = useColleagues();
 const POLL_INTERVAL_MS = 10_000;
 let timer: ReturnType<typeof setInterval> | null = null;
+
+const dialogOpen = ref(false);
+function onExternalCreated() {
+  colleagues.refresh();
+}
 
 onMounted(() => {
   colleagues.refresh();
@@ -80,6 +106,15 @@ const onlineCount = computed(() =>
   margin-bottom: 14px;
 }
 .colleague-title { font-size: 15px; font-weight: 700; color: #101010; }
+.colleague-head-right {
+  display: flex; align-items: center; gap: 12px;
+}
+.ext-add-btn {
+  font-size: 11px; padding: 4px 10px;
+  background: #fff; border: 1px solid #D4DCE4; border-radius: 4px;
+  color: #2D7FF9; font-weight: 600; cursor: pointer;
+}
+.ext-add-btn:hover { background: #F2F8FE; border-color: #B6D7F9; }
 .colleague-summary {
   font-size: 12px; color: #666;
   display: inline-flex; align-items: center; gap: 6px;
@@ -129,5 +164,19 @@ const onlineCount = computed(() =>
 }
 .colleague-meta {
   font-size: 11px; color: #888;
+}
+
+/* 외부 AI 카드 — service 형태라 다른 색상 / 배지로 구분. */
+.colleague-card.external {
+  border-color: #B6D7F9;
+  background: #F2F8FE;
+}
+.colleague-card.external.offline {
+  background: #F4F8FC;
+}
+.external-tag {
+  font-size: 10px; font-weight: 600; color: #1F6FCE;
+  background: #DEEDFD; padding: 1px 6px; border-radius: 3px;
+  margin-left: 6px;
 }
 </style>

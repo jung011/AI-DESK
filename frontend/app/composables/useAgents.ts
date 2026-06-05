@@ -41,7 +41,11 @@ export function useAgents(initialStatus: string = 'all') {
 
       const env = await $api<ApiEnvelope<AgentListResponse>>('/api/agents', { params });
       // 휴먼(model='human') 은 사용자 본인 entity. 대시보드는 AI 만 보여주므로 제외.
-      list.value = (env.data.list ?? []).filter(a => a.model !== 'human');
+      // 외부 AI (type='external') 는 helper-환경이 아니라서 internal 카드 grid 가 아닌
+      // 사내 동료 섹션에 표시. 메인 그리드에선 제외.
+      list.value = (env.data.list ?? [])
+        .filter(a => a.model !== 'human')
+        .filter(a => a.type !== 'external');
       summary.value = env.data.summary ?? { total: 0, active: 0, waiting: 0, idle: 0, error: 0 };
       error.value = null;
     } catch (e) {

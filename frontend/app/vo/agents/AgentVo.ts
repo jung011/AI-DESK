@@ -5,8 +5,16 @@
 
 export type AgentStatus = 'active' | 'idle' | 'waiting' | 'error';
 
-/** channel/channel_backend.md §4 의 agent type 분류. */
-export type AgentType = 'self' | 'me' | 'internal' | 'human' | 'colleague';
+/**
+ * channel/channel_backend.md §4 의 agent type 분류.
+ * - internal: 본인 user 의 helper-동작 환경의 AI
+ * - me:       본인 user 의 (me) AI (helper)
+ * - human:    본인 user 의 휴먼 entity
+ * - self:     발신자 자신
+ * - colleague: 다른 user 의 (me) AI
+ * - external: 본인 user 의 외부 AI service (Phase 2)
+ */
+export type AgentType = 'self' | 'me' | 'internal' | 'human' | 'colleague' | 'external';
 
 export interface AgentItem {
   agentId: string;
