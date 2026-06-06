@@ -107,7 +107,20 @@ function callLocalClaude(systemPrompt, userMsg) {
   });
 }
 
-/** reply API 호출. */
+/**
+ * reply API 호출 + delivery 추적.
+ *
+ * backend 는 POST /api/messages INSERT 직후 status='sent' 를 리턴하고
+ * helper SSE last-mile 은 virtual thread 로 비동기 진행. 정상 흐름이면 1-2초 안
+ * status='delivered'/'replied' + deliveredAt 채워짐.
+ *
+ * 외부 AI 의 reply 가 recipient 까지 도달 못 한 경우 (recipient 종료, tmux dead,
+ * helper SSE 끊김 등) 백엔드는 sent 그대로 두기만 한다 — sender 측에 자동 push 없음.
+ * 1.5s 후 단건 재조회로 deliveredAt 채워졌는지 확인해 log warning 으로 외부 운영자에게 신호.
+ *
+ * 같은 패턴 reference = aidesk-channel mcp 의 sendTo, AI Desk 의 다른 외부 AI 통합에서도
+ * 동일하게 적용 권장 (외부 AI 통합 spec — [[karangi-chatbot-external-reference]]).
+ */
 async function sendReply(replyToMessageId, fromAgentId, content) {
   const res = await fetch(`${HUB_URL.replace(/\/$/, '')}/api/messages`, {
     method: 'POST',
@@ -124,7 +137,32 @@ async function sendReply(replyToMessageId, fromAgentId, content) {
   });
   const text = await res.text();
   console.log(`[bot-claude] reply ${res.status} to=${fromAgentId} body=${text.slice(0, 80)}`);
-  return res.ok;
+  if (!res.ok) return false;
+
+  // delivery 추적 — 1.5s 후 단건 재조회. status=sent + deliveredAt null 이면 미전달 신호.
+  try {
+    const env = JSON.parse(text);
+    const msgId = env?.data?.messageId;
+    if (env?.data?.status === 'sent' && msgId) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const checkRes = await fetch(
+        `${HUB_URL.replace(/\/$/, '')}/api/messages/${encodeURIComponent(msgId)}`,
+        { headers: { Authorization: `Bearer ${TOKEN}` } }
+      );
+      if (checkRes.ok) {
+        const after = (await checkRes.json())?.data;
+        if (after?.status === 'sent' && !after?.deliveredAt) {
+          console.warn(
+            `[bot-claude] ⚠ reply msg=${msgId} 1.5s 후에도 status=sent + deliveredAt null — recipient 도달 미확인 (last-mile fail 가능성)`
+          );
+        }
+      }
+    }
+  } catch {
+    // 추적 실패는 무시 — 본 reply 자체는 200 OK
+  }
+
+  return true;
 }
 
 /** 메시지 1건 처리 — LLM 호출 + reply. */
