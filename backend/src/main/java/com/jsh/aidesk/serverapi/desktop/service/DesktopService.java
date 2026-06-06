@@ -1,8 +1,10 @@
 package com.jsh.aidesk.serverapi.desktop.service;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -10,6 +12,7 @@ import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 import com.jsh.aidesk.serverapi.desktop.vo.DesktopLocalInfoRqVo;
 import com.jsh.aidesk.serverapi.desktop.vo.DesktopLocalInfoRsVo;
+import com.jsh.aidesk.serverapi.desktop.vo.TmuxSessionItemRqVo;
 import com.jsh.aidesk.serverapi.desktop.vo.WorkspaceItemRqVo;
 
 import lombok.RequiredArgsConstructor;
@@ -50,6 +53,17 @@ public class DesktopService {
             }
         }
 
+        // 보고된 tmux session name set — agent.tmuxSession 이 여기 없으면 last-mile 불가 → status='offline' 강제.
+        // helper scan_workspaces 가 jsonl mtime 만으로 status 추정해서 *tmux dead 인데 active* false positive 가 발생.
+        // tmuxSessions 도 같이 보내오는 reporter payload 이미 있으니, 그 list 로 fact-check.
+        List<TmuxSessionItemRqVo> tmuxSessions = req.getTmuxSessions();
+        Set<String> reportedTmuxNames = new HashSet<>();
+        if (tmuxSessions != null) {
+            for (TmuxSessionItemRqVo t : tmuxSessions) {
+                if (t.getName() != null) reportedTmuxNames.add(t.getName());
+            }
+        }
+
         int matched = 0;
         int updated = 0;
         for (WorkspaceItemRqVo w : workspaces) {
@@ -57,11 +71,18 @@ public class DesktopService {
             AgentVo a = agentByWs.get(w.getWorkspaceDir());
             if (a == null) continue;
             matched++;
-            if (!w.getStatus().equals(a.getStatus())) {
-                agentMapper.updateStatusFromWatcher(a.getAgentId(), w.getStatus(), a.getContextPct());
+            // tmux fact-check — agent.tmuxSession 이 보고된 list 에 없으면 helper 가 active 라 해도 offline 강제.
+            // helper-pkg payload (bot-adapter 등) 가 spawn 되어 ws 만 살아있는 case 도 잡힘.
+            String effectiveStatus = w.getStatus();
+            if (a.getTmuxSession() != null && !a.getTmuxSession().isBlank()
+                    && !reportedTmuxNames.contains(a.getTmuxSession())) {
+                effectiveStatus = "offline";
+            }
+            if (!effectiveStatus.equals(a.getStatus())) {
+                agentMapper.updateStatusFromWatcher(a.getAgentId(), effectiveStatus, a.getContextPct());
                 updated++;
                 log.debug("desktop: agent={} status {} -> {} (from Helper)",
-                        a.getAgentName(), a.getStatus(), w.getStatus());
+                        a.getAgentName(), a.getStatus(), effectiveStatus);
             } else {
                 // status 변화가 없어도 *helper 가 살아있다는 신호* 로 updated_at 만 touch.
                 // ColleagueService 의 online window 판정이 updated_at 만 보기 때문.
