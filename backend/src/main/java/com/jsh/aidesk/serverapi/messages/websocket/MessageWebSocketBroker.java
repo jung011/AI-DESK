@@ -69,6 +69,24 @@ public class MessageWebSocketBroker {
     }
 
     /**
+     * 특정 agent_id 의 활성 ws session 개수.
+     * external AI 봇 daemon 이 ws subscribe 했는지 판단할 때 사용 — count=0 이면
+     * 메시지 보내도 봇이 못 받는다 (지금 ws disconnect 또는 daemon dead).
+     * MessageService 가 외부 AI recipient 에게 markDelivered 결정 시 참조.
+     */
+    public int countSessionsForAgent(String agentId) {
+        if (agentId == null || agentId.isBlank()) return 0;
+        int n = 0;
+        for (Set<WebSocketSession> set : sessionsByAccount.values()) {
+            for (WebSocketSession s : set) {
+                String sa = (String) s.getAttributes().get(MessageWebSocketHandler.ATTR_AGENT_ID);
+                if (agentId.equals(sa) && s.isOpen()) n++;
+            }
+        }
+        return n;
+    }
+
+    /**
      * 특정 agent_id 로 연결된 ws session 들에 agent.deleted event 를 push 한 뒤 close.
      * external AI 의 bot daemon 또는 internal bot-adapter 가 *backend agent 삭제 시* 자동 종료
      * 하도록 신호. 봇 측은 event 또는 ws close 를 자가 종료 trigger 로 사용.

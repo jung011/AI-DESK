@@ -165,12 +165,25 @@ public class MessageService {
         publishToFrontend(entity, from, to);
 
         if (skipHelperLastMile) {
-            // 휴먼 / 외부 AI: helper SSE last-mile 의미 없음 → 즉시 delivered 마킹.
-            // 채팅 UI 폴링 (휴먼) 또는 mcp pollInbox (external) 가 가져감.
-            messageMapper.markDelivered(messageId);
-            log.info("[message-deliver-skip] to={}({}) type={} — marked delivered immediately",
-                    to.getAgentName(), to.getAgentId(),
-                    toIsHuman ? "human" : "external");
+            // 휴먼 = 채팅 UI 폴링이 가져감 → 즉시 delivered.
+            // 외부 AI = 봇 daemon 의 ws subscriber 활성도 확인 후 결정. 봇이 ws 끊긴 상태면
+            // 메시지 도달 불가 → status='sent' 그대로 두고 sender 측 (mcp sendTo / bot reply)
+            // 의 1.5s 재조회 패턴이 미전달 신호로 감지하게 한다.
+            if (toIsHuman) {
+                messageMapper.markDelivered(messageId);
+                log.info("[message-deliver-skip] to={}({}) type=human — marked delivered immediately",
+                        to.getAgentName(), to.getAgentId());
+            } else {
+                int subs = wsBroker.countSessionsForAgent(to.getAgentId());
+                if (subs > 0) {
+                    messageMapper.markDelivered(messageId);
+                    log.info("[message-deliver-external] to={}({}) ws subscribers={} — marked delivered",
+                            to.getAgentName(), to.getAgentId(), subs);
+                } else {
+                    log.info("[message-deliver-external] to={}({}) ws subscribers=0 — keeping status='sent' (bot daemon offline)",
+                            to.getAgentName(), to.getAgentId());
+                }
+            }
         } else {
             final AgentVo fromAgent = from;
             final AgentVo toAgent = to;
