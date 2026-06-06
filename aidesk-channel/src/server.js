@@ -272,10 +272,59 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   }
   const me = await ensureAgentId();
   const toAgentId = await resolveAgentId(target_agent);
+
+  // [송신 전] recipient status 확인 — offline/error 면 warning 동봉. backend retry-on-reconnect
+  // 부재로 (status=sent 무한 대기) 발생하는 무응답 silence 를 caller LLM 이 즉시 인지하게.
+  let preWarning = null;
+  try {
+    const probe = await api(`/api/agents/${encodeURIComponent(toAgentId)}`);
+    const s = probe.data?.status;
+    const name = probe.data?.agentName || target_agent;
+    if (s === 'offline' || s === 'error') {
+      preWarning = `recipient(${name}) status=${s} — 미전달 가능성 높음. retry-on-reconnect 없어 recipient 활성화돼도 자동 catchup 안 됨.`;
+    }
+  } catch {
+    // status fetch 실패는 무시 (송신 자체 진행)
+  }
+
   const body = { fromAgentId: me, toAgentId, content };
   if (reply_to_message_id) body.replyToMessageId = reply_to_message_id;
   const env = await api('/api/messages', { method: 'POST', body: JSON.stringify(body) });
-  return env.data;
+  const message = env.data;
+
+  // [송신 후] backend 는 INSERT 직후 status='sent' 리턴 + virtual thread 로 helper SSE 비동기 push.
+  // 정상 흐름이면 1-2초 안에 status='delivered'/'replied' + deliveredAt 채워짐.
+  // false-positive warning 회피 위해 'sent' 일 땐 1.5s 후 단건 재조회 후 판단.
+  let finalStatus = message?.status;
+  let deliveredAt = message?.deliveredAt;
+  let errorReason = message?.errorReason;
+  if (finalStatus === 'sent' && message?.messageId) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const check = await api(`/api/messages/${encodeURIComponent(message.messageId)}`);
+      const after = check.data;
+      if (after) {
+        finalStatus = after.status ?? finalStatus;
+        deliveredAt = after.deliveredAt ?? deliveredAt;
+        errorReason = after.errorReason ?? errorReason;
+      }
+    } catch {
+      // 재조회 실패는 무시 — original status 그대로
+    }
+  }
+
+  let postWarning = null;
+  if (finalStatus === 'sent' && !deliveredAt) {
+    postWarning = '1.5s 후에도 status=sent + deliveredAt null — recipient 도달 미확인. last-mile 실패 가능성. 사용자 확인 필요.';
+  } else if (finalStatus === 'failed') {
+    postWarning = `status=failed${errorReason ? ' — ' + errorReason : ''}`;
+  }
+
+  const result = { ...message, status: finalStatus, deliveredAt, errorReason };
+  if (preWarning || postWarning) {
+    result._warning = [preWarning, postWarning].filter(Boolean).join(' / ');
+  }
+  return result;
 }
 
 async function replyToMessage({ message_id, content }) {

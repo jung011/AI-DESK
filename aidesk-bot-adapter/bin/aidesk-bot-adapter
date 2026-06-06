@@ -131,6 +131,7 @@ function connect() {
   });
 
   ws.on('close', (code, reason) => {
+    if (tmuxDead) return;
     console.warn(`[bot-adapter] disconnected code=${code} reason=${reason || '(none)'} — reconnecting in ${RECONNECT_DELAY_MS}ms`);
     ws = null;
     reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
@@ -145,6 +146,33 @@ setInterval(() => {
   const state = ws ? ws.readyState : 'no-socket';
   console.log(`[bot-adapter] heartbeat state=${state}`);
 }, HEARTBEAT_INTERVAL_MS);
+
+// tmux 활성도 체크 polling — tmux session 죽었으면 ws close + 자가 종료.
+// backend 의 MessageWebSocketHandler.afterConnectionClosed 가 ws close 감지하면
+// agent.status 를 'offline' 으로 즉시 update → sender 측에 정확한 신호 전달.
+// 사용자가 외부터미널 다시 열면 helper 의 ensure_bot_adapter 가 새 bot-adapter spawn.
+const TMUX_CHECK_INTERVAL_MS = 30000;
+let tmuxDead = false;
+async function checkTmuxAlive() {
+  try {
+    await execFileP('tmux', ['has-session', '-t', TMUX_SESSION]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+setInterval(async () => {
+  if (tmuxDead) return;
+  const alive = await checkTmuxAlive();
+  if (!alive) {
+    tmuxDead = true;
+    console.log(`[bot-adapter] tmux session dead — closing ws + exiting (session=${TMUX_SESSION})`);
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (ws) { try { ws.close(); } catch { /* noop */ } }
+    // ws close event 가 backend 한테 도달할 시간을 짧게 두고 exit.
+    setTimeout(() => process.exit(0), 800);
+  }
+}, TMUX_CHECK_INTERVAL_MS);
 
 function shutdown(signal) {
   console.log(`[bot-adapter] shutdown signal=${signal}`);
