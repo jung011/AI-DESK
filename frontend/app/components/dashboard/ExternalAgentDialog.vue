@@ -39,14 +39,17 @@
         <label class="ext-modal-label">
           <span>Agent ID</span>
           <input class="ext-modal-input mono" :value="created?.agentId" readonly>
+          <div class="ext-modal-actions">
+            <button class="ext-btn" @click="copyAgentId">{{ idCopied ? '복사됨!' : 'Agent ID 복사' }}</button>
+          </div>
         </label>
         <label class="ext-modal-label">
           <span>Token</span>
           <input class="ext-modal-input mono" :value="created?.token" readonly>
+          <div class="ext-modal-actions">
+            <button class="ext-btn" @click="copyToken">{{ copied ? '복사됨!' : '토큰 복사' }}</button>
+          </div>
         </label>
-        <div class="ext-modal-actions">
-          <button class="ext-btn" @click="copyToken">{{ copied ? '복사됨!' : '토큰 복사' }}</button>
-        </div>
         <footer class="ext-modal-foot">
           <button class="ext-btn primary" @click="onClose">완료</button>
         </footer>
@@ -77,6 +80,7 @@ const busy = ref(false);
 const errorMsg = ref<string | null>(null);
 const created = ref<ExternalAgentTokenRs | null>(null);
 const copied = ref(false);
+const idCopied = ref(false);
 const nameInput = ref<HTMLInputElement | null>(null);
 
 watch(() => props.modelValue, (open) => {
@@ -87,6 +91,7 @@ watch(() => props.modelValue, (open) => {
     errorMsg.value = null;
     created.value = null;
     copied.value = false;
+    idCopied.value = false;
     nextTick(() => nameInput.value?.focus());
   }
 });
@@ -112,14 +117,48 @@ async function submit() {
   }
 }
 
+// navigator.clipboard 는 secure context (https/localhost) 에서만 동작.
+// 사설 도메인 + HTTP 환경 (aidesk.kaflix.internal) 에선 fail → execCommand fallback.
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (window.isSecureContext && navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fallthrough */
+  }
+  // Fallback — deprecated 지만 HTTP context 에서도 동작.
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(ta);
+  }
+}
+
 async function copyToken() {
   if (!created.value?.token) return;
-  try {
-    await navigator.clipboard.writeText(created.value.token);
+  if (await copyText(created.value.token)) {
     copied.value = true;
     setTimeout(() => { copied.value = false; }, 2000);
-  } catch {
-    /* clipboard 거부 — fallback 으로 input select */
+  }
+}
+
+async function copyAgentId() {
+  if (!created.value?.agentId) return;
+  if (await copyText(created.value.agentId)) {
+    idCopied.value = true;
+    setTimeout(() => { idCopied.value = false; }, 2000);
   }
 }
 
