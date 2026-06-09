@@ -39,7 +39,7 @@ function statusClass(s: AgentStatus): string {
   return s;
 }
 function statusLabel(s: AgentStatus): string {
-  return { active: '작업중', waiting: '응답 대기', idle: '대기중', error: '오류' }[s] ?? s;
+  return { active: '작업중', waiting: '응답 대기', idle: '대기중', offline: '오프라인', error: '오류' }[s] ?? s;
 }
 function avatar(s: AgentStatus): string {
   return { active: '🤖', waiting: '🙋', idle: '📝', error: '⚠️' }[s] ?? '📝';

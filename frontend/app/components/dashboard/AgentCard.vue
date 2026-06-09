@@ -212,29 +212,33 @@ const statusClass = computed(() => ({
   active: 'working',
   waiting: 'waiting',
   idle: 'idle',
+  offline: 'offline',
   error: 'error'
-}[props.agent.status] ?? 'working'));
+}[props.agent.status] ?? 'idle'));
 
 const statusLabel = computed(() => ({
   active: '작업중',
   waiting: '응답 대기',
   idle: '대기중',
+  offline: '오프라인',
   error: '오류'
-}[props.agent.status] ?? '작업중'));
+}[props.agent.status] ?? '대기중'));
 
 const badgeClass = computed(() => ({
   active: 'type_v5',
   waiting: 'type_v10',
   idle: 'type_v8',
+  offline: 'type_v8',
   error: 'type_v11'
-}[props.agent.status] ?? 'type_v5'));
+}[props.agent.status] ?? 'type_v8'));
 
 const avatarEmoji = computed(() => ({
   active: '🤖',
   waiting: '🙋',
   idle: '📝',
+  offline: '💤',
   error: '⚠️'
-}[props.agent.status] ?? '🤖'));
+}[props.agent.status] ?? '📝'));
 
 const metaLabel = computed(() => ({
   active: '시작',
