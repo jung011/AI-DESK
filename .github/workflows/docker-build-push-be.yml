@@ -1,8 +1,5 @@
 name: Backend Docker Build and Push
 
-# secrets.DOCKER_PASSWORD 미등록 상태에서도 흐름(=ancestor 검증 + tag 추출 + image build)
-# 자체는 검증할 수 있도록 step 별로 조건 분기. secret 등록되면 push + values.yaml 갱신 + master 자동 push 까지 활성.
-
 on:
   push:
     tags:
@@ -39,39 +36,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # secret 등록 안 되어있으면 login 자체를 skip. 등록되면 push 까지 진행.
       - name: Log in to Docker Hub
-        if: ${{ secrets.DOCKER_PASSWORD != '' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # secret 등록되면 multi-arch build + push. 안 됐으면 build only (= validation 만).
       - name: Build and push multi-arch backend image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ secrets.DOCKER_PASSWORD != '' }}
+          push: true
           tags: jsh125/aidesk-backend:${{ env.IMAGE_TAG }}
 
       - name: Install yq
-        if: ${{ secrets.DOCKER_PASSWORD != '' }}
         run: |
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-      # values.yaml 갱신 + master push 도 secret 있을 때만 — push 안 된 image 로 ArgoCD 가
-      # ImagePullBackOff 빠지는 것을 차단.
       - name: Update backend image tag in Helm/values.yaml
-        if: ${{ secrets.DOCKER_PASSWORD != '' }}
         run: |
           yq -i '.backend.image.tag = "${{ env.IMAGE_TAG }}"' Helm/values.yaml
 
       - name: Commit and Push updated values.yaml
-        if: ${{ secrets.DOCKER_PASSWORD != '' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
