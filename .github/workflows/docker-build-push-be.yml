@@ -50,6 +50,10 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: jsh125/aidesk-backend:${{ env.IMAGE_TAG }}
+          # GHA cache — Dockerfile 의 layer + BuildKit cache mount (gradle deps) 보존.
+          # 의존성 안 바뀐 build 는 application classes layer 만 재 build → 매우 빠름.
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
 
       - name: Install yq
         run: |

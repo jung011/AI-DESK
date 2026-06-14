@@ -51,6 +51,10 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: jsh125/aidesk-frontend:${{ env.IMAGE_TAG }}
+          # GHA cache — Dockerfile 의 npm install / nuxt build layer 보존.
+          # node_modules 안 바뀐 build 는 cache hit, 코드 변경 만 재 build.
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
 
       - name: Install yq
         run: |
