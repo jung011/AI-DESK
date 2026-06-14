@@ -77,7 +77,12 @@ def build_open_iterm_script(
         f'set sessionName to "{tmux_session}"\n'
         f'set wsQuoted to quoted form of "{dir_esc}"\n'
         f'set tabTitle to "{title_esc}"\n'
-        f'set shellCmd to "cd " & wsQuoted & " && tmux new-session -A -s " & sessionName & " \'{claude_cmd}\'; exit 0"\n'
+        # helper python 이 이미 detached 로 tmux session 을 생성해뒀으므로 iTerm 은
+        # attach 만 한다. 옛 패턴 (cd && tmux new-session -A -s ... 'claude') 은 raw zsh
+        # prompt 환경 차이 (continuum/resurrect, .tmux.conf 의 detach-on-destroy 등) 에
+        # 따라 명령이 그대로 raw text 로 출력되거나 stale 세션에 attach 만 되는 케이스가
+        # 있었음. attach 만 하면 환경 무관 동작.
+        f'set shellCmd to "tmux attach-session -t " & sessionName & "; exit 0"\n'
         'set clientTty to ""\n'
         'try\n'
         '  set clientTty to do shell script "tmux list-clients -t " & sessionName & " -F \'#{client_tty}\' 2>/dev/null | head -n 1"\n'

@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // Claude Code 의 PreCompact / PostCompact hook.
 //
+// 압축 사이클 *상태 마킹* 만 책임 — memory 정리 prompt 같은 LLM 자발성에
+// 의존하는 신호는 보내지 않음 (보장이 안 되는 영역).
+//
 // PreCompact (mode=pre):
 //   - 현재 workspace 의 AGENT_ID 추출 (~/.claude.json projects[cwd].mcpServers.*.env.AIDESK_AGENT_ID)
-//   - backend POST /api/agents/{id}/status { status: "compacting" } 호출
-//   - additionalContext 로 LLM 에게 "memory 정리 후 압축 진행" prompt inject
+//   - backend POST /api/agents/{id}/status { status: "compacting" }
+//     → dashboard 카드 '압축 중 💭' / mcp send_to preWarning trigger
 //
 // PostCompact (mode=post):
-//   - 12초 sleep (frontend 폴링 catch 보장)
-//   - 같은 endpoint 로 status='idle' 복구
-//   - additionalContext 로 "MEMORY.md 의 🚨 최우선 섹션 확인 후 진행" prompt inject
+//   - 12초 sleep (3초 frontend 폴링이 'compacting' 한 번이라도 catch 보장)
+//   - POST status='idle' 복구
 //
 // 사용:
 //   node aidesk-compact-hook.cjs pre   # PreCompact hook

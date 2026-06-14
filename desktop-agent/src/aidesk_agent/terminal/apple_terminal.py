@@ -22,7 +22,8 @@ def build_open_terminal_script(
         f'set sessionName to "{tmux_session}"\n'
         f'set wsQuoted to quoted form of "{dir_esc}"\n'
         f'set tabTitle to "{title_esc}"\n'
-        f'set shellCmd to "cd " & wsQuoted & " && tmux new-session -A -s " & sessionName & " \'{claude_cmd}\'; exit 0"\n'
+        # helper python 이 detached tmux session 미리 생성 — Terminal 은 attach 만.
+        f'set shellCmd to "tmux attach-session -t " & sessionName & "; exit 0"\n'
         'set termRunning to false\n'
         'try\n'
         '  do shell script "pgrep -x Terminal > /dev/null"\n'
