@@ -77,18 +77,15 @@ async function postStatus(agentId, status, hubUrl) {
   const hubUrl = findHubUrl();
 
   if (mode === 'pre') {
+    // 압축 시작 시점에 status='compacting' 으로 마킹.
+    // 다른 AI 가 send_to 시 preWarning 으로 응답 지연을 인지 + dashboard 카드에
+    // '압축 중 💭' 으로 표시. 메시지 자체는 tmux prompt buffer 에 큐 처리.
     if (agentId) await postStatus(agentId, 'compacting', hubUrl);
-    const ctx = '이번 사이클의 새 패턴, 결정사항, fix 들을 memory 파일에 정리해주세요. ' +
-                '정리 후 context 압축이 진행됩니다. backend status 는 compacting 으로 마킹됨 (송신자에게 응답 지연 안내).';
-    process.stdout.write(JSON.stringify({ additionalContext: ctx }) + '\n');
   } else {
-    // PostCompact — idle 복구 전 짧게 대기. 압축이 너무 빨리 끝나면
-    // frontend 폴링이 status=compacting 한 번도 못 잡고 지나가므로
-    // 시연/관찰을 위해 최소 12초 동안 'compacting' 유지 보장.
+    // PostCompact — idle 복구 전 짧게 대기. 압축이 너무 빨리 끝나면 frontend
+    // 폴링이 status=compacting 한 번도 못 잡고 지나가므로 최소 12초 'compacting' 유지.
     await new Promise(r => setTimeout(r, 12000));
     if (agentId) await postStatus(agentId, 'idle', hubUrl);
-    const ctx = '컨텍스트 압축 완료. MEMORY.md 의 🚨 최우선 섹션 확인 후 진행. backend status idle 로 복구.';
-    process.stdout.write(JSON.stringify({ additionalContext: ctx }) + '\n');
   }
   process.exit(0);
 })();
