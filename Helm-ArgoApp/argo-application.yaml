@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: aidesk-apps
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: ai-desk
+            path: Helm
+            repoURL: https://github.com/jung011/AI-DESK.git
+            targetRevision: master
+
+  template:
+    metadata:
+      name: '{{name}}'
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: '{{repoURL}}'
+        targetRevision: '{{targetRevision}}'
+        path: '{{path}}'
+        helm:
+          # values.yaml 이 chart 안 default 로 이미 사용. 별도 override 없음.
+          # 운영자가 환경별 override 필요 시 valueFiles 또는 parameters 추가.
+          releaseName: ai-desk
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: aidesk
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
