@@ -66,6 +66,10 @@ backend/gradle-app.setting
 hs_err_pid*
 replay_pid*
 
+# Gradle wrapper jar 는 *.jar 무시 패턴의 예외 — wrapper 가 동작하려면 반드시 commit.
+# GitHub Actions runner 같은 fresh clone 환경에선 이 파일 없으면 ./gradlew 가 distribution 다운로드도 못 함.
+!backend/gradle/wrapper/gradle-wrapper.jar
+
 # Spring Boot devtools / 로컬 추가
 backend/HELP.md.bak
 
