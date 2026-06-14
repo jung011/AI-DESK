@@ -85,11 +85,15 @@ frontend/.cache/
 frontend/dist/
 
 # Helper .pkg 산출물 — desktop-agent 빌드 결과물.
-# backend image build 시 backend/helper-pkg/ 로 cp 후 docker compose build.
-# git history 비대 방지로 .pkg 자체는 추적 안 함.
+# desktop-agent 의 빌드 중간/산출물은 추적 안 함 (커서다 PyInstaller 결과).
 desktop-agent/build-pkg/build/
 desktop-agent/build-pkg/dist/
-backend/helper-pkg/*.pkg
+
+# backend/helper-pkg/*.pkg = backend image 의 baked helper. GHA runner 에서
+# backend build 시 build context 에 포함되어야 /api/helper/download 가 정상.
+# 자주 갱신되진 않지만 binary 라 누적 시 history 부담 — 옵션 C (GH Release artifact) 로
+# 마이그 후보. 그 전까지는 negation 으로 추적.
+!backend/helper-pkg/*.pkg
 
 # 일반 Node 패키지 잔재물 (워크스페이스 어디서든)
 **/node_modules/
