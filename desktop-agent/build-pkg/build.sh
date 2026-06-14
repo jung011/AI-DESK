@@ -56,6 +56,7 @@ ln -sf "/usr/local/share/aidesk/helper-app/aidesk-helper" "$PAYLOAD/usr/local/bi
 
 cp "$DESKTOP_AGENT/scripts/aidesk-action-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 cp "$DESKTOP_AGENT/scripts/aidesk-prompt-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
+cp "$DESKTOP_AGENT/scripts/aidesk-compact-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 
 # aidesk-channel mcp 서버 — Node.js 패키지. helper 와 같이 묶어 배포하면
 # 신규 PC 마다 별도 배포 + ~/.claude.json 수동 편집 불필요. postinstall 이 자동 등록.

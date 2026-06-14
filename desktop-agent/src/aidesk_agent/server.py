@@ -33,6 +33,7 @@ from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter
 from .tmux import consumer_loop, scan_sessions
 from .watchdog import watchdog_loop
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
+from .claude.compact_hook import auto_install_on_startup as compact_hook_auto_install
 from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
 from .claude.usage import (
     auto_install_on_startup as usage_auto_install,
@@ -504,6 +505,9 @@ async def _start_background_tasks(app: web.Application) -> None:
     prompt_hook_auto_install()
     # Claude Code mutation 감사 훅 (Write/Edit/Bash/DB MCP) 자동 등록.
     action_hook_auto_install()
+    # Claude Code 자동 compact (PreCompact/PostCompact) 훅 자동 등록 —
+    # backend agent.status='compacting' set + memory 정리 prompt 자동 inject.
+    compact_hook_auto_install()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
