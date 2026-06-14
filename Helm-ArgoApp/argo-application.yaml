@@ -38,3 +38,14 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ApplyOutOfSyncOnly=true
+      # 매 sync 마다 helm template 가 secret.yaml 의 randAlphaNum 을 새로 평가해서
+      # jwt-secret-key 가 rotate → 사용자 로그아웃 발생. ArgoCD 가 *secret 의 jwt-secret-key
+      # 변경 자체를 비교 대상에서 제외* 해서 sync 가 그 키 안 건드림. db-password 등
+      # 다른 키는 그대로 비교/sync.
+      ignoreDifferences:
+        - group: ""
+          kind: Secret
+          name: aidesk
+          jsonPointers:
+            - /data/jwt-secret-key
+            - /stringData/jwt-secret-key
