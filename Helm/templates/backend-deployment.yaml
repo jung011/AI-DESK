@@ -7,8 +7,15 @@ metadata:
     app.kubernetes.io/component: backend
 spec:
   replicas: 1
+  # 무중단 롤링 업데이트 — 새 pod 가 readinessProbe 통과해 Ready 가 된 뒤에만 옛 pod 를 종료.
+  # maxSurge=1 → 잠깐 (수 초) replicas=2 가 됐다가 옛 pod 가 빠지면서 1 로 회귀.
+  # maxUnavailable=0 → 옛 pod 가 *항상 살아있는 상태* 라 service 가 끊기지 않음.
+  # 잠시 scheduler 가 2 replica 에서 동시 실행되지만 RetryScheduler 의 markDelivered 가 idempotent.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "ai-desk.selectorLabels" . | nindent 6 }}
