@@ -25,7 +25,9 @@ spec:
         helm:
           # values.yaml 이 chart 안 default 로 이미 사용. 별도 override 없음.
           # 운영자가 환경별 override 필요 시 valueFiles 또는 parameters 추가.
-          releaseName: ai-desk
+          # releaseName 은 우드 mac 의 현재 helm release 와 정합 ('aidesk').
+          # 다른 이름이면 takeover 시 resource 이름 변경 → downtime.
+          releaseName: aidesk
       destination:
         server: https://kubernetes.default.svc
         namespace: aidesk
