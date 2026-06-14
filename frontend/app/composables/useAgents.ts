@@ -55,7 +55,7 @@ export function useAgents(initialStatus: string = 'all') {
     }
   }
 
-  function startPolling(intervalMs: number = 10_000): void {
+  function startPolling(intervalMs: number = 3_000): void {
     void fetchAgents();
     if (timer === null) {
       timer = setInterval(fetchAgents, intervalMs);

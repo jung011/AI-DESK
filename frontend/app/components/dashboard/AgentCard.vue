@@ -213,6 +213,7 @@ const statusClass = computed(() => ({
   waiting: 'waiting',
   idle: 'idle',
   offline: 'offline',
+  compacting: 'waiting',
   error: 'error'
 }[props.agent.status] ?? 'idle'));
 
@@ -221,6 +222,7 @@ const statusLabel = computed(() => ({
   waiting: '응답 대기',
   idle: '대기중',
   offline: '오프라인',
+  compacting: '압축 중',
   error: '오류'
 }[props.agent.status] ?? '대기중'));
 
@@ -229,6 +231,7 @@ const badgeClass = computed(() => ({
   waiting: 'type_v10',
   idle: 'type_v8',
   offline: 'type_v8',
+  compacting: 'type_v10',
   error: 'type_v11'
 }[props.agent.status] ?? 'type_v8'));
 
@@ -237,6 +240,7 @@ const avatarEmoji = computed(() => ({
   waiting: '🙋',
   idle: '📝',
   offline: '💤',
+  compacting: '💭',
   error: '⚠️'
 }[props.agent.status] ?? '📝'));
 
