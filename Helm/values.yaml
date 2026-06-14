@@ -1,7 +1,7 @@
 backend:
   image:
     repository: jsh125/aidesk-backend
-    tag: "1.52-rc1"
+    tag: "1.52.2-rc1"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 30081
@@ -29,7 +29,6 @@ backend:
   cookieDomain: ".kaflix.internal"
   metaverseUrl: "http://metaverse.kaflix.internal/"
   allowedHosts: ".kaflix.internal"
-
 frontend:
   image:
     repository: jsh125/aidesk-frontend
@@ -44,17 +43,14 @@ frontend:
     limits:
       cpu: 250m
       memory: 128Mi
-
 database:
   host: host.docker.internal
   port: 5432
   name: aidesk
   username: postgres
   password: postgres
-
 auth:
   jwtSecretKey: ""
-
 service:
   backend:
     type: ClusterIP
@@ -62,7 +58,6 @@ service:
   frontend:
     type: ClusterIP
     port: 80
-
 ingress:
   enabled: true
   className: nginx
