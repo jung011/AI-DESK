@@ -1,0 +1,186 @@
+#!/usr/bin/env node
+/**
+ * AI Desk per-AI WebSocket bot adapter (PoC v1 Step B).
+ *
+ * 흐름:
+ *   helper 가 (me) workspace cold-start 시 자식 process 로 spawn
+ *   ↓
+ *   backend `/ws/messages?agentId=<UUID>` 구독
+ *   ↓
+ *   message.deliver 이벤트 수신 (단방향 push from backend)
+ *   ↓
+ *   evt.toAgentId === AGENT_ID 매칭 시:
+ *     1) tmux send-keys -l (header + content) → AI stdin
+ *     2) Enter (별도 keystroke)
+ *     3) ack POST → backend
+ *
+ * Helper sse_consumer 의 `_tmux_send` + `_ack_delivered` 와 동일 패턴 — render
+ * 포맷도 동일 (adesk_cli.md / TmuxLastMileAdapter 와 정합).
+ *
+ * Env:
+ *   AIDESK_AGENT_ID    (필수) — 본 봇이 담당할 t_ai_agent.agent_id
+ *   AIDESK_HUB_URL     (필수) — backend hub URL
+ *   AIDESK_TMUX_SESSION(필수) — 본 봇이 send-keys 할 tmux session 이름
+ *   AIDESK_BEARER_TOKEN(선택) — Phase 2 외부 AI service 용. 있으면 ws URL 의 ?token= 인증
+ *                              + ack POST 에 Authorization: Bearer 헤더 동봉.
+ *                              없으면 internal 모드 (?agentId= 인증).
+ */
+'use strict';
+
+const WebSocket = require('ws');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileP = promisify(execFile);
+
+const AGENT_ID = process.env.AIDESK_AGENT_ID;
+const HUB_URL = process.env.AIDESK_HUB_URL;
+const TMUX_SESSION = process.env.AIDESK_TMUX_SESSION;
+const BEARER_TOKEN = process.env.AIDESK_BEARER_TOKEN;
+
+if (!AGENT_ID || !HUB_URL || !TMUX_SESSION) {
+  console.error('[bot-adapter] required env missing: AIDESK_AGENT_ID, AIDESK_HUB_URL, AIDESK_TMUX_SESSION');
+  process.exit(2);
+}
+
+const wsBase = HUB_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
+// Phase 2: BEARER_TOKEN 있으면 외부 mode (?token=), 없으면 internal mode (?agentId=).
+const wsUrl = BEARER_TOKEN
+  ? `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`
+  : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+
+console.log(`[bot-adapter] starting agentId=${AGENT_ID} tmux=${TMUX_SESSION} mode=${BEARER_TOKEN ? 'external' : 'internal'}`);
+
+const RECONNECT_DELAY_MS = 3000;
+const HEARTBEAT_INTERVAL_MS = 60000;
+const ENTER_DELAY_MS = 200;
+
+let ws = null;
+let reconnectTimer = null;
+
+/**
+ * Helper sse_consumer 와 동일한 render — `[aidesk · FROM:... | MSG:...] content  ↳ 응답: ...`
+ * adesk_cli.md 의 TmuxLastMileAdapter 와 정합.
+ */
+function renderMessage(evt) {
+  return `[aidesk · FROM:${evt.fromAgentName || ''} | MSG:${evt.messageId || ''}] ${evt.content || ''}` +
+         `  ↳ 응답: adesk reply ${evt.messageId || ''} '<답변>'`;
+}
+
+/**
+ * `tmux send-keys -l` (literal) + delay + `Enter` — sse_consumer 와 같은 패턴.
+ * Claude TUI 가 bracketed-paste 로 Enter 를 흡수 안 하도록 분리 송신.
+ */
+async function tmuxSend(session, text) {
+  try {
+    await execFileP('tmux', ['send-keys', '-l', '-t', session, text]);
+    await new Promise(r => setTimeout(r, ENTER_DELAY_MS));
+    await execFileP('tmux', ['send-keys', '-t', session, 'Enter']);
+    return true;
+  } catch (e) {
+    console.warn('[bot-adapter] tmux send-keys failed:', e.message);
+    return false;
+  }
+}
+
+async function ackDelivered(messageId) {
+  try {
+    const headers = BEARER_TOKEN ? { 'Authorization': `Bearer ${BEARER_TOKEN}` } : {};
+    const res = await fetch(`${HUB_URL.replace(/\/$/, '')}/api/messages/${messageId}/ack`, {
+      method: 'POST',
+      headers,
+    });
+    console.log(`[bot-adapter] ack msg=${messageId} status=${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.warn(`[bot-adapter] ack failed msg=${messageId}: ${e.message}`);
+    return false;
+  }
+}
+
+function connect() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  ws = new WebSocket(wsUrl);
+
+  ws.on('open', () => {
+    console.log('[bot-adapter] connected');
+  });
+
+  ws.on('message', async (data) => {
+    let evt;
+    try {
+      evt = JSON.parse(data.toString());
+    } catch (e) {
+      console.warn('[bot-adapter] parse error:', e.message);
+      return;
+    }
+    if (evt.type !== 'message.deliver') {
+      return;
+    }
+    if (evt.toAgentId !== AGENT_ID) {
+      return;
+    }
+    const rendered = renderMessage(evt);
+    const sent = await tmuxSend(TMUX_SESSION, rendered);
+    console.log(`[bot-adapter] FOR-ME msg=${evt.messageId} from=${evt.fromAgentName} sent=${sent}`);
+    if (sent) {
+      await ackDelivered(evt.messageId);
+    }
+  });
+
+  ws.on('close', (code, reason) => {
+    if (tmuxDead) return;
+    console.warn(`[bot-adapter] disconnected code=${code} reason=${reason || '(none)'} — reconnecting in ${RECONNECT_DELAY_MS}ms`);
+    ws = null;
+    reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+  });
+
+  ws.on('error', (err) => {
+    console.warn('[bot-adapter] error:', err.message);
+  });
+}
+
+setInterval(() => {
+  const state = ws ? ws.readyState : 'no-socket';
+  console.log(`[bot-adapter] heartbeat state=${state}`);
+}, HEARTBEAT_INTERVAL_MS);
+
+// tmux 활성도 체크 polling — tmux session 죽었으면 ws close + 자가 종료.
+// backend 의 MessageWebSocketHandler.afterConnectionClosed 가 ws close 감지하면
+// agent.status 를 'offline' 으로 즉시 update → sender 측에 정확한 신호 전달.
+// 사용자가 외부터미널 다시 열면 helper 의 ensure_bot_adapter 가 새 bot-adapter spawn.
+const TMUX_CHECK_INTERVAL_MS = 30000;
+let tmuxDead = false;
+async function checkTmuxAlive() {
+  try {
+    await execFileP('tmux', ['has-session', '-t', TMUX_SESSION]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+setInterval(async () => {
+  if (tmuxDead) return;
+  const alive = await checkTmuxAlive();
+  if (!alive) {
+    tmuxDead = true;
+    console.log(`[bot-adapter] tmux session dead — closing ws + exiting (session=${TMUX_SESSION})`);
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (ws) { try { ws.close(); } catch { /* noop */ } }
+    // ws close event 가 backend 한테 도달할 시간을 짧게 두고 exit.
+    setTimeout(() => process.exit(0), 800);
+  }
+}, TMUX_CHECK_INTERVAL_MS);
+
+function shutdown(signal) {
+  console.log(`[bot-adapter] shutdown signal=${signal}`);
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (ws) try { ws.close(); } catch { /* noop */ }
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+connect();

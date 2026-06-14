@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  AI Desk Helper (desktop-agent) macOS LaunchAgent 템플릿.
+
+  목적: macOS 로그인 시 Helper 자동 시작 + 비정상 종료 시 자동 재시작.
+  Helper 가 켜지면 code-server 자동 spawn 까지 체인으로 동작한다.
+
+  설치 (사용자별, 한 번만):
+
+    AGENT_DIR=$(cd "$(dirname "$0")/.." && pwd)   # desktop-agent 절대경로
+    sed -e "s#{{HOME}}#$HOME#g" \
+        -e "s#{{AGENT_DIR}}#$AGENT_DIR#g" \
+        templates/com.aidesk.agent.plist \
+        > ~/Library/LaunchAgents/com.aidesk.agent.plist
+    launchctl load ~/Library/LaunchAgents/com.aidesk.agent.plist
+
+  상태 확인:
+    launchctl list | grep com.aidesk.agent
+    tail -f ~/Library/Logs/aidesk-agent.err
+
+  강제 재시작:
+    launchctl kickstart -k gui/$(id -u)/com.aidesk.agent
+
+  일시 정지 / 해제:
+    launchctl unload ~/Library/LaunchAgents/com.aidesk.agent.plist
+    launchctl load   ~/Library/LaunchAgents/com.aidesk.agent.plist
+
+  완전 제거:
+    launchctl unload ~/Library/LaunchAgents/com.aidesk.agent.plist
+    rm ~/Library/LaunchAgents/com.aidesk.agent.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aidesk.agent</string>
+
+  <!--
+    /bin/bash -lc 로 로그인 셸 PATH 를 로드한 뒤 uv 로 desktop-agent 기동.
+    uv 가 .venv 활성화 + Python 3.11 로 aidesk_agent 모듈 실행.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>exec {{HOME}}/.local/bin/uv run --directory {{AGENT_DIR}} python -m aidesk_agent</string>
+  </array>
+
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>{{HOME}}/Library/Logs/aidesk-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{HOME}}/Library/Logs/aidesk-agent.err</string>
+
+  <!-- launchd 가 띄울 때 PATH 가 비어있으면 brew/uv 못 찾는 케이스 회피. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{{HOME}}/.local/bin</string>
+  </dict>
+</dict>
+</plist>

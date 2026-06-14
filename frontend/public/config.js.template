@@ -1,0 +1,10 @@
+// 런타임 환경 변수를 SPA 에 주입하기 위한 placeholder 파일.
+// nginx entrypoint 가 envsubst 로 ${VAR} 들을 치환한 결과를 /config.js 로 서빙.
+// → image 한 번 빌드 후 deployment 의 env 만 바꿔서 URL 갱신 가능 (rebuild 불필요).
+//
+// allowedHosts: open-redirect whitelist — comma-separated suffix list (e.g. ".kaflix.internal").
+//   매칭은 hostname 의 subdomain endsWith 기반. env 비어있으면 모든 external redirect 차단 (안전 default).
+window.__APP_CONFIG__ = {
+  metaverseUrl: "${METAVERSE_URL}",
+  allowedHosts: "${ALLOWED_HOSTS}"
+};

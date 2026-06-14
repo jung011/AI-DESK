@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.jsh.aidesk.serverapi.general.login.mapper.LoginMapper">
+
+    <select id="selectAccountByLoginId"
+            resultType="com.jsh.aidesk.serverapi.general.login.vo.LoginVo">
+        SELECT account_sn,
+               login_id,
+               password,
+               display_name,
+               role,
+               last_login_dt,
+               created_at,
+               updated_at
+          FROM t_user
+         WHERE login_id = #{loginId, jdbcType=VARCHAR}
+    </select>
+
+    <select id="selectAccountByAccountSn"
+            resultType="com.jsh.aidesk.serverapi.general.login.vo.LoginVo">
+        SELECT account_sn,
+               login_id,
+               password,
+               display_name,
+               role,
+               last_login_dt,
+               created_at,
+               updated_at
+          FROM t_user
+         WHERE account_sn = #{accountSn, jdbcType=NUMERIC}
+    </select>
+
+    <select id="existsByLoginId" resultType="int">
+        SELECT COUNT(*) FROM t_user WHERE login_id = #{loginId, jdbcType=VARCHAR}
+    </select>
+
+    <update id="updateLastLoginDt">
+        UPDATE t_user
+           SET last_login_dt = NOW(),
+               updated_at    = NOW()
+         WHERE account_sn = #{accountSn, jdbcType=NUMERIC}
+    </update>
+
+    <insert id="insertAccount"
+            parameterType="com.jsh.aidesk.serverapi.general.login.vo.LoginVo"
+            useGeneratedKeys="true"
+            keyProperty="accountSn"
+            keyColumn="account_sn">
+        INSERT INTO t_user (
+            login_id, password, display_name, role
+        ) VALUES (
+            #{loginId, jdbcType=VARCHAR},
+            #{password, jdbcType=VARCHAR},
+            #{displayName, jdbcType=VARCHAR},
+            #{role, jdbcType=VARCHAR}
+        )
+    </insert>
+
+    <insert id="insertRefreshToken"
+            parameterType="com.jsh.aidesk.serverapi.general.login.vo.RefreshTokenVo">
+        INSERT INTO t_refresh_token (
+            jti, account_sn, login_id, family_id, token_hash, expires_at
+        ) VALUES (
+            #{jti, jdbcType=VARCHAR},
+            #{accountSn, jdbcType=NUMERIC},
+            #{loginId, jdbcType=VARCHAR},
+            #{familyId, jdbcType=VARCHAR},
+            #{tokenHash, jdbcType=VARCHAR},
+            #{expiresAt, jdbcType=TIMESTAMP_WITH_TIMEZONE}
+        )
+    </insert>
+
+    <select id="selectRefreshTokenByJti"
+            resultType="com.jsh.aidesk.serverapi.general.login.vo.RefreshTokenVo">
+        SELECT jti, account_sn, login_id, family_id, token_hash,
+               revoked_yn, expires_at, created_at
+          FROM t_refresh_token
+         WHERE jti = #{jti, jdbcType=VARCHAR}
+    </select>
+
+    <update id="revokeRefreshTokenByJti">
+        UPDATE t_refresh_token
+           SET revoked_yn = 'Y',
+               updated_at = NOW()
+         WHERE jti = #{jti, jdbcType=VARCHAR}
+    </update>
+
+    <update id="revokeRefreshTokenFamily">
+        UPDATE t_refresh_token
+           SET revoked_yn = 'Y',
+               updated_at = NOW()
+         WHERE login_id = #{loginId, jdbcType=VARCHAR}
+           AND family_id = #{familyId, jdbcType=VARCHAR}
+    </update>
+
+    <delete id="deleteRefreshTokenByLoginId">
+        DELETE FROM t_refresh_token
+         WHERE login_id = #{loginId, jdbcType=VARCHAR}
+    </delete>
+
+</mapper>

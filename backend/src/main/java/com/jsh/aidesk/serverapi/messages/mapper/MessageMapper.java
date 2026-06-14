@@ -64,16 +64,18 @@ public interface MessageMapper {
         selectConversations(@Param("agentId") String agentId);
 
     /**
-     * AI 별 미확인 수신 메시지 수.
+     * AI 별 미확인 수신 메시지 수. 본인 user 의 agent 가 receiver 인 것만.
      * status IN (delivered, replied) AND read_at IS NULL 만 카운트.
      */
-    List<com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo> selectUnreadCounts();
+    List<com.jsh.aidesk.serverapi.messages.vo.AgentUnreadRsVo> selectUnreadCounts(
+            @Param("ownerAccountSn") Long ownerAccountSn);
 
     /**
-     * 감사 로그 — 모든 메시지를 시간 역순으로. 필터는 모두 선택.
+     * 감사 로그 — 본인 user 의 agent 가 sender 또는 receiver 인 메시지만. 필터는 모두 선택.
      * q 는 본문 부분 일치 (ILIKE).
      */
     List<com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo> selectAudit(
+            @Param("ownerAccountSn") Long ownerAccountSn,
             @Param("status") String status,
             @Param("fromAgentId") String fromAgentId,
             @Param("toAgentId") String toAgentId,
@@ -84,4 +86,37 @@ public interface MessageMapper {
      * 에이전트가 보내거나 받은 모든 메시지를 삭제 — 에이전트 hard delete cascade.
      */
     int deleteByAgent(@Param("agentId") String agentId);
+
+    /**
+     * 최근 windowSec 초 안에 agentId 가 보내거나 받은 메시지의 distinct 상대 agentId 목록.
+     * GET /api/agents/realtime 의 partners[] 합성에 사용.
+     */
+    List<String> selectRecentPartners(@Param("agentId") String agentId,
+                                       @Param("windowSec") int windowSec);
+
+    /**
+     * Helper 의 ACK 도착 시 호출 — status='sent' 인 메시지만 'delivered' 로 마킹 + delivered_at = NOW().
+     * 이미 'delivered'/'replied'/'failed' 인 메시지는 0 rows update.
+     * @return 1 = 정상 마킹, 0 = 매치 없음 (이미 다른 status 또는 잘못된 messageId)
+     */
+    int markDelivered(@Param("messageId") String messageId);
+
+    /**
+     * Retry scheduler 가 호출 — status='sent' 이면서 last_attempt_at 이 timeoutSec 초 이상 오래된 메시지 select.
+     * 이 메시지들은 helper ACK 가 안 와서 재발행 대상.
+     */
+    List<MessageVo> selectStaleSent(@Param("timeoutSec") int timeoutSec,
+                                     @Param("maxRetries") int maxRetries,
+                                     @Param("limit") int limit);
+
+    /**
+     * retry_count++ + last_attempt_at = NOW(). 재발행 직전 호출.
+     */
+    int bumpRetry(@Param("messageId") String messageId);
+
+    /**
+     * retry_count 가 max 도달했고 ACK 안 옴 → status='failed' + error_reason.
+     */
+    int markFailed(@Param("messageId") String messageId,
+                   @Param("errorReason") String errorReason);
 }

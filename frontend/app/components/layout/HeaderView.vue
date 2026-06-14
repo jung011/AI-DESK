@@ -12,6 +12,14 @@
       <span class="header-title">AI 사무실</span>
     </div>
     <div class="header-top-right">
+      <a
+        v-if="metaverseUrl"
+        :href="metaverseUrl"
+        class="header-metaverse"
+        target="_self"
+        rel="noopener">
+        🌐 METAVERSE
+      </a>
       <div class="header-status-badge">
         <span class="dot"></span>
         <span>시스템 운영중</span>
@@ -25,23 +33,51 @@
       <button type="button" class="header-burger" @click="layout.toggleSideMenu()" />
     </div>
     <div class="header-bottom-right">
-      <span class="header-user">{{ layout.user.name }}</span>
-      <!-- 로그인 시스템이 없으므로 로그아웃 버튼 숨김. 필요해지면 복원.
-      <button type="button" class="header-logout" @click="onLogout">로그아웃</button>
-      -->
+      <span class="header-user" :title="auth.loginId">{{ auth.displayName || '게스트' }}</span>
+      <button
+        type="button"
+        class="header-logout"
+        :disabled="signingOut"
+        @click="onLogout">
+        {{ signingOut ? '로그아웃 중…' : '로그아웃' }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useLayoutStore } from '~/stores/layout';
+import { useAuthStore } from '~/stores/auth';
+import { useAuth } from '~/composables/useAuth';
 
 const layout = useLayoutStore();
+const auth = useAuthStore();
+const { signOut } = useAuth();
+const router = useRouter();
 
-// 로그인 시스템이 도입되면 로그아웃 핸들러를 다시 살린다.
-// function onLogout() {
-//   alert('1단계는 로그인 시스템이 없습니다.');
-// }
+// 메타버스 3D 사무실 진입 링크. runtime env 우선 — window.__APP_CONFIG__ 가 nginx envsubst 결과.
+// fallback: dev mode 의 NUXT_PUBLIC_METAVERSE_URL (npm run dev 시 runtimeConfig.public 으로 들어옴).
+const runtime = useRuntimeConfig();
+const metaverseUrl = computed<string>(() => {
+  const fromWindow = (typeof window !== 'undefined'
+    ? (window as unknown as { __APP_CONFIG__?: { metaverseUrl?: string } }).__APP_CONFIG__?.metaverseUrl
+    : '') ?? '';
+  return fromWindow || (runtime.public.metaverseUrl as string | undefined) || '';
+});
+
+const signingOut = ref(false);
+
+async function onLogout() {
+  if (signingOut.value) return;
+  signingOut.value = true;
+  try {
+    await signOut();
+  } finally {
+    signingOut.value = false;
+    await router.replace('/login');
+  }
+}
 </script>
 
 <style scoped>
@@ -58,7 +94,15 @@ const layout = useLayoutStore();
   background: #0062ff; display: flex; align-items: center; justify-content: center;
 }
 .header-title { font-size: 15px; font-weight: 600; color: #333; }
-.header-top-right { display: flex; align-items: center; }
+.header-top-right { display: flex; align-items: center; gap: 10px; }
+.header-metaverse {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: 20px;
+  background: rgba(59, 91, 219, .08); border: 1px solid rgba(59, 91, 219, .25);
+  color: #3B5BDB; font-size: 12px; font-weight: 600;
+  text-decoration: none;
+}
+.header-metaverse:hover { background: rgba(59, 91, 219, .15); }
 .header-status-badge {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 10px; border-radius: 20px;

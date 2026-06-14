@@ -1,6 +1,6 @@
 #!/bin/zsh
 # AI Desk 로컬 시작 스크립트.
-# 백엔드(:30081) + 프론트(:30080) 두 프로세스를 백그라운드로 띄운다.
+# 백엔드(:30081) + 프론트(:30080) + code-server(:30082) 를 백그라운드로 띄운다.
 # 로그는 /tmp 에 떨어뜨려 tail 로 추적 가능.
 #
 # 사용: ./start.sh
@@ -32,6 +32,9 @@ else
   echo "▶ frontend starting → /tmp/aidesk-frontend.log"
 fi
 
+# code-server 는 desktop-agent (Helper) 가 자동 설치 + spawn 한다. 본 스크립트에서 더 이상 띄우지 않음.
+
 echo ""
-echo "  대시보드 : http://localhost:30080/dashboard"
-echo "  백엔드 API: http://localhost:30081/api/agents"
+echo "  대시보드      : http://localhost:30080/dashboard"
+echo "  백엔드 API    : http://localhost:30081/api/agents"
+echo "  code-server  : Helper 가 자동 관리 (http://localhost:30082/)"

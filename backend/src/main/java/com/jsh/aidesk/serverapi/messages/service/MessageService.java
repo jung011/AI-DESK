@@ -7,12 +7,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jsh.aidesk.serverapi.agents.mapper.AgentMapper;
 import com.jsh.aidesk.serverapi.agents.vo.AgentVo;
 import com.jsh.aidesk.serverapi.messages.lastmile.LastMileAdapter;
 import com.jsh.aidesk.serverapi.messages.mapper.MessageMapper;
 import com.jsh.aidesk.serverapi.messages.policy.MessagePolicyChecker;
 import com.jsh.aidesk.serverapi.messages.policy.PolicyResult;
+import com.jsh.aidesk.serverapi.messages.websocket.MessageWebSocketBroker;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import lombok.extern.slf4j.Slf4j;
 import java.util.List;
 
 import java.util.ArrayList;
@@ -32,6 +40,7 @@ import com.jsh.aidesk.serverapi.messages.vo.UnreadCountRsVo;
 import lombok.RequiredArgsConstructor;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class MessageService {
 
@@ -39,6 +48,8 @@ public class MessageService {
     private final AgentMapper agentMapper;
     private final MessagePolicyChecker policy;
     private final LastMileAdapter lastMile;
+    private final MessageWebSocketBroker wsBroker;
+    private final ObjectMapper objectMapper;
 
     /**
      * 메시지 발신.
@@ -52,13 +63,36 @@ public class MessageService {
      */
     @Transactional
     public MessageItemRsVo create(MessageCreateRqVo req) {
-        AgentVo from = agentMapper.selectById(req.getFromAgentId());
-        AgentVo to = agentMapper.selectById(req.getToAgentId());
+        AgentVo from = agentMapper.selectByIdAnyOwner(req.getFromAgentId());
+        AgentVo to = agentMapper.selectByIdAnyOwner(req.getToAgentId());
         if (from == null || to == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "발신/수신 AI 미존재");
         }
+        // 권한 검증 — channel/channel_backend.md §2 의 (me) 게이트웨이 정책.
+        //
+        // actor 결정:
+        //   - 인증된 호출 (브라우저 cookie) → SecurityContext.accountSn 으로 검증
+        //   - 비인증 호출 (외부 터미널의 aidesk-channel mcp) → sender 의 owner 로 user 추정.
+        //     mcp 는 본인의 self_agent 만 sender 로 사용하므로 자기 user 외 발신은 일어나지 않음.
+        var authedUser = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentUserOrNull();
+        Long actor = (authedUser != null) ? authedUser.getAccountSn() : from.getOwnerAccountSn();
+        if (!actor.equals(from.getOwnerAccountSn())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "본인의 에이전트로만 메시지 발신 가능");
+        }
+        // 채널 분리 정책 (Phase 2 후):
+        //   Channel A (내부)   = 본인 user 의 internal 끼리 (cross-user 차단)
+        //   Channel B (사내동료) = (me)/external (cross-user 허용 — 사내 동료 사이의 협업)
+        //   브릿지 BOTH        = (me) + 휴먼 — 두 채널 모두 접근 (브릿지)
+        //   internal ↔ external 직접 통신 차단. (me) 가 유일한 게이트웨이.
         if (from.getAgentId().equals(to.getAgentId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "self-message");
+        }
+        String fromCh = channelOf(from);
+        String toCh = channelOf(to);
+        if (!canCommunicate(from, to, fromCh, toCh)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "통신 채널 위반 — from=" + fromCh + " to=" + toCh
+                    + " (internal↔external 직접 통신 차단, internal 은 본인 user 안에서만)");
         }
 
         MessageVo parent = null;
@@ -84,6 +118,20 @@ public class MessageService {
             entity.setHopCount(0);
         }
 
+        // 휴먼(인간 사용자) entity 는 tmux 가 없음 — last-mile 우회.
+        // 채팅 UI 가 폴링으로 가져가서 사용자에게 표시하면 됨. 즉시 status='delivered' 마킹.
+        boolean toIsHuman = "human".equalsIgnoreCase(to.getModel());
+        // 외부 AI service — helper 없는 환경. mcp pollInbox / 봇 어댑터 ws 가 받아감.
+        // helper SSE retry policy 적용하면 영원히 ACK 안 와서 60회 후 failed → 휴먼처럼 즉시 delivered.
+        boolean toIsExternal = "external".equalsIgnoreCase(to.getAgentType());
+        boolean skipHelperLastMile = toIsHuman || toIsExternal;
+
+        // 멀티 mac 환경에서 backend → host.docker.internal:30083 preflight 는 *backend 가 도는
+        // mac 의 helper* 만 호출하므로 수신자 helper 가 다른 mac 에 있으면 항상 fail.
+        // 옛 single-mac 가정의 preflight 제거 — SSE 발송 + helper ack 흐름에 위임:
+        //   수신측 helper 가 본인 mac 에 해당 tmux 있으면 send-keys + ack → status='delivered'
+        //   없으면 ignore → status 'sent' 그대로 (UI 가 sent 로 표시).
+
         // 4. 정책 검사
         PolicyResult result = policy.check(from, to, parent);
         if (!result.accepted()) {
@@ -94,30 +142,102 @@ public class MessageService {
         }
 
         // 5. INSERT + last mile (virtual thread 로 비동기)
+        // pre-flight 통과 → 이전에 'error' 로 박혀있던 수신자라면 'active' 로 자동 복귀.
+        if (!skipHelperLastMile && "error".equals(to.getStatus())) {
+            agentMapper.updateStatusFromWatcher(to.getAgentId(), "active", null);
+            log.info("[message-preflight] cleared 'error' status for to={}({}) — send unblocked",
+                    to.getAgentName(), to.getAgentId());
+        }
         entity.setStatus("sent");
         messageMapper.insert(entity);
+        log.info("[message-insert] msg={} from={}({}) to={}({}) tmux={}",
+                entity.getMessageId(), from.getAgentName(), from.getAgentId(),
+                to.getAgentName(), to.getAgentId(), to.getTmuxSession());
+        // 부모 'replied' 마킹은 publish 결과와 무관 — INSERT 가 곧 "부모에 답이 옴" 의 확정.
+        if (parent != null) {
+            messageMapper.updateParentReplied(parent.getMessageId());
+        }
 
         final String messageId = entity.getMessageId();
-        final String parentId = parent != null ? parent.getMessageId() : null;
-        final AgentVo fromAgent = from;
-        final AgentVo toAgent = to;
-        Thread.startVirtualThread(() -> {
-            lastMile.deliver(entity, fromAgent, toAgent, new LastMileAdapter.DeliveryCallback() {
-                @Override
-                public void onDelivered() {
-                    messageMapper.updateStatus(messageId, "delivered", null);
-                    if (parentId != null) {
-                        messageMapper.updateParentReplied(parentId);
+
+        // Frontend WS push — recipient 와 sender 의 owner 양쪽 push (multi-tab 동기화).
+        // Helper SSE last-mile 과 별개. WS 가 끊긴 사용자는 next polling / reconnect 으로 동기화.
+        publishToFrontend(entity, from, to);
+
+        if (skipHelperLastMile) {
+            // 휴먼 = 채팅 UI 폴링이 가져감 → 즉시 delivered.
+            // 외부 AI = 봇 daemon 의 ws subscriber 활성도 확인 후 결정. 봇이 ws 끊긴 상태면
+            // 메시지 도달 불가 → status='sent' 그대로 두고 sender 측 (mcp sendTo / bot reply)
+            // 의 1.5s 재조회 패턴이 미전달 신호로 감지하게 한다.
+            if (toIsHuman) {
+                messageMapper.markDelivered(messageId);
+                log.info("[message-deliver-skip] to={}({}) type=human — marked delivered immediately",
+                        to.getAgentName(), to.getAgentId());
+            } else {
+                int subs = wsBroker.countSessionsForAgent(to.getAgentId());
+                if (subs > 0) {
+                    messageMapper.markDelivered(messageId);
+                    log.info("[message-deliver-external] to={}({}) ws subscribers={} — marked delivered",
+                            to.getAgentName(), to.getAgentId(), subs);
+                } else {
+                    log.info("[message-deliver-external] to={}({}) ws subscribers=0 — keeping status='sent' (bot daemon offline)",
+                            to.getAgentName(), to.getAgentId());
+                }
+            }
+        } else {
+            final AgentVo fromAgent = from;
+            final AgentVo toAgent = to;
+            Thread.startVirtualThread(() -> {
+                lastMile.deliver(entity, fromAgent, toAgent, new LastMileAdapter.DeliveryCallback() {
+                    @Override
+                    public void onDelivered() {
+                        // SseLastMileAdapter 는 publish 성공만으로 onDelivered 호출 안 함.
+                        // 실제 'delivered' 마킹은 Helper 의 ACK 가 도착해서 markDelivered() 가 불릴 때.
                     }
-                }
-                @Override
-                public void onFailed(String reason) {
-                    messageMapper.updateStatus(messageId, "failed", reason);
-                }
+                    @Override
+                    public void onFailed(String reason) {
+                        messageMapper.updateStatus(messageId, "failed", reason);
+                    }
+                });
             });
-        });
+        }
 
         return messageMapper.selectItemById(messageId);
+    }
+
+    /**
+     * 새 메시지를 frontend WS 채널로 push — recipient + sender 의 owner 양쪽 보냄.
+     * 같은 user 면 broker 가 ConcurrentMap 의 같은 key 라 자동 한 번만 송신.
+     * 실패는 broker 가 흡수 (dead session 은 다음 close 콜백으로 정리).
+     */
+    private void publishToFrontend(MessageVo message, AgentVo from, AgentVo to) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "message.deliver");
+        payload.put("messageId", message.getMessageId());
+        payload.put("fromAgentId", from.getAgentId());
+        payload.put("fromAgentName", from.getAgentName());
+        payload.put("toAgentId", to.getAgentId());
+        payload.put("toAgentName", to.getAgentName());
+        payload.put("fromAccountSn", from.getOwnerAccountSn());
+        payload.put("toAccountSn", to.getOwnerAccountSn());
+        payload.put("content", message.getContent());
+        payload.put("status", message.getStatus());
+        payload.put("createdAt", message.getCreatedAt());
+
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            log.warn("[ws-publish] payload serialize failed msg={}: {}", message.getMessageId(), e.getMessage());
+            return;
+        }
+
+        if (to.getOwnerAccountSn() != null) {
+            wsBroker.publishToAccount(to.getOwnerAccountSn(), json);
+        }
+        if (from.getOwnerAccountSn() != null && !from.getOwnerAccountSn().equals(to.getOwnerAccountSn())) {
+            wsBroker.publishToAccount(from.getOwnerAccountSn(), json);
+        }
     }
 
     /**
@@ -126,6 +246,20 @@ public class MessageService {
     @Transactional
     public boolean markRead(String messageId, String agentId) {
         return messageMapper.updateRead(messageId, agentId) > 0;
+    }
+
+    /**
+     * Helper 의 ACK 처리 — send-keys 가 실제 tmux 에 도달했음을 의미.
+     * status='sent' 인 경우만 'delivered' + delivered_at = NOW() 로 마킹.
+     * 이미 'delivered'/'replied'/'failed' 면 idempotent.
+     */
+    @Transactional
+    public boolean ackDelivered(String messageId) {
+        int n = messageMapper.markDelivered(messageId);
+        if (n > 0) {
+            log.info("[message-ack] delivered msg={}", messageId);
+        }
+        return n > 0;
     }
 
     /**
@@ -142,7 +276,8 @@ public class MessageService {
     @Transactional(readOnly = true)
     public MessageListRsVo audit(String status, String fromAgentId, String toAgentId, String q, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 1000));
-        var list = messageMapper.selectAudit(status, fromAgentId, toAgentId, q, safeLimit + 1);
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        var list = messageMapper.selectAudit(me, status, fromAgentId, toAgentId, q, safeLimit + 1);
         boolean hasMore = list.size() > safeLimit;
         if (hasMore) list = list.subList(0, safeLimit);
         MessageListRsVo rs = new MessageListRsVo();
@@ -157,7 +292,8 @@ public class MessageService {
      */
     @Transactional(readOnly = true)
     public UnreadCountRsVo getUnreadCount(String agentId) {
-        List<AgentUnreadRsVo> all = messageMapper.selectUnreadCounts();
+        Long me = com.jsh.aidesk.serverapi.common.jwt.AuthContext.currentAccountSn();
+        List<AgentUnreadRsVo> all = messageMapper.selectUnreadCounts(me);
         UnreadCountRsVo rs = new UnreadCountRsVo();
         if (agentId != null && !agentId.isBlank()) {
             List<AgentUnreadRsVo> filtered = all.stream()
@@ -189,7 +325,7 @@ public class MessageService {
      */
     @Transactional
     public MessageBroadcastRsVo broadcast(MessageBroadcastRqVo req) {
-        AgentVo from = agentMapper.selectById(req.getFromAgentId());
+        AgentVo from = agentMapper.selectByIdAnyOwner(req.getFromAgentId());
         if (from == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "발신 AI 미존재");
         }
@@ -206,7 +342,7 @@ public class MessageService {
         int notFound = duplicateOrSelf;
 
         for (String toId : uniqueTo) {
-            AgentVo to = agentMapper.selectById(toId);
+            AgentVo to = agentMapper.selectByIdAnyOwner(toId);
             if (to == null) { notFound++; continue; }
 
             MessageCreateRqVo single = new MessageCreateRqVo();
@@ -235,18 +371,85 @@ public class MessageService {
         return rs;
     }
 
+    private static String truncate(String s, int n) {
+        if (s == null) return "";
+        return s.length() > n ? s.substring(0, n) + "…" : s;
+    }
+
+    /**
+     * (me) AI 또는 휴먼 entity 판정 — cross-user 메시지 게이트웨이 검증에 사용.
+     * - tmux_session 이 "aidesk-self-" prefix 로 시작 = (me)
+     * - model 이 "human" = 휴먼
+     */
+    private static boolean isMeOrHuman(AgentVo a) {
+        if (a == null) return false;
+        String ts = a.getTmuxSession();
+        if (ts != null && ts.startsWith("aidesk-self-")) return true;
+        return "human".equalsIgnoreCase(a.getModel());
+    }
+
+    /**
+     * 통신 채널 분류 — Phase 2 채널 분리 정책.
+     * <ul>
+     *   <li>{@code BOTH} — (me) / 휴먼 = 두 채널의 브릿지</li>
+     *   <li>{@code A}    — internal AI (helper 환경 worker)</li>
+     *   <li>{@code B}    — external AI (mcp service, 사내 동료 채널)</li>
+     * </ul>
+     */
+    public static String channelOf(AgentVo a) {
+        if (a == null) return null;
+        if ("human".equalsIgnoreCase(a.getModel())) return "BOTH";
+        String ts = a.getTmuxSession();
+        if (ts != null && ts.startsWith("aidesk-self-")) return "BOTH";
+        if ("external".equalsIgnoreCase(a.getAgentType())) return "B";
+        return "A";
+    }
+
+    /**
+     * 두 agent 간 통신 허용 여부.
+     * <ul>
+     *   <li>self → self: 차단</li>
+     *   <li>둘 다 BOTH ((me)/휴먼): cross-user 허용 — 사내 동료 채널의 브릿지 간 통신</li>
+     *   <li>BOTH + A/B: sameUser 만 — internal/external 은 본인 user 의 사유 worker/service</li>
+     *   <li>A/A internal 끼리: sameUser 만</li>
+     *   <li>B/B external 끼리: sameUser 만 — 외부 AI = 등록 user 의 사유 service</li>
+     *   <li>다른 channel (A↔B): 차단 — internal ↔ external 직접 통신은 (me) 브릿지 경유</li>
+     * </ul>
+     * 핵심 — 외부 AI 는 backend 전체 공개가 아닌 등록 user 격리. dashboard list 와 통신 정책 대칭.
+     */
+    public static boolean canCommunicate(AgentVo from, AgentVo to, String fromCh, String toCh) {
+        if (from == null || to == null) return false;
+        if (from.getAgentId().equals(to.getAgentId())) return false;
+        boolean sameUser = from.getOwnerAccountSn() != null
+                && from.getOwnerAccountSn().equals(to.getOwnerAccountSn());
+        if ("BOTH".equals(fromCh) && "BOTH".equals(toCh)) {
+            // (me)/human 끼리 — 본인이든 사내 동료든 OK (사내 동료 채널의 브릿지 간 통신)
+            return true;
+        }
+        if ("BOTH".equals(fromCh) || "BOTH".equals(toCh)) {
+            // 한쪽만 브릿지 — internal (A) 도 external (B) 도 본인 user 의 (me)/휴먼 만.
+            return sameUser;
+        }
+        if (!fromCh.equals(toCh)) return false;        // internal ↔ external 차단
+        return sameUser;                                // A/A, B/B 모두 sameUser 만
+    }
+
     /**
      * 메시지 목록 조회.
+     *
+     * SQL 은 *최근 N개* 를 DESC 로 가져오고 (오래된 메시지 잘림 방지), 응답은
+     * 채팅창이 위→아래 시간순으로 그릴 수 있게 ASC 로 reverse 해서 돌려준다.
      */
     @Transactional(readOnly = true)
     public MessageListRsVo getList(String agentId, String direction, String withId,
                                    String status, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 500));
-        var list = messageMapper.selectByAgent(agentId, direction, withId, status, safeLimit + 1);
-        boolean hasMore = list.size() > safeLimit;
-        if (hasMore) list = list.subList(0, safeLimit);
+        var rows = messageMapper.selectByAgent(agentId, direction, withId, status, safeLimit + 1);
+        boolean hasMore = rows.size() > safeLimit;
+        var trimmed = new ArrayList<>(hasMore ? rows.subList(0, safeLimit) : rows);
+        java.util.Collections.reverse(trimmed);
         MessageListRsVo rs = new MessageListRsVo();
-        rs.setList(list);
+        rs.setList(trimmed);
         rs.setHasMore(hasMore);
         return rs;
     }

@@ -3,7 +3,18 @@
  * 응답 envelope (ResponseJson<T>) 의 data 필드 타입.
  */
 
-export type AgentStatus = 'active' | 'idle' | 'done';
+export type AgentStatus = 'active' | 'idle' | 'waiting' | 'error';
+
+/**
+ * channel/channel_backend.md §4 의 agent type 분류.
+ * - internal: 본인 user 의 helper-동작 환경의 AI
+ * - me:       본인 user 의 (me) AI (helper)
+ * - human:    본인 user 의 휴먼 entity
+ * - self:     발신자 자신
+ * - colleague: 다른 user 의 (me) AI
+ * - external: 본인 user 의 외부 AI service (Phase 2)
+ */
+export type AgentType = 'self' | 'me' | 'internal' | 'human' | 'colleague' | 'external';
 
 export interface AgentItem {
   agentId: string;
@@ -16,13 +27,18 @@ export interface AgentItem {
   contextPct: number | null;
   startedAt: string;          // ISO 8601
   updatedAt: string | null;
+  /** 소유 사용자 (멀티유저). 자체 채널 모델 도입 후 응답에 동봉. */
+  ownerAccountSn?: number | null;
+  /** 발신자의 시점에서 본 type. caller 정보 없으면 backend 가 기본 분류만 부여. */
+  type?: AgentType | null;
 }
 
 export interface AgentSummary {
   total: number;
   active: number;
+  waiting: number;
   idle: number;
-  done: number;
+  error: number;
 }
 
 export interface AgentListResponse {

@@ -6,7 +6,7 @@
     <sql id="messageBaseColumns">
         message_id, from_agent_id, to_agent_id, content,
         reply_to_message_id, root_message_id, hop_count,
-        status, error_reason,
+        status, error_reason, retry_count, last_attempt_at,
         created_at, delivered_at, read_at, replied_at
     </sql>
 
@@ -34,12 +34,13 @@
         INSERT INTO t_ai_message (
             message_id, from_agent_id, to_agent_id, content,
             reply_to_message_id, root_message_id, hop_count,
-            status, error_reason
+            status, error_reason, last_attempt_at
         ) VALUES (
             #{messageId}, #{fromAgentId}, #{toAgentId}, #{content},
             #{replyToMessageId}, #{rootMessageId},
             <choose><when test="hopCount != null">#{hopCount}</when><otherwise>0</otherwise></choose>,
-            #{status}, #{errorReason}
+            #{status}, #{errorReason},
+            CASE WHEN #{status} = 'sent' THEN NOW() ELSE NULL END
         )
     </insert>
 
@@ -63,10 +64,20 @@
          WHERE m.message_id = #{messageId}
     </select>
 
+    <!--
+      contact-centric view: withId 가 지정되면 *withId 가 관여한 모든 메시지* 를 반환.
+      즉 (me)↔withId 페어뿐 아니라 다른AI↔withId 메시지도 모두 포함.
+      → 사용자가 partner=test1 채팅창에서 test4 가 test1 한테 한 메시지도 볼 수 있게.
+      withId 가 없으면 agentId 발신/수신 메시지 — 감사/inbox/outbox 용.
+    -->
     <select id="selectByAgent" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
         <include refid="itemSelectClause"/>
          WHERE 1 = 1
         <choose>
+            <when test="withId != null and withId != ''">
+                <!-- withId 시점: 그 agent 가 관여한 모든 메시지 -->
+                AND (m.from_agent_id = #{withId} OR m.to_agent_id = #{withId})
+            </when>
             <when test="direction == 'inbox'">
                AND m.to_agent_id = #{agentId}
             </when>
@@ -77,14 +88,10 @@
                AND (m.from_agent_id = #{agentId} OR m.to_agent_id = #{agentId})
             </otherwise>
         </choose>
-        <if test="withId != null and withId != ''">
-           AND ((m.from_agent_id = #{agentId} AND m.to_agent_id = #{withId})
-             OR (m.from_agent_id = #{withId}  AND m.to_agent_id = #{agentId}))
-        </if>
         <if test="status != null and status != ''">
            AND m.status = #{status}
         </if>
-         ORDER BY m.created_at ASC
+         ORDER BY m.created_at DESC
          LIMIT #{limit}
     </select>
 
@@ -109,6 +116,43 @@
                replied_at = NOW()
          WHERE message_id = #{messageId}
            AND status IN ('sent', 'delivered')
+    </update>
+
+    <!-- Helper 의 ACK 수신 시 — sent → delivered 마킹. 이미 다른 status 면 변경 없음. -->
+    <update id="markDelivered">
+        UPDATE t_ai_message
+           SET status = 'delivered',
+               delivered_at = NOW()
+         WHERE message_id = #{messageId}
+           AND status = 'sent'
+    </update>
+
+    <!-- Retry scheduler — status='sent' + last_attempt_at 이 timeoutSec 초 이상 오래된 메시지. -->
+    <select id="selectStaleSent" resultType="com.jsh.aidesk.serverapi.messages.vo.MessageVo">
+        SELECT <include refid="messageBaseColumns"/>
+          FROM t_ai_message
+         WHERE status = 'sent'
+           AND last_attempt_at IS NOT NULL
+           AND last_attempt_at &lt; NOW() - (#{timeoutSec} || ' seconds')::INTERVAL
+           AND retry_count &lt; #{maxRetries}
+         ORDER BY last_attempt_at ASC
+         LIMIT #{limit}
+    </select>
+
+    <update id="bumpRetry">
+        UPDATE t_ai_message
+           SET retry_count = retry_count + 1,
+               last_attempt_at = NOW()
+         WHERE message_id = #{messageId}
+           AND status = 'sent'
+    </update>
+
+    <update id="markFailed">
+        UPDATE t_ai_message
+           SET status = 'failed',
+               error_reason = #{errorReason}
+         WHERE message_id = #{messageId}
+           AND status = 'sent'
     </update>
 
     <select id="selectConversations"
@@ -161,6 +205,7 @@
           FROM t_ai_message m
           JOIN t_ai_agent a ON a.agent_id = m.to_agent_id
                            AND a.deleted_at IS NULL
+                           AND a.owner_account_sn = #{ownerAccountSn}
          WHERE m.read_at IS NULL
            AND m.status IN ('delivered', 'replied')
          GROUP BY m.to_agent_id, a.agent_name
@@ -170,7 +215,8 @@
     <select id="selectAudit"
             resultType="com.jsh.aidesk.serverapi.messages.vo.MessageItemRsVo">
         <include refid="itemSelectClause"/>
-         WHERE 1 = 1
+         WHERE (af.owner_account_sn = #{ownerAccountSn}
+            OR at.owner_account_sn = #{ownerAccountSn})
         <if test="status != null and status != ''">
            AND m.status = #{status}
         </if>
@@ -192,5 +238,20 @@
          WHERE from_agent_id = #{agentId}
             OR to_agent_id   = #{agentId}
     </delete>
+
+    <!--
+      partners[] 합성 — agentId 가 최근 windowSec 초 내에 보내거나 받은 메시지의 distinct 상대.
+      GET /api/agents/realtime 의 talking state + partners 필드용.
+    -->
+    <select id="selectRecentPartners" resultType="string">
+        SELECT DISTINCT
+            CASE WHEN m.from_agent_id = #{agentId}
+                 THEN m.to_agent_id
+                 ELSE m.from_agent_id
+            END
+          FROM t_ai_message m
+         WHERE (m.from_agent_id = #{agentId} OR m.to_agent_id = #{agentId})
+           AND m.created_at > NOW() - (#{windowSec} || ' seconds')::INTERVAL
+    </select>
 
 </mapper>

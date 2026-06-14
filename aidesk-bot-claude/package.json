@@ -1,0 +1,19 @@
+{
+  "name": "@aidesk/bot-claude",
+  "version": "0.1.0",
+  "description": "AI Desk reference bot — Anthropic Claude SDK + WebSocket. 24/7 자동 응답 외부 AI 봇.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "bin": {
+    "aidesk-bot-claude": "./bin/aidesk-bot-claude"
+  },
+  "main": "./src/bot.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "ws": "^8.18.0"
+  }
+}

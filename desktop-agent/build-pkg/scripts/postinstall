@@ -1,0 +1,116 @@
+#!/bin/bash
+# .pkg 설치 직후 — 콘솔 사용자에게 LaunchAgent plist 를 생성하고 부트스트랩한다.
+#
+# 핵심: macOS Installer 는 root 로 postinstall 을 실행하므로
+#       $USER / $HOME 이 root 를 가리킨다. 실제 사용자는 콘솔에서 가져와야 한다.
+
+set -e
+
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" || "$CONSOLE_USER" == "_mbsetupuser" ]]; then
+    echo "⚠ 콘솔 사용자를 식별할 수 없습니다. 설치 후 사용자가 로그인한 상태에서:"
+    echo "    cp /usr/local/share/aidesk/templates/com.aidesk.agent.plist ~/Library/LaunchAgents/"
+    echo "    launchctl load ~/Library/LaunchAgents/com.aidesk.agent.plist"
+    exit 0
+fi
+
+USER_UID=$(id -u "$CONSOLE_USER")
+USER_HOME=$(eval echo "~$CONSOLE_USER")
+LA_DIR="$USER_HOME/Library/LaunchAgents"
+LOG_DIR="$USER_HOME/Library/Logs"
+PLIST="$LA_DIR/com.aidesk.agent.plist"
+
+# LANG 추출 — UTF-8 wide-char 처리에 필수 (한글 등).
+# 우선순위: 1) 사용자 zsh 인터랙티브 (.zshrc 의 export 까지 거침)
+#           2) macOS AppleLocale (UI 언어 설정) + ".UTF-8"
+#           3) en_US.UTF-8 (최종 폴백)
+USER_LANG=$(sudo -u "$CONSOLE_USER" -i zsh -ic 'echo "${LANG}"' 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+
+if [[ -z "$USER_LANG" || "$USER_LANG" == "C" || "$USER_LANG" == "C.UTF-8" || "$USER_LANG" == "POSIX" ]]; then
+    APPLE_LOCALE=$(sudo -u "$CONSOLE_USER" defaults read -g AppleLocale 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -n "$APPLE_LOCALE" ]] && USER_LANG="${APPLE_LOCALE}.UTF-8"
+fi
+
+[[ -z "$USER_LANG" ]] && USER_LANG="en_US.UTF-8"
+
+sudo -u "$CONSOLE_USER" mkdir -p "$LA_DIR" "$LOG_DIR" "$USER_HOME/.aidesk"
+
+# plist 작성 — 기존 plist 의 EnvironmentVariables 는 *보존* (재설치 시
+# AIDESK_BACKEND_URL/EXTRA_ORIGINS 등 동료의 setup 환경값을 잃지 않게).
+# 핵심 시스템 env (PATH/HOME/LANG/LC_CTYPE) 만 항상 덮어쓴다.
+sudo -u "$CONSOLE_USER" python3 - "$PLIST" "$LOG_DIR" "$USER_HOME" "$USER_LANG" <<'PYEOF'
+import sys, plistlib
+from urllib.parse import urlparse
+plist_path, log_dir, user_home, user_lang = sys.argv[1:]
+try:
+    with open(plist_path, 'rb') as f:
+        existing = plistlib.load(f)
+    existing_env = existing.get('EnvironmentVariables', {}) or {}
+except (OSError, plistlib.InvalidFileException):
+    existing_env = {}
+existing_env['PATH'] = f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{user_home}/.local/bin"
+existing_env['HOME'] = user_home
+existing_env['LANG'] = user_lang
+existing_env['LC_CTYPE'] = 'UTF-8'
+# 마이그레이션: 옛 AIDESK_BACKEND_URL + AIDESK_EXTRA_ORIGINS 두 변수를
+# 단일 AIDESK_HUB_URL 로 통합. helper 코드는 HUB_URL 만 보고 origin/backend
+# derive — 다음 URL 변경 때 두 변수 일관성 유지 부담 X.
+if 'AIDESK_HUB_URL' not in existing_env:
+    legacy_backend = existing_env.get('AIDESK_BACKEND_URL', '').strip()
+    if legacy_backend:
+        existing_env['AIDESK_HUB_URL'] = legacy_backend
+# 옛 키는 정리 (HUB_URL 이 있으면 의미 없음). 단 helper 코드는 fallback 으로 옛 키도 인식.
+existing_env.pop('AIDESK_BACKEND_URL', None)
+existing_env.pop('AIDESK_EXTRA_ORIGINS', None)
+plist = {
+    'Label': 'com.aidesk.agent',
+    'ProgramArguments': ['/usr/local/bin/aidesk-helper'],
+    'RunAtLoad': True,
+    'KeepAlive': True,
+    'ThrottleInterval': 10,
+    'ProcessType': 'Background',
+    'StandardOutPath': f'{log_dir}/aidesk-agent.log',
+    'StandardErrorPath': f'{log_dir}/aidesk-agent.err',
+    'EnvironmentVariables': existing_env,
+}
+with open(plist_path, 'wb') as f:
+    plistlib.dump(plist, f)
+PYEOF
+
+chown "$CONSOLE_USER" "$PLIST"
+chmod 644 "$PLIST"
+
+# 부트스트랩 (사용자 GUI 도메인). 이미 등록되어 있으면 먼저 bootout.
+launchctl bootout "gui/$USER_UID/com.aidesk.agent" 2>/dev/null || true
+launchctl bootstrap "gui/$USER_UID" "$PLIST"
+
+# Phase 6 — 글로벌 mcp 패턴 폐기. 새 정책은 각 workspace 의 projects[ws].mcpServers 에
+# AIDESK_AGENT_ID 명시한 local mcp 만. 옛 .pkg 가 박은 글로벌 entry 가 남아있으면 제거.
+# 새 등록은 bootstrap_agent / start_claude_with_mode 가 workspace 단위로 처리한다.
+sudo -u "$CONSOLE_USER" python3 - <<'PYEOF'
+import json, os
+path = os.path.expanduser("~/.claude.json")
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    raise SystemExit(0)
+except json.JSONDecodeError as e:
+    print(f"⚠ ~/.claude.json 파싱 실패 ({e}) — legacy mcp 정리 건너뜀")
+    raise SystemExit(0)
+legacy = data.get("mcpServers")
+if isinstance(legacy, dict) and "aidesk-channel" in legacy:
+    del legacy["aidesk-channel"]
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print("✓ legacy 글로벌 mcpServers.aidesk-channel 제거 — workspace local 패턴으로 이전")
+PYEOF
+
+echo "✓ AI Desk Helper 설치 완료"
+echo "  - 바이너리: /usr/local/bin/aidesk-helper"
+echo "  - LaunchAgent: $PLIST"
+echo "  - 로그: $LOG_DIR/aidesk-agent.err"
+echo "  - aidesk-channel mcp: $AIDESK_CHANNEL_BIN"
+
+exit 0

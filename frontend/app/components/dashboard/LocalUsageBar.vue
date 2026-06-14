@@ -75,8 +75,10 @@
 </template>
 
 <script setup lang="ts">
-import type { ApiEnvelope } from '~/vo/agents/AgentVo';
-
+/**
+ * Claude 사용량은 호스트의 `~/.claude/aidesk-usage/` 와 `~/.claude/settings.json` 에 의존하므로
+ * 컨테이너 안의 백엔드가 아니라 호스트에서 도는 Helper(`$helper`) 가 책임진다.
+ */
 interface LocalUsage {
   fiveHourPct: number;
   fiveHourResetsAt: number;
@@ -88,6 +90,8 @@ interface LocalUsage {
   hookInstalled: boolean;
   hookOccupiedByOther: boolean;
 }
+
+interface InstallRs { rc: number; message: string }
 
 const usage = ref<LocalUsage>({
   fiveHourPct: -1,
@@ -106,11 +110,11 @@ let timer: ReturnType<typeof setInterval> | null = null;
 
 async function fetchOnce(): Promise<void> {
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<ApiEnvelope<LocalUsage>>('/api/usage/local');
-    if (env.result === 0 && env.data) usage.value = env.data;
+    const { $helper } = useNuxtApp();
+    const data = await $helper<LocalUsage>('/api/usage/local');
+    if (data) usage.value = data;
   } catch {
-    /* swallow — 다음 폴링에서 재시도 */
+    /* swallow — Helper 미가동 시점일 수 있음. 다음 폴링에서 재시도 */
   }
 }
 
@@ -118,12 +122,9 @@ async function onInstall(): Promise<void> {
   if (installing.value) return;
   installing.value = true;
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; message: string }>(
-      '/api/usage/install-statusline',
-      { method: 'POST' }
-    );
-    if (env.result === 0) {
+    const { $helper } = useNuxtApp();
+    const env = await $helper<InstallRs>('/api/usage/install-statusline', { method: 'POST' });
+    if (env.rc === 0) {
       // eslint-disable-next-line no-alert
       alert('등록 완료. Claude Code 를 한 번 재시작하세요.');
       await fetchOnce();

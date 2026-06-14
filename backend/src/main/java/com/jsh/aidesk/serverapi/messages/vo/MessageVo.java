@@ -20,6 +20,8 @@ public class MessageVo {
     private Integer hopCount;
     private String status;
     private String errorReason;
+    private Integer retryCount;
+    private OffsetDateTime lastAttemptAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime deliveredAt;
     private OffsetDateTime readAt;

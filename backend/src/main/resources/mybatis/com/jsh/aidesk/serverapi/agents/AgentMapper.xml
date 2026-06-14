@@ -4,25 +4,31 @@
 <mapper namespace="com.jsh.aidesk.serverapi.agents.mapper.AgentMapper">
 
     <sql id="agentColumns">
-        agent_id, agent_name, workspace_dir, tmux_session, status,
+        agent_id, owner_account_sn, agent_name, workspace_dir, tmux_session, status,
         task_desc, model, context_pct, bootstrap_applied,
-        started_at, updated_at, deleted_at
+        started_at, updated_at, deleted_at,
+        agent_type, bearer_token_hash, bearer_token_created_at
     </sql>
 
     <select id="selectList" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
         SELECT <include refid="agentColumns"/>
           FROM t_ai_agent
          WHERE deleted_at IS NULL
+           AND owner_account_sn = #{ownerAccountSn}
         <if test="status != null and status != '' and status != 'all'">
            AND status = #{status}
         </if>
          ORDER BY started_at DESC
     </select>
 
+    <!-- 대시보드 통계용. model='human' 인 휴먼 entity 는 AI 가 아니므로 통계에서 제외.
+         본인 user 의 에이전트만. -->
     <select id="selectStatusCounts" resultType="java.util.Map">
         SELECT status, COUNT(*) AS cnt
           FROM t_ai_agent
          WHERE deleted_at IS NULL
+           AND owner_account_sn = #{ownerAccountSn}
+           AND model &lt;&gt; 'human'
          GROUP BY status
     </select>
 
@@ -30,15 +36,39 @@
         SELECT <include refid="agentColumns"/>
           FROM t_ai_agent
          WHERE agent_id = #{agentId}
+           AND owner_account_sn = #{ownerAccountSn}
            AND deleted_at IS NULL
+    </select>
+
+    <select id="selectByIdAnyOwner" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
+    </select>
+
+    <select id="selectAllForSystem" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE deleted_at IS NULL
+         ORDER BY started_at DESC
+    </select>
+
+    <select id="selectMeAgents" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE deleted_at IS NULL
+           AND tmux_session LIKE 'aidesk-self-%'
+           AND owner_account_sn &lt;&gt; #{excludeAccountSn}
+         ORDER BY owner_account_sn ASC
     </select>
 
     <insert id="insert" parameterType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
         INSERT INTO t_ai_agent (
-            agent_id, agent_name, workspace_dir, tmux_session,
+            agent_id, owner_account_sn, agent_name, workspace_dir, tmux_session,
             status, task_desc, model, context_pct, started_at
         ) VALUES (
-            #{agentId}, #{agentName}, #{workspaceDir}, #{tmuxSession},
+            #{agentId}, #{ownerAccountSn}, #{agentName}, #{workspaceDir}, #{tmuxSession},
             #{status}, #{taskDesc}, #{model}, #{contextPct}, NOW()
         )
     </insert>
@@ -46,6 +76,7 @@
     <delete id="hardDelete">
         DELETE FROM t_ai_agent
          WHERE agent_id = #{agentId}
+           AND owner_account_sn = #{ownerAccountSn}
     </delete>
 
     <update id="updateStatusFromWatcher">
@@ -59,12 +90,13 @@
            AND deleted_at IS NULL
     </update>
 
-    <update id="markBootstrapApplied">
+    <update id="touchUpdatedAt">
         UPDATE t_ai_agent
-           SET bootstrap_applied = TRUE,
-               updated_at = NOW()
+           SET updated_at = NOW()
          WHERE agent_id = #{agentId}
+           AND deleted_at IS NULL
     </update>
+
 
     <select id="selectByTmuxSession" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
         SELECT <include refid="agentColumns"/>
@@ -74,11 +106,76 @@
          LIMIT 1
     </select>
 
+    <select id="selectByWorkspaceDir" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE workspace_dir = #{workspaceDir}
+           AND deleted_at IS NULL
+         ORDER BY started_at DESC
+         LIMIT 1
+    </select>
+
     <update id="updateWorkspaceDir">
         UPDATE t_ai_agent
            SET workspace_dir = #{workspaceDir},
                updated_at    = NOW()
          WHERE agent_id = #{agentId}
+           AND owner_account_sn = #{ownerAccountSn}
+           AND deleted_at IS NULL
+    </update>
+
+    <!-- ================================================================
+         Phase 2 — 외부 AI 합류
+         ================================================================ -->
+
+    <insert id="insertExternal" parameterType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        INSERT INTO t_ai_agent (
+            agent_id, owner_account_sn, agent_name, workspace_dir, tmux_session,
+            status, task_desc, model, context_pct, started_at,
+            agent_type, bearer_token_hash, bearer_token_created_at
+        ) VALUES (
+            #{agentId}, #{ownerAccountSn}, #{agentName}, #{workspaceDir}, #{tmuxSession},
+            #{status}, #{taskDesc}, #{model}, #{contextPct}, NOW(),
+            'external', #{bearerTokenHash}, NOW()
+        )
+    </insert>
+
+    <select id="selectByBearerTokenHash" resultType="com.jsh.aidesk.serverapi.agents.vo.AgentVo">
+        SELECT <include refid="agentColumns"/>
+          FROM t_ai_agent
+         WHERE bearer_token_hash = #{tokenHash}
+           AND agent_type = 'external'
+           AND deleted_at IS NULL
+         LIMIT 1
+    </select>
+
+    <update id="updateBearerToken">
+        UPDATE t_ai_agent
+           SET bearer_token_hash       = #{tokenHash},
+               bearer_token_created_at = NOW(),
+               updated_at              = NOW()
+         WHERE agent_id         = #{agentId}
+           AND owner_account_sn = #{ownerAccountSn}
+           AND agent_type       = 'external'
+           AND deleted_at       IS NULL
+    </update>
+
+    <update id="revokeBearerToken">
+        UPDATE t_ai_agent
+           SET bearer_token_hash       = NULL,
+               bearer_token_created_at = NULL,
+               updated_at              = NOW()
+         WHERE agent_id         = #{agentId}
+           AND owner_account_sn = #{ownerAccountSn}
+           AND agent_type       = 'external'
+           AND deleted_at       IS NULL
+    </update>
+
+    <update id="updateStatusSystem">
+        UPDATE t_ai_agent
+           SET status     = #{status},
+               updated_at = NOW()
+         WHERE agent_id   = #{agentId}
            AND deleted_at IS NULL
     </update>
 

@@ -1,0 +1,54 @@
+# AI Desk 중앙 인프라 — backend + frontend.
+# DB(PostgreSQL) 는 호스트에 이미 설치되어 있어 컨테이너에서 제외.
+# 컨테이너에서 호스트 DB 접근은 host.docker.internal (macOS/Windows Docker Desktop) 또는
+# 리눅스 환경에선 host-gateway extra_hosts 로 매핑한다.
+#
+# 빌드 + 기동:    docker compose up -d --build
+# 로그 확인:      docker compose logs -f backend
+# 종료:           docker compose down
+# 재빌드만:        docker compose build backend frontend
+#
+# 호스트의 PostgreSQL 이 외부 접속(host.docker.internal 포함) 을 허용해야 한다.
+# 평소 외부 접속 안 받는 설정이면 postgresql.conf 의 listen_addresses 와 pg_hba.conf 확인.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: aidesk-backend:dev
+    container_name: aidesk-backend
+    # 외부 직접 노출은 디버깅 편의를 위해 유지. 운영 접속은 frontend(:30080) 의 same-origin proxy 통해.
+    ports:
+      - "30081:30081"
+    environment:
+      # 호스트의 PostgreSQL 에 접근 (DB 는 컨테이너 외부)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://host.docker.internal:5432/aidesk
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      # CORS — same-origin proxy 적용으로 브라우저가 항상 frontend(:30080) 와 같은 origin 으로 호출하므로
+      # 일반 사용 케이스엔 불필요. helper(:30083) 가 별도 origin 으로 backend 직접 호출하는 경우 대비해서만 유지.
+      CORS_ALLOWED_ORIGINS: "http://localhost:30080,http://localhost:30083"
+    extra_hosts:
+      # Docker Desktop on macOS/Windows 는 자동 추가하지만 Linux 호환을 위해 명시.
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      # API base 는 빈 문자열로 baked-in (Dockerfile default). 브라우저가 상대경로(/api/...)로 호출하면
+      # nginx 가 same-origin 안에서 backend 컨테이너로 reverse proxy → 어떤 호스트에서 접속해도 동작.
+      # HELPER 만 사용자 PC localhost 로 박음 (보안상 helper 는 127.0.0.1 only LISTEN).
+      args:
+        NUXT_PUBLIC_HELPER_BASE: http://localhost:30083
+    image: aidesk-frontend:dev
+    container_name: aidesk-frontend
+    ports:
+      - "30080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+# code-server (대시보드 임베드 VSCode) 는 desktop-agent (Helper) 가 직접 spawn + 라이프사이클
+# 관리한다. 본인 Mac 의 파일을 편집해야 하는 per-user 자원이라 중앙 인프라가 아닌 Helper 책임.
+# Helper 시작 시 자동 설치(brew install code-server) + 실행, 종료 시 정리.

@@ -1,0 +1,43 @@
+#!/bin/bash
+# .pkg 설치 직전 — 기존 Helper 를 안전하게 종료한다.
+#
+# 순서:
+#   1) LaunchAgent bootout → launchd 의 자동 재시작(KeepAlive) 끄기
+#   2) 잔여 프로세스 강제 종료 (수동 실행/좀비 포함)
+#   3) 포트 30083 점유 해제 확인
+#
+# 자식 프로세스 (tmux 세션, code-server, ttyd) 는 일부러 살려둔다 —
+# Helper 가 재시작하면 다시 attach 만 한다. 진행 중 작업 끊김 방지.
+
+set -e
+
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+
+# 1) LaunchAgent 해제 (재시작 메커니즘 OFF)
+if [[ -n "$CONSOLE_USER" && "$CONSOLE_USER" != "root" ]]; then
+    USER_UID=$(id -u "$CONSOLE_USER")
+    USER_HOME=$(eval echo "~$CONSOLE_USER")
+    PLIST="$USER_HOME/Library/LaunchAgents/com.aidesk.agent.plist"
+
+    launchctl bootout "gui/$USER_UID/com.aidesk.agent" 2>/dev/null || true
+    [[ -f "$PLIST" ]] && sudo -u "$CONSOLE_USER" launchctl unload "$PLIST" 2>/dev/null || true
+fi
+
+# 2) 잔여 Helper 프로세스 종료 (수동 실행/git-clone 기반/PyInstaller 모두 커버)
+pkill -f "python.*aidesk_agent" 2>/dev/null || true
+pkill -f "/usr/local/bin/aidesk-helper" 2>/dev/null || true
+
+# 3) 포트 30083 이 비워질 때까지 최대 5초 대기
+for i in 1 2 3 4 5; do
+    if ! lsof -i :30083 -sTCP:LISTEN -t > /dev/null 2>&1; then
+        break
+    fi
+    if [[ $i -eq 3 ]]; then
+        # 3초 지나도 안 죽으면 강제 종료
+        PORT_PID=$(lsof -ti :30083 2>/dev/null || true)
+        [[ -n "$PORT_PID" ]] && kill -9 $PORT_PID 2>/dev/null || true
+    fi
+    sleep 1
+done
+
+exit 0

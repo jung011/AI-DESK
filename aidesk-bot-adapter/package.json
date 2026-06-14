@@ -1,0 +1,16 @@
+{
+  "name": "aidesk-bot-adapter",
+  "version": "0.1.0",
+  "description": "Per-AI WebSocket bot adapter for AI Desk — message last-mile bridge between backend WebSocket and AI's tmux session.",
+  "bin": {
+    "aidesk-bot-adapter": "./bin/aidesk-bot-adapter"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

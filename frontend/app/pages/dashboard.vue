@@ -35,10 +35,41 @@
     <!-- AI 카드 그리드 -->
     <AgentCardGrid
       :agents="filteredList"
-      @delete="onDeleteRequest" />
+      @delete="onDeleteRequest"
+      @select="onAgentSelect" />
 
-    <!-- 사내 동료 AI (kaflix-a2a Control Plane) -->
-    <ExternalAgentGrid />
+    <!-- 사내 동료 AI (자체 채널 — 조회 전용. 메시지는 외부 터미널의 (me) claude 가 mcp send_to). -->
+    <ColleagueGrid />
+
+    <!-- 임베드 터미널 + VSCode 사이드 패널 — 사용 빈도 낮아 잠시 비활성.
+         외부 터미널 열기 / 외부 VSCode 열기 (AgentCard 안 버튼) 흐름은 그대로 동작.
+         복원하려면 아래 블록의 주석만 풀면 됨.
+    <TerminalSidePanel
+      :open="panel.open"
+      :agent-name="panel.agentName"
+      :subtitle="panel.subtitle"
+      :tmux-session="panel.tmuxSession"
+      :workspace-dir="panel.workspaceDir"
+      :model="panel.model"
+      @close="panel.open = false" />
+    -->
+
+
+    <!-- helper 가 가리키는 중앙서버가 현재 페이지와 다르면 자동 표시 — IP 변경 자동 반영. -->
+    <HelperSetupDialog
+      :open="helperSetupOpen"
+      :current-backend-url="helperBackendUrl"
+      :page-origin="pageOrigin"
+      @applied="onHelperSetupApplied"
+      @cancel="helperSetupOpen = false" />
+
+    <!-- (me) 워크스페이스 미지정 또는 (me) row 부재 시 자동 표시되는 모달 -->
+    <MeWorkspaceDialog
+      :open="meWorkspaceDialogOpen"
+      :initial-path="meWorkspacePath"
+      :me-agent-missing="meAgentMissing"
+      @saved="onMeWorkspaceSaved"
+      @cancel="meWorkspaceDialogOpen = false" />
 
     <!-- AI 생성 팝업 -->
     <AgentCreateDialog
@@ -56,6 +87,8 @@
       confirm-label="삭제"
       :destructive="true"
       :busy="deleting"
+      extra-option-label="이 워크스페이스의 Claude 대화 기록도 함께 삭제"
+      :extra-option-default="true"
       @cancel="closeDeleteDialog"
       @confirm="onDeleteConfirm" />
   </div>
@@ -69,11 +102,21 @@ import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
-import ExternalAgentGrid from '~/components/dashboard/ExternalAgentGrid.vue';
+import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
+import MeWorkspaceDialog from '~/components/dashboard/MeWorkspaceDialog.vue';
+import HelperSetupDialog from '~/components/dashboard/HelperSetupDialog.vue';
+import type { ApiEnvelope } from '~/vo/agents/AgentVo';
+interface A2aWorkspaceRs { path: string }
+interface HelperLocalInfoRs { currentBackendUrl?: string }
+// 임베드 터미널 + 임베드 VSCode 사이드 패널 비활성 — TerminalSidePanel + 하위
+// TerminalPane / VsCodePane 까지 함께 bundle 에서 빠지도록 import 도 같이 주석.
+// 복원하려면 이 import 와 template 안의 <TerminalSidePanel> 블록 주석 해제.
+// import TerminalSidePanel from '~/components/dashboard/TerminalSidePanel.vue';
 
 import type { AgentCreateRequest, AgentItem } from '~/vo/agents/AgentVo';
 
 const {
+  list,
   summary,
   status,
   query,
@@ -82,8 +125,83 @@ const {
   startPolling,
   stopPolling,
   createAgent,
-  deleteAgent
+  deleteAgent,
+  fetchAgents
 } = useAgents();
+
+const meWorkspacePath = ref('');
+const meWorkspaceDialogOpen = ref(false);
+const meAgentMissing = ref(false);
+
+const helperSetupOpen = ref(false);
+const helperBackendUrl = ref('');
+const pageOrigin = ref('');
+
+/** helper 의 backend URL host 와 brower origin host 가 다르면 setup 모달.
+ *  같은 host 면 port 차이는 무시 (frontend:30080 vs backend:30081).
+ *
+ *  subpath 배포 (예: https://도메인/ai-desk) 의 경우 hubUrl 에 baseURL 도 포함해서
+ *  helper 에 전달해야 helper 가 /api/* 호출 시 그 prefix 를 자동으로 붙인다. */
+async function checkHelperSetup(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const runtime = useRuntimeConfig();
+  const baseURL = (runtime.app?.baseURL || '/').replace(/\/+$/, '');
+  pageOrigin.value = window.location.origin + baseURL;
+  try {
+    const { $helper } = useNuxtApp();
+    const info = await $helper<HelperLocalInfoRs>('/api/local-info');
+    helperBackendUrl.value = info.currentBackendUrl || '';
+    if (!helperBackendUrl.value) return; // 옛 helper (0.6.7-) 호환 — 모달 안 띄움
+    const helperUrl = new URL(helperBackendUrl.value);
+    const pageUrl = new URL(pageOrigin.value || window.location.origin);
+    const helperPath = helperUrl.pathname.replace(/\/+$/, '');
+    const pagePath = pageUrl.pathname.replace(/\/+$/, '');
+    // host 또는 path prefix 가 다르면 mismatch → setup 모달.
+    if (helperUrl.hostname !== pageUrl.hostname || helperPath !== pagePath) {
+      helperSetupOpen.value = true;
+    }
+  } catch {
+    // helper 미가동 등 — 무시. (me) 모달 단계의 폴더 선택에서 어차피 에러로 안내됨.
+  }
+}
+
+function onHelperSetupApplied(): void {
+  // helper 가 launchctl 재로드 + brower 가 3s 후 자동 새로고침. 그 동안 다른 모달 숨김.
+  helperSetupOpen.value = false;
+  meWorkspaceDialogOpen.value = false;
+}
+
+/** (me) AI 는 tmux_session 이 'aidesk-self-' 로 시작. list 에 존재 여부로 판정. */
+function hasMeAgent(): boolean {
+  return list.value.some((a) => a.tmuxSession?.startsWith('aidesk-self-'));
+}
+
+async function loadMeWorkspace(): Promise<void> {
+  try {
+    const { $api } = useNuxtApp();
+    const env = await $api<ApiEnvelope<A2aWorkspaceRs>>('/api/settings/a2a-workspace');
+    if (env.result === 0 && env.data) {
+      meWorkspacePath.value = env.data.path || '';
+    }
+  } catch {
+    // 조회 실패해도 모달 강제 표시는 하지 않음 — 네트워크 일시 오류일 수 있음.
+    return;
+  }
+  // path 가 비어있거나 (me) row 가 없으면 모달 자동 표시. (me) 가 사라진 케이스는
+  // 사용자가 카드를 직접 삭제했거나 DB 가 정합성 어긋난 상태.
+  const missing = !hasMeAgent();
+  meAgentMissing.value = missing && meWorkspacePath.value !== '';
+  if (!meWorkspacePath.value || missing) {
+    meWorkspaceDialogOpen.value = true;
+  }
+}
+
+async function onMeWorkspaceSaved(path: string): Promise<void> {
+  meWorkspacePath.value = path;
+  meAgentMissing.value = false;
+  meWorkspaceDialogOpen.value = false;
+  await fetchAgents();
+}
 
 const dialogOpen = ref(false);
 const creating = ref(false);
@@ -95,6 +213,26 @@ const confirmDelete = reactive<{ open: boolean; agent: AgentItem | null; message
   message: ''
 });
 const deleting = ref(false);
+
+/** 임베드 터미널 사이드 패널 상태. agentId/employeeId 변할 때 TerminalPane 재마운트 되도록 :key 가 tmuxSession 에 묶여있음. */
+const panel = reactive<{
+  open: boolean;
+  agentName: string;
+  subtitle: string;
+  tmuxSession: string;
+  workspaceDir: string;
+  model: string;
+}>({ open: false, agentName: '', subtitle: '', tmuxSession: '', workspaceDir: '', model: '' });
+
+function onAgentSelect(agent: AgentItem): void {
+  panel.agentName = agent.agentName;
+  panel.subtitle = `${agent.model}  ·  ${agent.workspaceDir || '워크스페이스 미설정'}`;
+  panel.tmuxSession = agent.tmuxSession || `aidesk-${agent.agentId.slice(0, 8)}`;
+  panel.workspaceDir = agent.workspaceDir || '';
+  panel.model = agent.model || '';
+  panel.open = true;
+}
+
 
 async function onCreateSubmit(req: AgentCreateRequest): Promise<void> {
   creating.value = true;
@@ -120,10 +258,10 @@ function closeDeleteDialog(): void {
   confirmDelete.agent = null;
 }
 
-async function onDeleteConfirm(): Promise<void> {
+async function onDeleteConfirm(payload: { extraOption: boolean }): Promise<void> {
   if (!confirmDelete.agent || deleting.value) return;
   deleting.value = true;
-  const ok = await deleteAgent(confirmDelete.agent.agentId);
+  const ok = await deleteAgent(confirmDelete.agent, { purgeHistory: payload.extraOption });
   deleting.value = false;
   if (ok) {
     confirmDelete.open = false;
@@ -132,7 +270,15 @@ async function onDeleteConfirm(): Promise<void> {
   // 실패 시는 error 메시지가 useAgents.error 에 채워지고, 페이지 상단에 표시됨.
 }
 
-onMounted(() => startPolling(10_000));
+onMounted(async () => {
+  // 우선 helper 가 가리키는 중앙서버가 현재 페이지와 일치하는지 확인 — 다르면 setup 모달
+  // 이 최우선 노출. (me) 워크스페이스 모달은 setup 마친 다음 단계.
+  await checkHelperSetup();
+  if (helperSetupOpen.value) return;
+  await fetchAgents();
+  await loadMeWorkspace();
+  startPolling(10_000);
+});
 onUnmounted(() => stopPolling());
 </script>
 

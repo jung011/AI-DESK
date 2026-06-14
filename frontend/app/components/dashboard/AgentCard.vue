@@ -1,5 +1,5 @@
 <template>
-  <div class="ai-card" :class="statusClass">
+  <div class="ai-card" :class="[statusClass, { 'menu-open': menuOpen }]" role="button" tabindex="0" @click="onSelect" @keydown.enter="onSelect" @keydown.space.prevent="onSelect">
     <div class="ai-card-header">
       <div class="ai-card-name-wrap">
         <div class="ai-avatar" :class="statusClass">{{ avatarEmoji }}</div>
@@ -26,7 +26,7 @@
           </button>
           <button type="button" class="card-menu-item" @click="onOpenTerminal">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10z"/></svg>
-            터미널 열기
+            외부 터미널 열기
           </button>
           <button type="button" class="card-menu-item" @click="onPlaceholder('브라우저 검증')">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/></svg>
@@ -40,15 +40,36 @@
         </div>
       </div>
     </div>
+    <TerminalModeDialog
+      :open="modeDialogOpen"
+      :busy="modeDialogBusy"
+      @confirm="onModeConfirm"
+      @cancel="onModeCancel"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { AgentItem } from '~/vo/agents/AgentVo';
+import TerminalModeDialog from '~/components/dashboard/TerminalModeDialog.vue';
+
+type OpenTerminalEnv = {
+  rc: number;
+  message?: string;
+  needsModeSelection?: boolean;
+};
+type WorkroleEnv = { result: number; data?: { path: string } | null };
+
 const props = defineProps<{ agent: AgentItem }>();
 const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
+  (e: 'select', agent: AgentItem): void;
 }>();
+
+function onSelect(): void {
+  if (menuOpen.value) return; // 메뉴 떠 있을 땐 카드 선택 무시
+  emit('select', props.agent);
+}
 
 const menuOpen = ref(false);
 const menuRoot = ref<HTMLElement | null>(null);
@@ -77,37 +98,109 @@ function onPlaceholder(label: string): void {
 async function onOpenVscode(): Promise<void> {
   menuOpen.value = false;
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; message: string }>(
-      `/api/agents/${encodeURIComponent(props.agent.agentId)}/open-vscode`,
-      { method: 'POST' }
+    const { $helper } = useNuxtApp();
+    const env = await $helper<{ rc: number; message: string }>(
+      '/api/open-vscode',
+      {
+        method: 'POST',
+        body: { workspaceDir: props.agent.workspaceDir },
+      }
     );
-    if (env.result !== 0) {
+    if (env.rc !== 0) {
       // eslint-disable-next-line no-alert
       alert(env.message || 'VSCode 열기에 실패했습니다.');
     }
   } catch (e) {
     // eslint-disable-next-line no-alert
-    alert(`VSCode 열기 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+    alert(`VSCode 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+
+/**
+ * 외부 터미널 열기 호출.
+ * - mode 미지정 (첫 시도): 살아있으면 attach + 포커스 (200), 죽었으면 helper 가 412 (needsModeSelection)
+ * - mode 지정 (모달 confirm 후): helper 가 그 모드로 tmux+claude 시작 + attach
+ *
+ * helper 가 새로 띄울 때 첫 부팅이면 identity/workrole 자동 주입 — 그래서 mode 지정 호출 시에만
+ * agentName / workroleFile 도 같이 전달한다.
+ */
+async function callOpenTerminal(
+  mode = '',
+  customOpts = '',
+): Promise<OpenTerminalEnv & { needsModeSelection?: boolean }> {
+  const { $helper, $api } = useNuxtApp();
+  const body: Record<string, unknown> = {
+    workspaceDir: props.agent.workspaceDir,
+    tmuxSession: props.agent.tmuxSession,
+    title: props.agent.agentName,
+    // PoC v1 — helper 가 봇 어댑터 spawn 시 backend WS 인증용 agentId 필요.
+    agentId: props.agent.agentId,
+  };
+  if (mode) {
+    body.mode = mode;
+    if (customOpts) body.customOpts = customOpts;
+    body.agentName = props.agent.agentName;
+    // workrole 은 인증 cookie 가 있는 $api 로 조회. 실패해도 진행 (identity 만 주입됨).
+    try {
+      const wrEnv = await $api<WorkroleEnv>('/api/settings/workrole-file');
+      if (wrEnv.result === 0 && wrEnv.data) body.workroleFile = wrEnv.data.path || '';
+    } catch {
+      /* workrole 조회 실패 무시 */
+    }
+  }
+  try {
+    return await $helper<OpenTerminalEnv>('/api/open-terminal', { method: 'POST', body });
+  } catch (e: unknown) {
+    // $fetch 는 412 같은 non-2xx 를 throw — 모드 선택 신호를 분리 처리.
+    const err = e as { statusCode?: number; status?: number; data?: OpenTerminalEnv };
+    const status = err?.statusCode ?? err?.status;
+    const data = err?.data;
+    if (status === 412 && data?.needsModeSelection) {
+      return { ...data };
+    }
+    throw e;
+  }
+}
+
+const modeDialogOpen = ref(false);
+const modeDialogBusy = ref(false);
 
 async function onOpenTerminal(): Promise<void> {
   menuOpen.value = false;
   try {
-    const { $api } = useNuxtApp();
-    const env = await $api<{ result: number; message: string }>(
-      `/api/agents/${encodeURIComponent(props.agent.agentId)}/open-terminal`,
-      { method: 'POST' }
-    );
-    if (env.result !== 0) {
+    const env = await callOpenTerminal();
+    if (env.needsModeSelection) {
+      modeDialogOpen.value = true;
+    } else if (env.rc !== 0) {
       // eslint-disable-next-line no-alert
       alert(env.message || '터미널 열기에 실패했습니다.');
     }
   } catch (e) {
     // eslint-disable-next-line no-alert
-    alert(`터미널 열기 호출 실패: ${e instanceof Error ? e.message : String(e)}`);
+    alert(`터미널 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
+}
+
+async function onModeConfirm(payload: { mode: string; customOpts: string }): Promise<void> {
+  modeDialogBusy.value = true;
+  try {
+    const env = await callOpenTerminal(payload.mode, payload.customOpts);
+    if (env.rc === 0) {
+      modeDialogOpen.value = false;
+    } else {
+      // eslint-disable-next-line no-alert
+      alert(env.message || '터미널 시작에 실패했습니다.');
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-alert
+    alert(`터미널 시작 실패: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    modeDialogBusy.value = false;
+  }
+}
+
+function onModeCancel(): void {
+  modeDialogOpen.value = false;
 }
 
 function onDelete(): void {
@@ -117,32 +210,41 @@ function onDelete(): void {
 
 const statusClass = computed(() => ({
   active: 'working',
+  waiting: 'waiting',
   idle: 'idle',
-  done: 'done'
-}[props.agent.status] ?? 'working'));
+  offline: 'offline',
+  error: 'error'
+}[props.agent.status] ?? 'idle'));
 
 const statusLabel = computed(() => ({
   active: '작업중',
-  idle: '쉬는 중',
-  done: '완료'
-}[props.agent.status] ?? '작업중'));
+  waiting: '응답 대기',
+  idle: '대기중',
+  offline: '오프라인',
+  error: '오류'
+}[props.agent.status] ?? '대기중'));
 
 const badgeClass = computed(() => ({
   active: 'type_v5',
+  waiting: 'type_v10',
   idle: 'type_v8',
-  done: 'type_v9'
-}[props.agent.status] ?? 'type_v5'));
+  offline: 'type_v8',
+  error: 'type_v11'
+}[props.agent.status] ?? 'type_v8'));
 
 const avatarEmoji = computed(() => ({
   active: '🤖',
+  waiting: '🙋',
   idle: '📝',
-  done: '✅'
-}[props.agent.status] ?? '🤖'));
+  offline: '💤',
+  error: '⚠️'
+}[props.agent.status] ?? '📝'));
 
 const metaLabel = computed(() => ({
   active: '시작',
+  waiting: '대기 시작',
   idle: '대기 시간',
-  done: '완료'
+  error: '오류 발생'
 }[props.agent.status] ?? '시작'));
 
 const metaValue = computed(() => formatTime(props.agent.startedAt, props.agent.status));
@@ -182,14 +284,23 @@ function formatTime(iso: string, status: string): string {
   background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
   padding: 20px; box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .12);
   position: relative;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .08s;
 }
+.ai-card:hover { border-color: #0062ff; box-shadow: 0 6px 18px rgba(0, 98, 255, .15); }
+.ai-card:active { transform: scale(.995); }
+.ai-card:focus-visible { outline: 2px solid #0062ff; outline-offset: 2px; }
+/* 메뉴 열렸을 때 — 드롭다운이 다음 행 카드 뒤에 깔리지 않도록 카드 자체를 위로 끌어올림.
+ * (.ai-card 가 position:relative + z-index:auto 라 형제 카드와 DOM 순서로 쌓이는 문제 보정) */
+.ai-card.menu-open { z-index: 100; }
 .ai-card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0;
   height: 3px; border-radius: 6px 6px 0 0;
 }
 .ai-card.working::before { background: #00C853; }
+.ai-card.waiting::before { background: #0062FF; }
 .ai-card.idle::before    { background: #FFB300; }
-.ai-card.done::before    { background: #9C27B0; }
+.ai-card.error::before   { background: #E53935; }
 
 .ai-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .ai-card-name-wrap { display: flex; align-items: center; gap: 10px; }
@@ -199,8 +310,9 @@ function formatTime(iso: string, status: string): string {
   font-size: 18px; flex-shrink: 0;
 }
 .ai-avatar.working { background: #E8F5E9; }
+.ai-avatar.waiting { background: #E3F2FD; }
 .ai-avatar.idle    { background: #FFF8E1; }
-.ai-avatar.done    { background: #F3E8FF; }
+.ai-avatar.error   { background: #FFEBEE; }
 
 .ai-name {
   font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
@@ -251,13 +363,17 @@ function formatTime(iso: string, status: string): string {
   padding: 4px 10px; border-radius: 20px;
   font-size: 11px; font-weight: 600;
 }
-.ico_badge.type_v5 { background: #E8F5E9; color: #2E7D32; }
-.ico_badge.type_v8 { background: #FFF8E1; color: #E65100; }
-.ico_badge.type_v9 { background: #F3E8FF; color: #6A1B9A; }
+.ico_badge.type_v5  { background: #E8F5E9; color: #2E7D32; }
+.ico_badge.type_v8  { background: #FFF8E1; color: #E65100; }
+.ico_badge.type_v9  { background: #F3E8FF; color: #6A1B9A; }
+.ico_badge.type_v10 { background: #E3F2FD; color: #0D47A1; }
+.ico_badge.type_v11 { background: #FFEBEE; color: #B71C1C; }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.ico_badge.type_v5 .badge-dot { background: #00C853; }
-.ico_badge.type_v8 .badge-dot { background: #FFB300; }
-.ico_badge.type_v9 .badge-dot { background: #9C27B0; }
+.ico_badge.type_v5  .badge-dot { background: #00C853; }
+.ico_badge.type_v8  .badge-dot { background: #FFB300; }
+.ico_badge.type_v9  .badge-dot { background: #9C27B0; }
+.ico_badge.type_v10 .badge-dot { background: #0062FF; }
+.ico_badge.type_v11 .badge-dot { background: #E53935; }
 
 .ai-model-tag {
   display: inline-block; padding: 2px 8px;
