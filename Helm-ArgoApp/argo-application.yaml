@@ -11,6 +11,13 @@ spec:
             path: Helm
             repoURL: https://github.com/jung011/AI-DESK.git
             targetRevision: master
+          # self-managed: ApplicationSet 이 자기 자신 manifest 도 sync.
+          # = master 의 Helm-ArgoApp/ 변경이 *우드 manual kubectl apply 없이* 자동 반영.
+          # 단 *첫 적용 시* 만 우드 manual 1 회 필요 (chicken-and-egg).
+          - name: aidesk-apps-self
+            path: Helm-ArgoApp
+            repoURL: https://github.com/jung011/AI-DESK.git
+            targetRevision: master
 
   template:
     metadata:
