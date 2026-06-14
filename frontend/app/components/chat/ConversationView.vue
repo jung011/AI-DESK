@@ -143,7 +143,13 @@ function formatTime(iso: string): string {
 </script>
 
 <style scoped>
-.conv-view { display: flex; flex-direction: column; background: #F8FAFC; min-width: 0; }
+.conv-view {
+  display: flex; flex-direction: column;
+  background: #F8FAFC;
+  /* parent .chat-pane (flex column) 안에서 남은 높이를 다 차지해야
+     .conv-body 의 overflow-y:auto + scrollToBottom 이 정상 작동. */
+  flex: 1; min-width: 0; min-height: 0;
+}
 
 .conv-head {
   display: flex; align-items: center; gap: 12px;

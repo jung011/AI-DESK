@@ -55,6 +55,10 @@ function shortModel(m: string | null | undefined): string {
   display: flex; flex-direction: column;
   border-right: 1px solid #E5E9EF;
   background: #fff;
+  /* parent .chat-pane (flex column) 안에서 남은 높이를 다 차지해야
+     스크롤이 .al-list 안에서만 일어나고, page 전체가 같이 스크롤되며
+     이 패널이 위로 사라지는 증상이 안 생긴다. */
+  flex: 1; min-height: 0;
 }
 .al-head {
   padding: 16px 18px;
