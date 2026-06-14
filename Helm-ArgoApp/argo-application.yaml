@@ -57,7 +57,9 @@ spec:
       ignoreDifferences:
         - group: ""
           kind: Secret
-          name: aidesk
+          # helm fullname = release '{{ .Release.Name }}' + chart name → 'aidesk-ai-desk'.
+          # 옛 'aidesk' 만 적었던 게 매칭 실패의 원인 — sync 마다 jwt rotate.
+          name: aidesk-ai-desk
           jsonPointers:
             - /data/jwt-secret-key
             - /stringData/jwt-secret-key
