@@ -273,8 +273,9 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   const me = await ensureAgentId();
   const toAgentId = await resolveAgentId(target_agent);
 
-  // [송신 전] recipient status 확인 — offline/error 면 warning 동봉. backend retry-on-reconnect
-  // 부재로 (status=sent 무한 대기) 발생하는 무응답 silence 를 caller LLM 이 즉시 인지하게.
+  // [송신 전] recipient status 확인 — offline/error 면 silence 가능성 warning,
+  // compacting 이면 응답 지연 안내. backend retry-on-reconnect 부재로 (status=sent 무한 대기)
+  // 발생하는 무응답 silence 또는 압축 중 자연 지연을 caller LLM 이 즉시 인지하게.
   let preWarning = null;
   try {
     const probe = await api(`/api/agents/${encodeURIComponent(toAgentId)}`);
@@ -282,6 +283,8 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
     const name = probe.data?.agentName || target_agent;
     if (s === 'offline' || s === 'error') {
       preWarning = `recipient(${name}) status=${s} — 미전달 가능성 높음. retry-on-reconnect 없어 recipient 활성화돼도 자동 catchup 안 됨.`;
+    } else if (s === 'compacting') {
+      preWarning = `recipient(${name}) 컨텍스트 압축 중 — 응답 1-3분 지연 가능. 메시지는 큐 처리되어 압축 후 자동 도달.`;
     }
   } catch {
     // status fetch 실패는 무시 (송신 자체 진행)
