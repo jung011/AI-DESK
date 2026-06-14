@@ -7,6 +7,12 @@ metadata:
     app.kubernetes.io/component: frontend
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
+  # 무중단 롤링 업데이트 — backend 와 동일 패턴. 새 pod readinessProbe (HTTP GET /) 통과 후 옛 pod 종료.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "ai-desk.selectorLabels" . | nindent 6 }}
