@@ -78,6 +78,13 @@ public class DesktopService {
                     && !reportedTmuxNames.contains(a.getTmuxSession())) {
                 effectiveStatus = "offline";
             }
+            // 'compacting' (PreCompact hook 이 명시적으로 set) 상태인 agent 는 helper reporter 의
+            // jsonl-mtime 기반 'active' 보고에 덮어쓰이지 않도록 stick. PostCompact hook 이 다시
+            // idle 로 명시적 set 할 때까지 compacting 유지.
+            if ("compacting".equals(a.getStatus())) {
+                agentMapper.touchUpdatedAt(a.getAgentId());
+                continue;
+            }
             if (!effectiveStatus.equals(a.getStatus())) {
                 agentMapper.updateStatusFromWatcher(a.getAgentId(), effectiveStatus, a.getContextPct());
                 updated++;

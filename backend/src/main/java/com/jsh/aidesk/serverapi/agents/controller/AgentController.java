@@ -16,6 +16,7 @@ import com.jsh.aidesk.serverapi.agents.vo.AgentCreateRqVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentItemRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentListRsVo;
 import com.jsh.aidesk.serverapi.agents.vo.AgentRealtimeRsVo;
+import com.jsh.aidesk.serverapi.agents.vo.AgentStatusUpdateRqVo;
 import com.jsh.aidesk.serverapi.common.response.ResponseCode;
 import com.jsh.aidesk.serverapi.common.response.ResponseJson;
 
@@ -63,6 +64,21 @@ public class AgentController {
     @DeleteMapping("/{agentId}")
     public ResponseJson<Void> delete(@PathVariable("agentId") String agentId) {
         boolean ok = agentService.delete(agentId);
+        return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
+    }
+
+    /**
+     * Hook 이 본인 status 갱신 시 호출. 예: claude code 의 PreCompact hook 이 'compacting',
+     * PostCompact hook 이 'idle' 로 복귀.
+     *
+     * body 의 status 는 free-form string — 새 값 ('compacting' 등) 도 그대로 저장 가능.
+     * 현재 agents permitAll 라 별도 인증 없음 (PoC).
+     */
+    @PostMapping("/{agentId}/status")
+    public ResponseJson<Void> updateStatus(
+            @PathVariable("agentId") String agentId,
+            @RequestBody AgentStatusUpdateRqVo body) {
+        boolean ok = agentService.updateStatus(agentId, body == null ? null : body.getStatus());
         return ok ? ResponseJson.ok((Void) null) : ResponseJson.fail(ResponseCode.FAIL_NOT_FOUND);
     }
 

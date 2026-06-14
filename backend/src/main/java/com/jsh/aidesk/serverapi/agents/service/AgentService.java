@@ -240,6 +240,23 @@ public class AgentService {
         return agentMapper.selectById(agentId, AuthContext.currentAccountSn());
     }
 
+    /**
+     * Hook 또는 helper 가 본인 agent status 갱신 (예: PreCompact → 'compacting').
+     * agent row 존재 + status 비어있지 않으면 update. status 값은 string free-form.
+     */
+    @Transactional
+    public boolean updateStatus(String agentId, String status) {
+        if (agentId == null || agentId.isBlank() || status == null || status.isBlank()) return false;
+        AgentVo agent = agentMapper.selectByIdAnyOwner(agentId);
+        if (agent == null) return false;
+        int updated = agentMapper.updateStatusSystem(agentId, status);
+        if (updated > 0) {
+            log.info("agent status updated via hook: agent_id={} {} -> {}",
+                    agentId, agent.getStatus(), status);
+        }
+        return updated > 0;
+    }
+
     @Transactional(readOnly = true)
     public AgentItemRsVo detail(String agentId) {
         AgentVo v = (AuthContext.currentUserOrNull() == null)
