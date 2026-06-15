@@ -1,0 +1,5 @@
+apiVersion: v2
+name: aidesk-argo-app
+description: ApplicationSet that drives self-managed App-of-Apps for AI Desk
+type: application
+version: 0.1.0
