@@ -62,15 +62,16 @@ helm `aidesk-ai-desk` ConfigMap + Secret 의 env 가 그대로 매핑.
 
 ## 마이그 진척
 
-| 도메인 | 상태 |
-|---|---|
-| core (config / database / security / exceptions / middleware) | 🚧 진행 |
-| auth | 🚧 진행 |
-| settings | ⏳ 대기 |
-| helper | ⏳ 대기 |
-| colleagues | ⏳ 대기 |
-| agents | ⏳ 대기 |
-| desktop | ⏳ 대기 |
-| messages | ⏳ 대기 |
-| agents/external | ⏳ 대기 |
-| logs | ⏳ 대기 |
+| 도메인 | 상태 | test |
+|---|---|---|
+| core (config / database / security / exceptions / middleware) | ✅ 완료 (`0757500`) | — |
+| auth (signup/authenticate/refresh/sign-out/me + JWT + refresh rotation) | ✅ 완료 (`1874b39`) | 10 |
+| settings (a2a-workspace / workrole-file / code-server probe) | ✅ 완료 (`dd06ac0`) | 7 |
+| helper (version / download) | ✅ 완료 (`dd06ac0`) | 5 |
+| colleagues | ⏳ 대기 (agents 와 함께) | — |
+| agents (CRUD / status / realtime) + watcher | ⏳ 대기 | — |
+| desktop (local-info + SSE) | ⏳ 대기 | — |
+| messages (send / inbox / SSE push + policy) | ⏳ 대기 | — |
+| agents/external (bot adapter / token) | ⏳ 대기 | — |
+| logs (action-logs / feed) | ⏳ 대기 | — |
+| **합계** | **4/10** | **22 green** |
