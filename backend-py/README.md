@@ -71,8 +71,20 @@ helm `aidesk-ai-desk` ConfigMap + Secret 의 env 가 그대로 매핑.
 | agents (CRUD / status / realtime + channel-aware filter + partners) | ✅ 완료 (`1f5f2a1`, `97a7b7b`) | 11 |
 | colleagues | ✅ 완료 (`1f5f2a1`) | 5 |
 | messages (9/9 + policy + SSE broker) | ✅ 완료 (`3c6819f`, `97a7b7b`) | 17 |
-| agents/watcher (stale 체크) | ⏳ 대기 | — |
-| desktop (helper local-info + dashboard SSE 통합) | ⏳ 대기 | — |
-| agents/external (bot adapter / token rotation) | ⏳ 대기 | — |
-| logs (action-logs / feed) | ⏳ 대기 | — |
-| **합계** | **8/10** | **58 green** |
+| desktop (helper local-info + SSE) | ✅ 완료 (`c1ffff3`) | 4 |
+| agents/external (bot adapter / token rotation) | ✅ 완료 (`c1ffff3`) | 5 |
+| logs (action-logs / feed) | ✅ 완료 (`c1ffff3`) | 3 |
+| agents/watcher (stale 체크 asyncio task) | ✅ 완료 (`c1ffff3`) | — |
+| **합계** | **🎯 10/10 + watcher** | **🎯 70 green** |
+
+## 마이그 완료 단계 — prod swap 준비
+
+| # | 액션 | 상태 |
+|---|---|---|
+| 1 | endpoint 1:1 포팅 + test | ✅ 완료 |
+| 2 | cleanup — `datetime.utcnow` → `datetime.now(UTC)` deprecation | ⏳ 권장 |
+| 3 | Dockerfile build 검증 (image 빌드 + uvicorn 부팅) | ⏳ 권장 |
+| 4 | staging 환경 띄움 (별도 ingress `aidesk-stg.kaflix.internal`) | ⏳ |
+| 5 | long-running 시나리오 검증 (helper reporter + SSE + 메시지 흐름) | ⏳ |
+| 6 | helm values.yaml backend image 교체 → ArgoCD sync | ⏳ |
+| 7 | 며칠 안정화 → Spring 코드 (`backend/`) 제거 | ⏳ |
