@@ -24,6 +24,8 @@ class AiAgent(Base):
     agent_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # me / internal / external / human
     bearer_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     bearer_token_created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # DDL: NOT NULL DEFAULT NOW() — INSERT 시 컬럼 안 박아도 DB 자동. server_default
+    # 명시해서 SQLAlchemy 가 NULL 박는 일 차단 (외부 AI / 휴먼 / (me) 등 모든 INSERT 호환).
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
