@@ -1,9 +1,10 @@
 backend:
   image:
-    # FastAPI 마이그 (2026-06-19) — 옛: jsh125/aidesk-backend:1.53.10-rc1 (Spring Boot).
-    # 문제 시 두 줄 되돌리기 + git push 로 roll-back 5분.
-    repository: jsh125/aidesk-backend-py
-    tag: "0.1.0-rc3"
+    # roll-back to Spring (2026-06-19) — FastAPI rc3 가 prod DB 안 잡고 sqlite fallback
+    # → 빈 dashboard. env 매핑 fix + rc4 빌드 후 재시도. 옛 backend-py image 는 registry
+    # 에 그대로 남아있음 (jsh125/aidesk-backend-py:0.1.0-rc3).
+    repository: jsh125/aidesk-backend
+    tag: "1.53.10-rc1"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 30081
