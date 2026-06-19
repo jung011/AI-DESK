@@ -101,9 +101,10 @@ class MessageService:
         payload = item.model_dump(by_alias=True)
         payload["toTmuxSession"] = receiver.tmux_session
         broker.publish("message.deliver", payload)
-        # WS — recipient 의 owner account_sn 에게만 push (broadcast 한계 회피).
-        # 외부 AI 의 ws client / 같은 account 의 다른 tab 둘 다 받음.
-        asyncio.create_task(ws_broker.publish_to_account(receiver.owner_account_sn, payload))
+        # WS payload — mcp aidesk-channel 의 ws client 가 evt.type === 'message.deliver' +
+        # evt.toAgentId === AGENT_ID 매칭. type 필드 없으면 skip → 외부 AI 가 메시지 못 받음.
+        ws_payload = {"type": "message.deliver", **payload}
+        asyncio.create_task(ws_broker.publish_to_account(receiver.owner_account_sn, ws_payload))
         return item
 
     def _save_failed(
