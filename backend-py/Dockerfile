@@ -29,6 +29,10 @@ COPY --from=builder /app/alembic.ini /app/alembic.ini
 # helper .pkg image 에 baked. 갱신 시 backend-py/helper-pkg/ 교체 + image rebuild
 COPY helper-pkg /app/helper
 
+# 외부 AI mcp standalone binary (darwin-arm64 / linux-x64 / linux-arm64) — git 없는
+# 외부 운영 환경 download path. 갱신 시 backend-py/static/mcp/ 교체 + image rebuild.
+COPY static /app/static
+
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 

@@ -31,3 +31,6 @@ htmlcov/
 
 # helper-pkg (binary) — backend-py/helper-pkg/ 의 .pkg 는 git 에 포함 (negation)
 !helper-pkg/*.pkg
+
+# aidesk-channel mcp standalone binaries — GHA bun build 시점에 생성
+static/mcp/aidesk-channel-mcp*
