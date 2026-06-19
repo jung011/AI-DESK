@@ -32,6 +32,8 @@ COPY helper-pkg /app/helper
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
 
-EXPOSE 8080
+# helm chart 의 backend.port = 30081 (Spring 시절 그대로). containerPort + readinessProbe
+# tcpSocket: port http → service.targetPort 까지 다 30081 매핑. FastAPI 도 같은 port 사용.
+EXPOSE 30081
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "30081"]
