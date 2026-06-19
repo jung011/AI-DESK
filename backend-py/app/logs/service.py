@@ -28,7 +28,7 @@ class LogService:
             agent_id=body.agent_id,
             agent_name=body.agent_name,
             session_id=body.session_id,
-            cwd=body.cwd,
+            # cwd 는 schema 에서 받지만 DB DDL 에 컬럼 없어 저장 안 함
             tool=body.tool,
             category=body.category,
             target=body.target,

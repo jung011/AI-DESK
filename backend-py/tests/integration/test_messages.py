@@ -299,11 +299,13 @@ def test_broadcast_dedupe_and_self_excluded(client, two_agents):
 
 
 def test_conversations_lists_partner_recents(client, two_agents):
+    import time as _time
     sender, receiver = two_agents
     client.post(
         "/api/messages",
         json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": "hi 1"},
     )
+    _time.sleep(1.1)  # SQLite created_at second 단위 — 1초+ 차이로 순서 보장
     client.post(
         "/api/messages",
         json={"fromAgentId": receiver.agent_id, "toAgentId": sender.agent_id, "content": "reply 2"},

@@ -1,4 +1,4 @@
-"""messages ORM — t_message. Spring MessageVo 와 1:1."""
+"""messages ORM — t_ai_message. Spring schema.sql 과 1:1."""
 from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, String, Text, func
@@ -8,13 +8,13 @@ from app.core.database import Base
 
 
 class Message(Base):
-    """t_message — 1:1 메시지.
+    """t_ai_message — 1:1 메시지.
 
-    status: pending / sent / delivered / read / failed / compacting-deferred.
-    hop_count: reply chain 깊이 (bot↔bot loop 차단).
+    status: sent / delivered / read / replied / failed.
+    hop_count: reply chain 깊이 (bot↔bot loop 차단). NOT NULL DEFAULT 0.
     """
 
-    __tablename__ = "t_message"
+    __tablename__ = "t_ai_message"
 
     # PK = message_id (Spring 실제 schema)
     message_id: Mapped[str] = mapped_column(String(36), primary_key=True)

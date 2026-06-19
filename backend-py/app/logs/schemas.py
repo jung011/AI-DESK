@@ -8,9 +8,10 @@ class ActionLogCreateRq(BaseModel):
     agent_id: str = Field(alias="agentId", min_length=1)
     agent_name: str | None = Field(default=None, alias="agentName")
     session_id: str | None = Field(default=None, alias="sessionId")
+    # cwd 는 helper 가 보내지만 DB DDL 에 없음 — 받아 무시 (저장 X)
     cwd: str | None = None
-    tool: str | None = None
-    category: str | None = None
+    tool: str = Field(min_length=1, max_length=50)       # NOT NULL DDL
+    category: str = Field(min_length=1, max_length=20)   # NOT NULL DDL
     target: str | None = None
     summary: str | None = None
 

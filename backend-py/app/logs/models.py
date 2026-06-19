@@ -1,23 +1,21 @@
-"""logs ORM — t_action_log. claude PostToolUse hook 이 호출하는 action log."""
+"""logs ORM — t_ai_action_log. Spring schema.sql 과 1:1."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
 
 class ActionLog(Base):
-    __tablename__ = "t_action_log"
+    __tablename__ = "t_ai_action_log"
 
-    # PK = log_id (Spring 실제 schema)
     log_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    agent_id: Mapped[str] = mapped_column(String(36), index=True)
-    agent_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    session_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    cwd: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    tool: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    agent_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    agent_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    tool: Mapped[str] = mapped_column(String(50))         # NOT NULL — DDL
+    category: Mapped[str] = mapped_column(String(20))     # NOT NULL — DDL
     target: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

@@ -26,10 +26,10 @@ def test_record_action_log(client, db_session):
 
 
 def test_feed_merges_actions_and_messages(client, db_session):
-    # action log
+    # action log — tool/category NOT NULL DDL → schema required
     client.post(
         "/api/action-logs",
-        json={"agentId": "a1", "agentName": "A1", "category": "shell", "summary": "ls"},
+        json={"agentId": "a1", "agentName": "A1", "tool": "Bash", "category": "shell", "summary": "ls"},
     )
 
     # 메시지 — 필요 agent 2개 추가
@@ -56,8 +56,8 @@ def test_feed_merges_actions_and_messages(client, db_session):
 
 
 def test_feed_category_filter(client, db_session):
-    client.post("/api/action-logs", json={"agentId": "a", "category": "shell", "summary": "s1"})
-    client.post("/api/action-logs", json={"agentId": "a", "category": "file", "summary": "s2"})
+    client.post("/api/action-logs", json={"agentId": "a", "tool": "Bash", "category": "shell", "summary": "s1"})
+    client.post("/api/action-logs", json={"agentId": "a", "tool": "Write", "category": "file", "summary": "s2"})
 
     rs = client.get("/api/logs?category=shell&limit=10")
     body = rs.json()["data"]
