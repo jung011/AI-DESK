@@ -203,11 +203,23 @@ async def messages_ws_endpoint(
             log.warning("[ws-handler] recv loop crashed: %s", e)
         finally:
             await ws_broker.unregister(account_sn, ws_agent_id, websocket)
-            # disconnect → agent status='offline'
+            # disconnect → 남은 ws session 0개면 status='offline'. 다른 session 살아있으면
+            # idle 유지 (Spring countSessionsForAgent 패턴). 멀티 mcp / multi tab 시 false
+            # offline 방지 — rc13 fix.
             if ws_agent_id:
                 try:
-                    _toggle_status(db, ws_agent_id, "offline")
-                    log.info("[ws-handler] disconnect → status=offline agentId=%s", ws_agent_id)
+                    remaining = ws_broker.count_sessions_for_agent(ws_agent_id)
+                    if remaining == 0:
+                        _toggle_status(db, ws_agent_id, "offline")
+                        log.info(
+                            "[ws-handler] disconnect (last session) → status=offline agentId=%s",
+                            ws_agent_id,
+                        )
+                    else:
+                        log.info(
+                            "[ws-handler] disconnect (sessions remain=%d, keep idle) agentId=%s",
+                            remaining, ws_agent_id,
+                        )
                 except Exception:  # noqa: BLE001
                     log.exception("[ws-handler] disconnect status toggle failed")
     finally:
