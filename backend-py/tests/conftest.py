@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 # Base.metadata 가 모든 도메인 model 을 알아야 create_all 이 동작 → 명시 import.
 from app.agents.models import AiAgent  # noqa: F401
 from app.auth.models import RefreshToken, User  # noqa: F401
+from app.messages.models import Message  # noqa: F401
 from app.settings.models import AideskSetting  # noqa: F401
 from app.core.database import Base, get_db
 from app.main import app
