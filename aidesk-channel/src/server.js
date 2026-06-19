@@ -369,9 +369,13 @@ const server = new Server(
   { name: 'aidesk-channel', version: '0.1.0' },
   {
     // Phase 2 — claude/channel = Claude Code 의 자체 push notification 확장.
-    // 선언 안 하면 debug log 에 "Channel notifications skipped" + 자동 trigger 안 됨.
-    // spec 은 docs 에 없지만 빈 객체로 선언 시도. 비-Claude client 는 모르고 ignore.
-    capabilities: { tools: {}, logging: {}, 'claude/channel': {} },
+    // 정확한 path = experimental.claude/channel (binary 의 reference example 발견).
+    // 없으면 "Channel notifications skipped: server did not declare claude/channel capability".
+    capabilities: {
+      tools: {},
+      logging: {},
+      experimental: { 'claude/channel': {} },
+    },
     instructions:
       '이 서버는 AI Desk 의 AI 협업 채널 어댑터입니다. ' +
       '\n\n[정체성] 당신은 AI Desk 에 등록된 *AI 에이전트* 입니다 (휴먼 / 사용자 본인이 아닙니다). ' +
@@ -450,7 +454,29 @@ async function deliverIncoming({ messageId, fromAgentName, content }) {
     `${content}\n` +
     `</channel>`;
 
-  // 사람 모드 fallback — 항상 보내서 로그/UI 에 노출. sampling 자동 응답 환경에서도 audit 용.
+  // ★ claude code 의 channel notification — session 안 직접 inject (자동 trigger).
+  // claude.exe binary 의 example: method='notifications/claude/channel', params.content +
+  // params.meta. meta keys 가 [channel] tag attributes 가 됨.
+  // 사용자가 `claude --channels server:aidesk-channel-ext --dangerously-load-development-channels server:aidesk-channel-ext`
+  // 로 실행해야 활성.
+  try {
+    await server.notification({
+      method: 'notifications/claude/channel',
+      params: {
+        content: content,
+        meta: {
+          task_id: messageId,
+          sender: fromAgentName,
+          source: 'aidesk-channel',
+        },
+      },
+    });
+    dbg(`channel notification sent msg=${messageId}`);
+  } catch (e) {
+    dbg(`channel notification failed: ${e?.message ?? e}`);
+  }
+
+  // 사람 모드 fallback / audit — 항상 보내서 로그/UI 에 노출. sampling 자동 응답 환경에서도 audit 용.
   try {
     await server.sendLoggingMessage({
       level: 'info',
