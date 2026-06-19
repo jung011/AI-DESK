@@ -68,12 +68,11 @@ helm `aidesk-ai-desk` ConfigMap + Secret 의 env 가 그대로 매핑.
 | auth (signup/authenticate/refresh/sign-out/me + JWT + refresh rotation) | ✅ 완료 (`1874b39`) | 10 |
 | settings (a2a-workspace / workrole-file / code-server + me agent upsert) | ✅ 완료 (`dd06ac0`, `1f5f2a1`) | 9 |
 | helper (version / download) | ✅ 완료 (`dd06ac0`) | 5 |
-| agents (CRUD / status / realtime) — sameUser | ✅ 완료 (`1f5f2a1`). channel-aware filter / realtime partners 는 messages turn 후속 | 9 |
+| agents (CRUD / status / realtime + channel-aware filter + partners) | ✅ 완료 (`1f5f2a1`, `97a7b7b`) | 11 |
 | colleagues | ✅ 완료 (`1f5f2a1`) | 5 |
-| messages (core 6/9 endpoint + policy) | ✅ 완료 (`3c6819f`). broadcast / conversations / audit + SSE 는 다음 turn | 13 |
+| messages (9/9 + policy + SSE broker) | ✅ 완료 (`3c6819f`, `97a7b7b`) | 17 |
 | agents/watcher (stale 체크) | ⏳ 대기 | — |
-| desktop (local-info + SSE) | ⏳ 대기 | — |
-| messages 마무리 (broadcast / conversations / audit + SSE) + agents TODO 풀기 | ⏳ 대기 | — |
-| agents/external (bot adapter / token) | ⏳ 대기 | — |
+| desktop (helper local-info + dashboard SSE 통합) | ⏳ 대기 | — |
+| agents/external (bot adapter / token rotation) | ⏳ 대기 | — |
 | logs (action-logs / feed) | ⏳ 대기 | — |
-| **합계** | **7/10** | **51 green** |
+| **합계** | **8/10** | **58 green** |
