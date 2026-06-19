@@ -31,12 +31,16 @@ async def health() -> dict[str, str]:
 async def list_agents(
     status: str | None = None,
     callerAgentId: str | None = None,  # noqa: N803 — frontend query param 이름 유지
-    user: AuthenticatedUser = Depends(current_user),
+    user: AuthenticatedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[AgentListRs]:
-    """sameUser agent 목록 + (callerAgentId 동봉 시) channel-aware filter."""
+    """Spring `/api/agents/**` permitAll — aidesk-channel mcp 가 쿠키 없이 호출.
+
+    인증 호출 = dashboard (cookie). 비인증 호출 = mcp (callerAgentId fallback).
+    """
     svc = AgentService(db)
-    return ok(svc.get_list(user.account_sn, status, callerAgentId))
+    account_sn = user.account_sn if user else None
+    return ok(svc.get_list(account_sn, status, callerAgentId))
 
 
 @router.get("/realtime", response_model=ApiEnvelope[list[AgentRealtimeItem]])
@@ -52,7 +56,7 @@ async def realtime(
 @router.get("/{agent_id}", response_model=ApiEnvelope[AgentItem])
 async def detail(
     agent_id: str,
-    _user: AuthenticatedUser = Depends(current_user),
+    _user: AuthenticatedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[AgentItem]:
     svc = AgentService(db)
