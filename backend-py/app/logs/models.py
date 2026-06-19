@@ -10,8 +10,8 @@ from app.core.database import Base
 class ActionLog(Base):
     __tablename__ = "t_action_log"
 
-    sn: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    log_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    # PK = log_id (Spring 실제 schema)
+    log_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     agent_id: Mapped[str] = mapped_column(String(36), index=True)
     agent_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     session_id: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -16,8 +16,8 @@ class Message(Base):
 
     __tablename__ = "t_message"
 
-    sn: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    message_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    # PK = message_id (Spring 실제 schema)
+    message_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     from_agent_id: Mapped[str] = mapped_column(String(36), index=True)
     to_agent_id: Mapped[str] = mapped_column(String(36), index=True)
     content: Mapped[str] = mapped_column(Text)

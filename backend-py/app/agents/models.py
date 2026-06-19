@@ -10,8 +10,8 @@ from app.core.database import Base
 class AiAgent(Base):
     __tablename__ = "t_ai_agent"
 
-    sn: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    agent_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    # PK = agent_id (Spring 의 실제 schema. 'sn' 컬럼 X)
+    agent_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     agent_name: Mapped[str] = mapped_column(String(100))
     owner_account_sn: Mapped[int] = mapped_column(Integer, index=True)
     workspace_dir: Mapped[str] = mapped_column(String(500), default="")

@@ -43,17 +43,17 @@ class LogService:
         n = limit if (limit and 1 <= limit <= 500) else 100
 
         # action log
-        stmt_a = select(ActionLog).order_by(desc(ActionLog.created_at), desc(ActionLog.sn)).limit(n)
+        stmt_a = select(ActionLog).order_by(desc(ActionLog.created_at)).limit(n)
         if category:
             stmt_a = select(ActionLog).where(ActionLog.category == category).order_by(
-                desc(ActionLog.created_at), desc(ActionLog.sn)
+                desc(ActionLog.created_at)
             ).limit(n)
         actions = list(self.db.execute(stmt_a).scalars())
 
         # message — category=None 이거나 'message' 인 경우만
         messages: list[Message] = []
         if not category or category == "message":
-            stmt_m = select(Message).order_by(desc(Message.created_at), desc(Message.sn)).limit(n)
+            stmt_m = select(Message).order_by(desc(Message.created_at)).limit(n)
             messages = list(self.db.execute(stmt_m).scalars())
 
         # 통합 + 시간 역순 + limit

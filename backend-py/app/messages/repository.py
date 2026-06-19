@@ -49,7 +49,7 @@ class MessageRepository:
             )
         if status:
             stmt = stmt.where(Message.status == status)
-        stmt = stmt.order_by(desc(Message.created_at), desc(Message.sn)).limit(limit + 1)
+        stmt = stmt.order_by(desc(Message.created_at)).limit(limit + 1)
 
         rows = list(self.db.execute(stmt).scalars())
         has_more = len(rows) > limit
@@ -60,7 +60,7 @@ class MessageRepository:
         """rate limit 검사용 — 최근 N초 안 from_agent_id 발신 수."""
         threshold = datetime.now(tz=timezone.utc) - timedelta(seconds=seconds)
         return self.db.execute(
-            select(func.count(Message.sn)).where(
+            select(func.count(Message.message_id)).where(
                 Message.from_agent_id == from_agent_id,
                 Message.created_at >= threshold,
             )
@@ -69,7 +69,7 @@ class MessageRepository:
     def count_unread_for_to(self, agent_id: str) -> int:
         """대상이 본인이고 read_at 미설정 인 메시지 수."""
         return self.db.execute(
-            select(func.count(Message.sn)).where(
+            select(func.count(Message.message_id)).where(
                 Message.to_agent_id == agent_id,
                 Message.read_at.is_(None),
                 Message.status.in_(["sent", "delivered"]),
@@ -79,7 +79,7 @@ class MessageRepository:
     def list_unread_by_from(self, agent_id: str) -> list[tuple[str, int]]:
         """발신자(from)별 미확인 수 — UnreadCountRsVo.byAgent."""
         stmt = (
-            select(Message.from_agent_id, func.count(Message.sn))
+            select(Message.from_agent_id, func.count(Message.message_id))
             .where(
                 Message.to_agent_id == agent_id,
                 Message.read_at.is_(None),
@@ -137,7 +137,7 @@ class MessageRepository:
         # PoC 규모 (~수천 row) 면 in-memory 처리 충분. 운영 규모 커지면 SQL window function 으로 교체.
         stmt = select(Message).where(
             or_(Message.from_agent_id == agent_id, Message.to_agent_id == agent_id)
-        ).order_by(desc(Message.created_at), desc(Message.sn))
+        ).order_by(desc(Message.created_at))
         rows = list(self.db.execute(stmt).scalars())
 
         seen: dict[str, tuple[str, datetime, str, str]] = {}
@@ -151,7 +151,7 @@ class MessageRepository:
 
     def count_unread_with_partner(self, agent_id: str, partner_agent_id: str) -> int:
         return self.db.execute(
-            select(func.count(Message.sn)).where(
+            select(func.count(Message.message_id)).where(
                 Message.to_agent_id == agent_id,
                 Message.from_agent_id == partner_agent_id,
                 Message.read_at.is_(None),
@@ -177,7 +177,7 @@ class MessageRepository:
             stmt = stmt.where(Message.to_agent_id == to_agent_id)
         if q:
             stmt = stmt.where(Message.content.ilike(f"%{q}%"))
-        stmt = stmt.order_by(desc(Message.created_at), desc(Message.sn)).limit(limit + 1)
+        stmt = stmt.order_by(desc(Message.created_at)).limit(limit + 1)
         rows = list(self.db.execute(stmt).scalars())
         has_more = len(rows) > limit
         return (rows[:limit], has_more)
@@ -186,7 +186,7 @@ class MessageRepository:
         """agents.realtime 의 partners — 최근 대화 partner agent_id list (중복 제거 순서 보존)."""
         stmt = select(Message).where(
             or_(Message.from_agent_id == agent_id, Message.to_agent_id == agent_id)
-        ).order_by(desc(Message.created_at), desc(Message.sn)).limit(100)
+        ).order_by(desc(Message.created_at)).limit(100)
         rows = list(self.db.execute(stmt).scalars())
         partners: list[str] = []
         seen: set[str] = set()
