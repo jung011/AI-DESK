@@ -68,11 +68,12 @@ helm `aidesk-ai-desk` ConfigMap + Secret 의 env 가 그대로 매핑.
 | auth (signup/authenticate/refresh/sign-out/me + JWT + refresh rotation) | ✅ 완료 (`1874b39`) | 10 |
 | settings (a2a-workspace / workrole-file / code-server + me agent upsert) | ✅ 완료 (`dd06ac0`, `1f5f2a1`) | 9 |
 | helper (version / download) | ✅ 완료 (`dd06ac0`) | 5 |
-| agents (CRUD / status / realtime) — sameUser 까지 | ✅ 완료 (`1f5f2a1`). channel-aware 필터는 messages turn | 9 |
-| colleagues (본인 외 user 의 me + 본인 external) | ✅ 완료 (`1f5f2a1`) | 5 |
-| agents/watcher (Spring AgentStatusWatcher — stale 체크) | ⏳ 대기 | — |
+| agents (CRUD / status / realtime) — sameUser | ✅ 완료 (`1f5f2a1`). channel-aware filter / realtime partners 는 messages turn 후속 | 9 |
+| colleagues | ✅ 완료 (`1f5f2a1`) | 5 |
+| messages (core 6/9 endpoint + policy) | ✅ 완료 (`3c6819f`). broadcast / conversations / audit + SSE 는 다음 turn | 13 |
+| agents/watcher (stale 체크) | ⏳ 대기 | — |
 | desktop (local-info + SSE) | ⏳ 대기 | — |
-| messages (send / inbox / SSE push + policy + channel-aware filter) | ⏳ 대기 | — |
+| messages 마무리 (broadcast / conversations / audit + SSE) + agents TODO 풀기 | ⏳ 대기 | — |
 | agents/external (bot adapter / token) | ⏳ 대기 | — |
 | logs (action-logs / feed) | ⏳ 대기 | — |
-| **합계** | **6/10** | **38 green** |
+| **합계** | **7/10** | **51 green** |
