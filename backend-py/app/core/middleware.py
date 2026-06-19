@@ -15,7 +15,7 @@ def register_middlewares(app: FastAPI) -> None:
     """app 의 미들웨어 등록."""
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_allowed_origins,
+        allow_origins=settings.allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

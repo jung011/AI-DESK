@@ -102,8 +102,8 @@ def check_send(
         if parent_hop + 1 > settings.message_hop_limit:
             return PolicyResult.reject(f"위임 깊이 초과 (max {settings.message_hop_limit})")
 
-    # rate limit — 분당 발신 수
-    rate_limit = 30  # Spring 기본 (env 외부화 가능)
+    # rate limit — settings.message_rate_limit_per_minute (Spring ConfigMap 매핑)
+    rate_limit = settings.message_rate_limit_per_minute
     recent = repo.count_recent_from(sender.agent_id, seconds=60)
     if recent >= rate_limit:
         return PolicyResult.reject(f"발신 한도 초과 (분당 {rate_limit}건)")
