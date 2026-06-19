@@ -30,9 +30,13 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """app startup / shutdown — agent status watcher 등 백그라운드 task."""
     log.info("aidesk-backend starting")
-    # TODO: agents.watcher.start_agent_status_watcher()
-    yield
-    log.info("aidesk-backend stopping")
+    from app.agents.watcher import start as start_watcher
+    watcher_task = start_watcher()
+    try:
+        yield
+    finally:
+        watcher_task.cancel()
+        log.info("aidesk-backend stopping")
 
 
 app = FastAPI(

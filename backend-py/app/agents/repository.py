@@ -1,5 +1,5 @@
 """agents DB 접근 — Spring AgentMapper 와 1:1."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -77,6 +77,37 @@ class AgentRepository:
             .values(workspace_dir=workspace_dir)
         )
         return result.rowcount
+
+    def update_status_from_watcher(self, agent_id: str, status: str) -> int:
+        """desktop reporter / scheduler 가 status 갱신. updated_at 도 갱신."""
+        result = self.db.execute(
+            update(AiAgent)
+            .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
+            .values(status=status, updated_at=datetime.utcnow())
+        )
+        return result.rowcount
+
+    def touch_updated_at(self, agent_id: str) -> int:
+        """status 변화 없어도 helper 가 살아있다는 신호로 updated_at 만 갱신.
+
+        ColleagueService 의 online window 판정이 updated_at 만 봄.
+        """
+        result = self.db.execute(
+            update(AiAgent)
+            .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
+            .values(updated_at=datetime.utcnow())
+        )
+        return result.rowcount
+
+    def list_stale_active(self, threshold_seconds: int) -> list[AiAgent]:
+        """updated_at 이 threshold 이전 + status 가 idle/active 인 agent — stale 판정 대상."""
+        cutoff = datetime.utcnow() - timedelta(seconds=threshold_seconds)
+        stmt = select(AiAgent).where(
+            AiAgent.deleted_at.is_(None),
+            AiAgent.status.in_(["idle", "active"]),
+            AiAgent.updated_at < cutoff,
+        )
+        return list(self.db.execute(stmt).scalars())
 
     def soft_delete(self, agent_id: str) -> int:
         """deleted_at 마킹 — hard delete X (audit 보존)."""
