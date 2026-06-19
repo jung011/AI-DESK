@@ -19,13 +19,17 @@ class Settings(BaseSettings):
     # DB
     db_url: str = Field(default="mysql+pymysql://aidesk:aidesk@localhost:3306/aidesk")
 
-    # JWT
-    jwt_secret_key: str = Field(default="dev-secret-do-not-use-in-prod")
+    # JWT — Spring 의 jwt.secret-key / access-expiration-seconds / refresh-expiration-seconds 와 동일 매핑
+    jwt_secret_key: str = Field(default="dev-secret-do-not-use-in-prod-min-32-bytes-required")
     jwt_algorithm: str = "HS256"
-    jwt_expire_seconds: int = 24 * 60 * 60  # 24h
-    jwt_refresh_expire_seconds: int = 7 * 24 * 60 * 60  # 7d
-    jwt_cookie_name: str = "AIDESK_TOKEN"
-    jwt_cookie_domain: str = ".kaflix.internal"
+    jwt_access_expiration_seconds: int = 24 * 60 * 60     # 24h
+    jwt_refresh_expiration_seconds: int = 7 * 24 * 60 * 60  # 7d
+
+    # Cookie — Spring 의 CookieUtil 와 동일 이름 사용 → 기존 사용자 cookie 호환
+    cookie_access_name: str = "accessToken"
+    cookie_refresh_name: str = "refreshToken"
+    cookie_secure: bool = False
+    cookie_domain: str = ""  # 빈 값 = host-only (dev). prod 는 ".kaflix.internal"
 
     # CORS — JSON 배열 or 콤마 분리 둘 다 허용 (pydantic-settings 가 list 파싱)
     cors_allowed_origins: list[str] = Field(default_factory=list)

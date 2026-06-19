@@ -41,6 +41,14 @@ class Forbidden(ApiException):
 def register_exception_handlers(app: FastAPI) -> None:
     """app 의 글로벌 exception handler 등록."""
 
+    @app.exception_handler(NotAuthenticated)
+    async def _not_authenticated(_: Request, exc: NotAuthenticated) -> JSONResponse:
+        # frontend 가 {code: "NA"} 시그널로 로그인 화면 redirect — envelope 형식 X
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"code": "NA", "message": exc.message},
+        )
+
     @app.exception_handler(ApiException)
     async def _api_exception(_: Request, exc: ApiException) -> JSONResponse:
         return JSONResponse(

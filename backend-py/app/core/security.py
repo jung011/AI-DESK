@@ -6,28 +6,37 @@ JWT secret 은 helm secret 'aidesk-ai-desk' 의 jwt-secret-key (env JWT_SECRET_K
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt 직접 사용 (passlib 의 self-check 가 bcrypt 4.x 와 호환 X). $2a/$2b prefix 의
+# 표준 bcrypt 해시라 Spring BCryptPasswordEncoder 와 양방향 호환.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _truncate(raw: str) -> bytes:
+    """bcrypt 의 72-byte 한계 — 그 이상이면 truncate. Spring 도 동일 한계."""
+    return raw.encode("utf-8")[:_BCRYPT_MAX_BYTES]
 
 
 def hash_password(raw: str) -> str:
     """Spring `passwordEncoder.encode(rawPassword)` 와 동일한 bcrypt 해시 생성."""
-    return pwd_context.hash(raw)
+    return bcrypt.hashpw(_truncate(raw), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(raw: str, hashed: str) -> bool:
     """Spring `passwordEncoder.matches(raw, hashed)` 와 동일한 bcrypt 검증.
 
-    bcrypt 는 동일한 raw 에 대해 매번 다른 해시 (salt) 를 만들지만 verify 는 호환.
-    Spring 이 만든 해시를 FastAPI 가 verify 가능, 그 반대도 가능.
+    Spring 이 만든 해시 ($2a$...) 를 FastAPI 가 verify 가능, 그 반대도 가능.
     """
-    return pwd_context.verify(raw, hashed)
+    try:
+        return bcrypt.checkpw(_truncate(raw), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 def create_access_token(
