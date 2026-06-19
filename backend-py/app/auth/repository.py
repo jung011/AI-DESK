@@ -2,7 +2,7 @@
 
 SQLAlchemy 2.0 style. transaction 은 service 가 with Session() 패턴으로 관리.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ class AuthRepository:
 
     def update_last_login(self, account_sn: int) -> None:
         self.db.execute(
-            update(User).where(User.account_sn == account_sn).values(last_login_dt=datetime.utcnow())
+            update(User).where(User.account_sn == account_sn).values(last_login_dt=datetime.now(tz=timezone.utc))
         )
 
     # ---- RefreshToken (t_refresh_token) ----

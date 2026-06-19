@@ -120,7 +120,7 @@ class AuthService:
         jti = str(uuid.uuid4())
         token = self._create_refresh_token(user, jti)
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        expires_at = datetime.utcnow() + timedelta(seconds=settings.jwt_refresh_expiration_seconds)
+        expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=settings.jwt_refresh_expiration_seconds)
         self.repo.insert_refresh(
             RefreshToken(
                 jti=jti,

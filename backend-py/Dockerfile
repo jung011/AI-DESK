@@ -1,10 +1,11 @@
-# multi-stage 빌드 — uv 로 deps 설치 후 slim runtime 에 복사
+# multi-stage 빌드 — uv 로 deps 설치 후 slim runtime 에 복사.
+# 주의: builder/runtime 의 venv 경로를 *동일* 하게 (/app) — shebang 의 python path 가 venv
+# 안에 hard-coded 되어 stage 가 바뀌면 깨짐.
 FROM python:3.12-slim AS builder
 
-# uv 설치 (helper 와 stack 통일)
 COPY --from=ghcr.io/astral-sh/uv:0.4.18 /uv /usr/local/bin/uv
 
-WORKDIR /build
+WORKDIR /app
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-dev --no-install-project
 
@@ -15,19 +16,17 @@ COPY alembic.ini ./
 
 FROM python:3.12-slim AS runtime
 
-# helper .pkg 가 박힐 위치 — HelperDownloadController.locatePkg 와 호환
 RUN mkdir -p /app/helper
 
 WORKDIR /app
 
-# uv 가 만든 venv 통째로 복사
-COPY --from=builder /build/.venv /app/.venv
-COPY --from=builder /build/app /app/app
-COPY --from=builder /build/alembic /app/alembic
-COPY --from=builder /build/alembic.ini /app/alembic.ini
+# builder 와 runtime 의 path 동일 (/app/.venv) — shebang hard-coded 호환
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/app /app/app
+COPY --from=builder /app/alembic /app/alembic
+COPY --from=builder /app/alembic.ini /app/alembic.ini
 
-# .pkg 도 image 에 함께 baked — backend 의 helper-pkg/ 폴더가 옛 Spring 과 동일 위치
-# .pkg 갱신 시 backend-py/helper-pkg/ 의 옛 파일 교체 + image rebuild
+# helper .pkg image 에 baked. 갱신 시 backend-py/helper-pkg/ 교체 + image rebuild
 COPY helper-pkg /app/helper
 
 ENV PATH="/app/.venv/bin:$PATH"
@@ -35,5 +34,4 @@ ENV PYTHONPATH="/app"
 
 EXPOSE 8080
 
-# 단일 worker (PoC). multi worker 필요 시 gunicorn -k uvicorn.workers.UvicornWorker
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

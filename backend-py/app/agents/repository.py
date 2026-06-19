@@ -1,5 +1,5 @@
 """agents DB 접근 — Spring AgentMapper 와 1:1."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -83,7 +83,7 @@ class AgentRepository:
         result = self.db.execute(
             update(AiAgent)
             .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
-            .values(status=status, updated_at=datetime.utcnow())
+            .values(status=status, updated_at=datetime.now(tz=timezone.utc))
         )
         return result.rowcount
 
@@ -95,13 +95,13 @@ class AgentRepository:
         result = self.db.execute(
             update(AiAgent)
             .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
-            .values(updated_at=datetime.utcnow())
+            .values(updated_at=datetime.now(tz=timezone.utc))
         )
         return result.rowcount
 
     def list_stale_active(self, threshold_seconds: int) -> list[AiAgent]:
         """updated_at 이 threshold 이전 + status 가 idle/active 인 agent — stale 판정 대상."""
-        cutoff = datetime.utcnow() - timedelta(seconds=threshold_seconds)
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=threshold_seconds)
         stmt = select(AiAgent).where(
             AiAgent.deleted_at.is_(None),
             AiAgent.status.in_(["idle", "active"]),
@@ -114,6 +114,6 @@ class AgentRepository:
         result = self.db.execute(
             update(AiAgent)
             .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
-            .values(deleted_at=datetime.utcnow())
+            .values(deleted_at=datetime.now(tz=timezone.utc))
         )
         return result.rowcount
