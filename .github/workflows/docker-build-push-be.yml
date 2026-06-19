@@ -5,6 +5,12 @@ on:
     tags:
       - 'be-*'  # backend tag prefix
 
+# be / fe workflow 가 동시 실행되면 둘 다 master 에 helm bump commit + push 시도하다
+# 한 쪽이 'fetch first' 로 rejected 됨. 같은 group 으로 묶어 순차 실행 강제.
+concurrency:
+  group: deploy-pipeline
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
     # 우드 K8s 노드 = arm64 only (Docker Desktop linuxkit, Apple Silicon).
@@ -23,7 +29,10 @@ jobs:
       - name: Check if tag is from master
         run: |
           git fetch origin master
-          if ! git merge-base --is-ancestor origin/master ${{ github.sha }}; then
+          # tag commit (github.sha) 이 master 의 ancestor 인지 = master 안에 *포함* 되는지.
+          # 인자 순서 반대로 박으면 master HEAD 가 tag commit 의 ancestor 여야 통과 → master 가
+          # 진행되는 순간 (helm bump commit 등) 무조건 fail → re-run 영영 fail. 인자 순서 주의.
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/master; then
             echo "::error::This tag is not from master. Failing the build."
             exit 1
           fi
