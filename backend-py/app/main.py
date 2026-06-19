@@ -74,15 +74,16 @@ app.include_router(logs_router,             prefix="/api",                 tags=
 from app.messages.ws import messages_ws_endpoint  # noqa: E402
 app.add_api_websocket_route("/ws/messages", messages_ws_endpoint)
 
-# /static/mcp — 외부 AI mcp standalone binary 배포 (git 없는 운영 환경 대상).
+# /api/external/mcp — 외부 AI mcp standalone binary 배포 (git 없는 운영 환경 대상).
 # binary 는 backend-py/static/mcp/ 에 baked. 외부 AI 가 curl 로 다운로드 + chmod +x + 실행.
-# 예: curl -o aidesk-channel-mcp http://aidesk.kaflix.internal/static/mcp/aidesk-channel-mcp-linux-x64
+# 예: curl -o aidesk-channel-mcp http://aidesk.kaflix.internal/api/external/mcp/aidesk-channel-mcp-linux-x64
+# /api/ prefix = ingress 가 backend 로 routing (frontend 의 /static/* fallback 회피).
 from pathlib import Path as _Path  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-_static_dir = _Path(__file__).resolve().parent.parent / "static"
+_static_dir = _Path(__file__).resolve().parent.parent / "static" / "mcp"
 if _static_dir.is_dir():
-    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-    log.info("static mount: %s", _static_dir)
+    app.mount("/api/external/mcp", StaticFiles(directory=str(_static_dir)), name="external-mcp")
+    log.info("external mcp static mount: %s", _static_dir)
 else:
-    log.warning("static dir missing — skipping mount: %s", _static_dir)
+    log.warning("static/mcp dir missing — skipping mount: %s", _static_dir)
