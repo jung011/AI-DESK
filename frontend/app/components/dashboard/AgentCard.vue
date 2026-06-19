@@ -20,18 +20,23 @@
           <span /><span /><span />
         </button>
         <div v-if="menuOpen" class="card-menu-dropdown" @click.stop>
+          <!-- VSCode 열기 / 브라우저 검증: 당분간 사용 안 함 (2026-06-19 비활성).
+               helper /api/open-vscode 라우트 + onPlaceholder/onOpenVscode 함수도 같이 주석.
           <button type="button" class="card-menu-item" @click="onOpenVscode">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
             VSCode 열기
           </button>
+          -->
           <button type="button" class="card-menu-item" @click="onOpenTerminal">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10z"/></svg>
             외부 터미널 열기
           </button>
+          <!--
           <button type="button" class="card-menu-item" @click="onPlaceholder('브라우저 검증')">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/></svg>
             브라우저 검증
           </button>
+          -->
           <div class="card-menu-divider" />
           <button type="button" class="card-menu-item danger" @click="onDelete">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -89,6 +94,9 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
 });
 
+// VSCode 열기 / 브라우저 검증: 당분간 사용 안 함 (2026-06-19 비활성).
+// 부활 시 카드 메뉴 dropdown 의 두 버튼 (template) 도 함께 주석 해제.
+/*
 function onPlaceholder(label: string): void {
   menuOpen.value = false;
   // eslint-disable-next-line no-alert
@@ -115,6 +123,7 @@ async function onOpenVscode(): Promise<void> {
     alert(`VSCode 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
 }
+*/
 
 /**
  * 외부 터미널 열기 호출.
