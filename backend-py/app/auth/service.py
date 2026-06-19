@@ -59,7 +59,7 @@ class AuthService:
             tmux_session=f"__human__:{user.account_sn}",
             status="active",
             model="human",
-            type="human",
+            agent_type="human",
         )
         self.db.add(human)
 

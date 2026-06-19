@@ -1,4 +1,5 @@
-"""settings 통합 테스트 — a2a_workspace / workrole_file get/put + code-server."""
+"""settings 통합 테스트 — a2a_workspace / workrole_file get/put + code-server + (me) upsert."""
+from app.agents.models import AiAgent
 from app.settings.models import AideskSetting
 
 
@@ -76,6 +77,43 @@ def test_code_server_empty_url(client):
     body = rs.json()
     assert body["result"] == 0
     assert body["data"] == {"url": "", "alive": False}
+
+
+def test_a2a_workspace_creates_me_agent(client, db_session):
+    """첫 PUT 시 (me) agent 자동 등록 — tmux_session=aidesk-self-<key>."""
+    cookies = _login(client)
+    client.put(
+        "/api/settings/a2a-workspace",
+        json={"path": "/tmp/alice/ws", "purgePreviousHistory": False},
+        cookies=cookies,
+    )
+    me = db_session.query(AiAgent).filter_by(tmux_session="aidesk-self-alice").one()
+    assert me.agent_name == "alice (me)"
+    assert me.workspace_dir == "/tmp/alice/ws"
+    assert me.agent_type == "me"
+    assert me.status == "active"
+
+
+def test_a2a_workspace_updates_existing_me_agent(client, db_session):
+    cookies = _login(client)
+    client.put(
+        "/api/settings/a2a-workspace",
+        json={"path": "/tmp/v1", "purgePreviousHistory": False},
+        cookies=cookies,
+    )
+    first = db_session.query(AiAgent).filter_by(tmux_session="aidesk-self-alice").one()
+    first_id = first.agent_id
+
+    # 새 워크스페이스 — 같은 row 갱신
+    client.put(
+        "/api/settings/a2a-workspace",
+        json={"path": "/tmp/v2", "purgePreviousHistory": False},
+        cookies=cookies,
+    )
+    db_session.expire_all()
+    second = db_session.query(AiAgent).filter_by(tmux_session="aidesk-self-alice").one()
+    assert second.agent_id == first_id  # 같은 row
+    assert second.workspace_dir == "/tmp/v2"
 
 
 def test_settings_user_isolation(client, db_session):
