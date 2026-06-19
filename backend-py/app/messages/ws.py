@@ -72,7 +72,8 @@ def _hash_bearer(raw: str) -> str:
 
 
 def _looks_like_bearer(raw: str | None) -> bool:
-    return bool(raw) and raw.startswith("aidesk_ext_")
+    # FastAPI 의 token 발급이 prefix 없는 regression — 임시 prefix 체크 제거. 매칭 자체가 brute-force 방지.
+    return bool(raw)
 
 
 def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, bearer_token: str | None) -> tuple[int, str | None] | None:
