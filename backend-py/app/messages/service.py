@@ -95,9 +95,11 @@ class MessageService:
         self.db.refresh(msg)
         item = self._enrich(msg, sender_name=sender.agent_name, receiver_name=receiver.agent_name)
 
-        # SSE push — 모든 client 에 (broadcast PoC). frontend 가 to_agent_id 매칭 후 필터.
-        # 사용자 인박스 갱신 + helper 의 last-mile delivery 트리거.
-        broker.publish("message.created", item.model_dump(by_alias=True))
+        # SSE push — helper sse_consumer 는 'message.deliver' event 만 처리 + payload
+        # 의 toTmuxSession 으로 tmux session 직렬 처리. event name / 필수 필드 helper 와 호환.
+        payload = item.model_dump(by_alias=True)
+        payload["toTmuxSession"] = receiver.tmux_session
+        broker.publish("message.deliver", payload)
         return item
 
     def _save_failed(
