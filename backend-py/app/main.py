@@ -22,6 +22,7 @@ from app.settings.router import router as settings_router
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    force=True,  # uvicorn 의 default handler override — app.* logger 가 stdout 으로 propagate 보장 (rc12).
 )
 log = logging.getLogger(__name__)
 

@@ -28,36 +28,66 @@ settings = get_settings()
 
 
 class WsBroker:
-    """account_sn 별 활성 WebSocket sessions. 한 사용자의 multi tab/device 동시 접속 지원."""
+    """account_sn 별 활성 WebSocket sessions + agent_id 별 추적 (rc12 — ws-aware delivered).
+
+    multi tab/device 동시 접속 + service.create 가 *receiver 의 ws session 살아있는지*
+    판정 가능 → markDelivered 자동화.
+    """
 
     def __init__(self) -> None:
         self._sessions: dict[int, set[WebSocket]] = {}
+        self._by_agent: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
-    async def register(self, account_sn: int, ws: WebSocket) -> None:
+    async def register(self, account_sn: int, agent_id: str | None, ws: WebSocket) -> None:
         async with self._lock:
             self._sessions.setdefault(account_sn, set()).add(ws)
-        log.info("[ws-broker] register account_sn=%s total=%d", account_sn, self._total())
+            if agent_id:
+                self._by_agent.setdefault(agent_id, set()).add(ws)
+        log.info(
+            "[ws-broker] register account_sn=%s agent_id=%s total=%d agent_sessions=%d",
+            account_sn, agent_id, self._total(),
+            len(self._by_agent.get(agent_id, set())) if agent_id else 0,
+        )
 
-    async def unregister(self, account_sn: int, ws: WebSocket) -> None:
+    async def unregister(self, account_sn: int, agent_id: str | None, ws: WebSocket) -> None:
         async with self._lock:
             bucket = self._sessions.get(account_sn)
             if bucket:
                 bucket.discard(ws)
                 if not bucket:
                     self._sessions.pop(account_sn, None)
-        log.info("[ws-broker] unregister account_sn=%s total=%d", account_sn, self._total())
+            if agent_id:
+                a_bucket = self._by_agent.get(agent_id)
+                if a_bucket:
+                    a_bucket.discard(ws)
+                    if not a_bucket:
+                        self._by_agent.pop(agent_id, None)
+        log.info(
+            "[ws-broker] unregister account_sn=%s agent_id=%s total=%d",
+            account_sn, agent_id, self._total(),
+        )
 
     async def publish_to_account(self, account_sn: int, payload: dict[str, Any]) -> None:
         bucket = self._sessions.get(account_sn)
         if not bucket:
+            log.info("[ws-broker] publish skipped — no sessions account_sn=%s", account_sn)
             return
         msg = json.dumps(payload, default=str, ensure_ascii=False)
+        sent = 0
         for ws in list(bucket):
             try:
                 await ws.send_text(msg)
+                sent += 1
             except Exception as e:  # noqa: BLE001
                 log.warning("[ws-broker] send failed account_sn=%s err=%s", account_sn, e)
+        log.info("[ws-broker] published account_sn=%s sent=%d/%d", account_sn, sent, len(bucket))
+
+    def count_sessions_for_agent(self, agent_id: str) -> int:
+        """Spring countSessionsForAgent 동등. service.create 의 ws-aware delivered 판정."""
+        if not agent_id:
+            return 0
+        return len(self._by_agent.get(agent_id, set()))
 
     def _total(self) -> int:
         return sum(len(s) for s in self._sessions.values())
@@ -81,17 +111,24 @@ def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, b
 
     Returns (account_sn, agent_id) 또는 None (인증 실패).
     """
+    log.info(
+        "[ws-handshake] start — cookie=%s agentId=%s bearer=%s",
+        bool(cookie_token), bool(agent_id), bool(bearer_token),
+    )
     # 1) cookie JWT
     if cookie_token:
         user = AuthService.decode_access_token(cookie_token)
         if user is not None:
+            log.info("[ws-handshake] OK via cookie account_sn=%s", user.account_sn)
             return (user.account_sn, None)
+        log.warning("[ws-handshake] cookie present but decode failed")
 
     # 2) ?agentId=<UUID> — 내부 봇 어댑터
     if agent_id:
         repo = AgentRepository(db)
         agent: AiAgent | None = repo.find_by_agent_id_any_owner(agent_id)
         if agent is not None and agent.owner_account_sn is not None:
+            log.info("[ws-handshake] OK via agentId=%s owner=%s", agent_id, agent.owner_account_sn)
             return (agent.owner_account_sn, agent_id)
         log.warning("[ws-handshake] reject — agentId=%s not found", agent_id)
         return None
@@ -107,8 +144,12 @@ def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, b
                 match = a
                 break
         if match is not None and match.owner_account_sn is not None:
+            log.info(
+                "[ws-handshake] OK via bearer agentId=%s owner=%s name=%s",
+                match.agent_id, match.owner_account_sn, match.agent_name,
+            )
             return (match.owner_account_sn, match.agent_id)
-        log.warning("[ws-handshake] reject — bearer token not matched")
+        log.warning("[ws-handshake] reject — bearer token not matched (token_hash=%s...)", token_hash[:12])
         return None
 
     log.warning("[ws-handshake] reject — no cookie / agentId / token")
@@ -142,12 +183,14 @@ async def messages_ws_endpoint(
         account_sn, ws_agent_id = auth
 
         await websocket.accept()
-        await ws_broker.register(account_sn, websocket)
+        await ws_broker.register(account_sn, ws_agent_id, websocket)
 
         # connect → agent status='idle' (Spring 동등)
         if ws_agent_id:
             _toggle_status(db, ws_agent_id, "idle")
-            log.info("[ws-handler] connect → status=idle agentId=%s", ws_agent_id)
+            log.info("[ws-handler] connect → status=idle agentId=%s account_sn=%s", ws_agent_id, account_sn)
+        else:
+            log.info("[ws-handler] connect (cookie path, no agent_id binding) account_sn=%s", account_sn)
 
         try:
             # 클라이언트 → 서버 메시지는 PoC 단계 ignore (Spring 도 동일). receive loop 만 유지.
@@ -159,7 +202,7 @@ async def messages_ws_endpoint(
         except Exception as e:  # noqa: BLE001
             log.warning("[ws-handler] recv loop crashed: %s", e)
         finally:
-            await ws_broker.unregister(account_sn, websocket)
+            await ws_broker.unregister(account_sn, ws_agent_id, websocket)
             # disconnect → agent status='offline'
             if ws_agent_id:
                 try:

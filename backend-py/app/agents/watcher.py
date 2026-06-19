@@ -26,6 +26,7 @@ async def _check_once() -> int:
     try:
         repo = AgentRepository(db)
         stale = repo.list_stale_active(STALE_THRESHOLD_SECONDS)
+        log.info("watcher: tick threshold=%ds stale_candidates=%d", STALE_THRESHOLD_SECONDS, len(stale))
         if not stale:
             return 0
         updated = 0
@@ -33,8 +34,14 @@ async def _check_once() -> int:
             n = repo.update_status_from_watcher(agent.agent_id, "offline")
             if n > 0:
                 updated += 1
-                log.info("watcher: agent=%s %s -> offline (stale)", agent.agent_name, agent.status)
+                log.info(
+                    "watcher: agent=%s (id=%s type=%s) %s -> offline (stale, updated_at=%s)",
+                    agent.agent_name, agent.agent_id, agent.agent_type,
+                    agent.status, agent.updated_at,
+                )
         db.commit()
+        if updated > 0:
+            log.info("watcher: tick complete — %d agent(s) demoted to offline", updated)
         return updated
     finally:
         db.close()

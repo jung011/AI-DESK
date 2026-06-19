@@ -100,12 +100,18 @@ class AgentRepository:
         return result.rowcount
 
     def list_stale_active(self, threshold_seconds: int) -> list[AiAgent]:
-        """updated_at 이 threshold 이전 + status 가 idle/active 인 agent — stale 판정 대상."""
+        """updated_at 이 threshold 이전 + status 가 idle/active 인 agent — stale 판정 대상.
+
+        외부 AI (agent_type='external') 는 제외 — helper reporter 없이 ws session 만이
+        status source. watcher 가 무차별 강등 시 ws ESTABLISHED 인데 DB='offline' mismatch
+        발생 (rc12 fix).
+        """
         cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=threshold_seconds)
         stmt = select(AiAgent).where(
             AiAgent.deleted_at.is_(None),
             AiAgent.status.in_(["idle", "active"]),
             AiAgent.updated_at < cutoff,
+            AiAgent.agent_type != "external",
         )
         return list(self.db.execute(stmt).scalars())
 

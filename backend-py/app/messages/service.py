@@ -105,6 +105,26 @@ class MessageService:
         # evt.toAgentId === AGENT_ID 매칭. type 필드 없으면 skip → 외부 AI 가 메시지 못 받음.
         ws_payload = {"type": "message.deliver", **payload}
         asyncio.create_task(ws_broker.publish_to_account(receiver.owner_account_sn, ws_payload))
+
+        # ws-aware delivered (rc12) — Spring countSessionsForAgent + markDelivered 동등.
+        # receiver 가 ws connected 면 즉시 delivered 마킹 (helper ack 없이도). 외부 AI 처럼
+        # ack 안 보내는 client 도 ws session 살아있으면 도달 보장.
+        ws_count = ws_broker.count_sessions_for_agent(receiver.agent_id)
+        if ws_count > 0:
+            n = self.repo.ack_delivered(msg.message_id)
+            self.db.commit()
+            log.info(
+                "ws-aware delivered: message_id=%s receiver=%s ws_sessions=%d ack_rows=%d",
+                msg.message_id, receiver.agent_name, ws_count, n,
+            )
+            if n > 0:
+                item.delivered_at = datetime.now(tz=timezone.utc)
+                item.status = "delivered"
+        else:
+            log.info(
+                "ws push sent but receiver has no ws session — message_id=%s receiver=%s",
+                msg.message_id, receiver.agent_name,
+            )
         return item
 
     def _save_failed(
