@@ -1,10 +1,14 @@
 backend:
   image:
-    # roll-back to Spring (2026-06-19) — FastAPI rc3 가 prod DB 안 잡고 sqlite fallback
-    # → 빈 dashboard. env 매핑 fix + rc4 빌드 후 재시도. 옛 backend-py image 는 registry
-    # 에 그대로 남아있음 (jsh125/aidesk-backend-py:0.1.0-rc3).
-    repository: jsh125/aidesk-backend
-    tag: "1.53.10-rc1"
+    # FastAPI prod swap #2 (2026-06-20) — rc5 = schema mismatch 모두 정합:
+    # - t_message → t_ai_message (table name)
+    # - t_action_log → t_ai_action_log
+    # - sn 컬럼 제거 (agent_id / message_id / log_id PK)
+    # - ActionLog.cwd 제거, tool/category NOT NULL
+    # staging deploy 통과 (모든 endpoint wire OK + envelope 호환 확인).
+    # 문제 시 roll-back: 두 줄을 jsh125/aidesk-backend:1.53.10-rc1 로 되돌리고 push.
+    repository: jsh125/aidesk-backend-py
+    tag: "0.1.0-rc5"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 30081
