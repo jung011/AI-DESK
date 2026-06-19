@@ -67,3 +67,8 @@ app.include_router(colleagues_router,       prefix="/api/colleagues",      tags=
 app.include_router(settings_router,         prefix="/api/settings",        tags=["settings"])
 # logs router 는 /api/action-logs + /api/logs 두 path 처리 — prefix 안 채우고 root mount
 app.include_router(logs_router,             prefix="/api",                 tags=["logs"])
+
+# WebSocket /ws/messages — Spring 1:1. 3경로 인증 (cookie JWT / ?agentId / ?token Bearer).
+# 외부 AI mcp 의 ws client + frontend dashboard 둘 다 사용.
+from app.messages.ws import messages_ws_endpoint  # noqa: E402
+app.add_api_websocket_route("/ws/messages", messages_ws_endpoint)

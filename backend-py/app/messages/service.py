@@ -12,6 +12,7 @@
 - broadcast / conversations / audit
 - SSE push (broadcast 채널)
 """
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -33,6 +34,7 @@ from app.messages.schemas import (
     UnreadCountRs,
 )
 from app.messages.sse import broker
+from app.messages.ws import ws_broker
 
 log = logging.getLogger(__name__)
 
@@ -95,11 +97,13 @@ class MessageService:
         self.db.refresh(msg)
         item = self._enrich(msg, sender_name=sender.agent_name, receiver_name=receiver.agent_name)
 
-        # SSE push — helper sse_consumer 는 'message.deliver' event 만 처리 + payload
-        # 의 toTmuxSession 으로 tmux session 직렬 처리. event name / 필수 필드 helper 와 호환.
+        # SSE push (helper sse_consumer) + WS push (frontend dashboard / 외부 AI mcp ws client)
         payload = item.model_dump(by_alias=True)
         payload["toTmuxSession"] = receiver.tmux_session
         broker.publish("message.deliver", payload)
+        # WS — recipient 의 owner account_sn 에게만 push (broadcast 한계 회피).
+        # 외부 AI 의 ws client / 같은 account 의 다른 tab 둘 다 받음.
+        asyncio.create_task(ws_broker.publish_to_account(receiver.owner_account_sn, payload))
         return item
 
     def _save_failed(
