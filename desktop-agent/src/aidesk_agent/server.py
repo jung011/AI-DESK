@@ -23,7 +23,9 @@ from .claude.bootstrap import bootstrap_agent, ensure_bot_adapter, start_claude_
 from .claude.scanner import scan_workspaces
 from .vscode.code_server import DEFAULT_PORT as CODE_SERVER_PORT
 from .vscode.code_server import start_code_server, stop_code_server
-from .vscode import open_vscode
+# AI 카드 VSCode 열기 — 2026-06-19 비활성. 부활 시 이 import + open_vscode_handler +
+# route + vscode/__init__.py + vscode/external.py 다 같이 해제.
+# from .vscode import open_vscode
 from .terminal import ensure_iterm_dynamic_profile, open_terminal
 from .workspace import browse_file, browse_workspace, cleanup_agent, scope_workspace
 # 임베드 터미널 사이드 패널 비활성화에 맞춰 pty WebSocket handler 도 보류.
@@ -325,12 +327,13 @@ async def open_terminal_handler(request: web.Request) -> web.Response:
     return web.json_response({"rc": rc, "message": msg}, status=status)
 
 
-async def open_vscode_handler(request: web.Request) -> web.Response:
-    body = await request.json()
-    workspace_dir = (body.get("workspaceDir") or "").strip()
-    rc, msg = open_vscode(workspace_dir)
-    status = 200 if rc == 0 else (400 if rc == 2 else 500)
-    return web.json_response({"rc": rc, "message": msg}, status=status)
+# 2026-06-19 비활성
+# async def open_vscode_handler(request: web.Request) -> web.Response:
+#     body = await request.json()
+#     workspace_dir = (body.get("workspaceDir") or "").strip()
+#     rc, msg = open_vscode(workspace_dir)
+#     status = 200 if rc == 0 else (400 if rc == 2 else 500)
+#     return web.json_response({"rc": rc, "message": msg}, status=status)
 
 
 async def browse_workspace_handler(_: web.Request) -> web.Response:
@@ -557,7 +560,7 @@ def build_app() -> web.Application:
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/local-info", local_info)
     app.router.add_post("/api/open-terminal", open_terminal_handler)
-    app.router.add_post("/api/open-vscode", open_vscode_handler)
+    # 2026-06-19 비활성: app.router.add_post("/api/open-vscode", open_vscode_handler)
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
     app.router.add_post("/api/scope-workspace", scope_workspace_handler)
     app.router.add_post("/api/browse-file", browse_file_handler)
