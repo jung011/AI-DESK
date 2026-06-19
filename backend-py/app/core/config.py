@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # 외부 URL (frontend 사용)
     metaverse_url: str = ""
 
+    # code-server (사이드패널 임베드 web vscode) — 현재 비활성 기능과 짝
+    code_server_url: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
