@@ -49,13 +49,14 @@ class MessageRepository:
             )
         if status:
             stmt = stmt.where(Message.status == status)
-        stmt = stmt.order_by(desc(Message.created_at)).limit(limit + 1)
+        stmt = stmt.order_by(desc(Message.created_at), desc(Message.sn)).limit(limit + 1)
 
         rows = list(self.db.execute(stmt).scalars())
         has_more = len(rows) > limit
         return (rows[:limit], has_more)
 
-    def count_recent_from(self, from_agent_id: str, seconds: int = 60) -> int:
+    def count_recent_from(self, from_agent_id: str, seconds: int = 60) -> int:  # noqa: D401
+
         """rate limit 검사용 — 최근 N초 안 from_agent_id 발신 수."""
         threshold = datetime.now(tz=timezone.utc) - timedelta(seconds=seconds)
         return self.db.execute(
@@ -124,3 +125,77 @@ class MessageRepository:
             .where(Message.message_id == message_id)
             .values(status="failed", error_reason=reason)
         )
+
+    # ---- conversations / audit / partners ----
+
+    def list_conversations_for(self, agent_id: str) -> list[tuple[str, str | None, datetime, str, str]]:
+        """대화 partner 목록 — (partner_agent_id, last_message_id, last_activity_at, last_direction, last_content).
+
+        partner = from 또는 to 의 *나 자신 아닌 쪽*. 각 partner 별 최근 1건.
+        """
+        # SQLAlchemy 의 window function 사용보다 단순: agent 의 모든 메시지 가져와서 Python 에서 그룹화.
+        # PoC 규모 (~수천 row) 면 in-memory 처리 충분. 운영 규모 커지면 SQL window function 으로 교체.
+        stmt = select(Message).where(
+            or_(Message.from_agent_id == agent_id, Message.to_agent_id == agent_id)
+        ).order_by(desc(Message.created_at), desc(Message.sn))
+        rows = list(self.db.execute(stmt).scalars())
+
+        seen: dict[str, tuple[str, datetime, str, str]] = {}
+        for m in rows:
+            partner = m.to_agent_id if m.from_agent_id == agent_id else m.from_agent_id
+            if partner in seen:
+                continue
+            direction = "out" if m.from_agent_id == agent_id else "in"
+            seen[partner] = (m.message_id, m.created_at, direction, m.content)
+        return [(p, *v) for p, v in seen.items()]  # type: ignore[misc]
+
+    def count_unread_with_partner(self, agent_id: str, partner_agent_id: str) -> int:
+        return self.db.execute(
+            select(func.count(Message.sn)).where(
+                Message.to_agent_id == agent_id,
+                Message.from_agent_id == partner_agent_id,
+                Message.read_at.is_(None),
+                Message.status.in_(["sent", "delivered"]),
+            )
+        ).scalar_one()
+
+    def select_audit(
+        self,
+        status: str | None,
+        from_agent_id: str | None,
+        to_agent_id: str | None,
+        q: str | None,
+        limit: int,
+    ) -> tuple[list[Message], bool]:
+        """감사 로그 — 모든 메시지 시간 역순 + 옵션 필터. limit+1 패턴."""
+        stmt = select(Message)
+        if status:
+            stmt = stmt.where(Message.status == status)
+        if from_agent_id:
+            stmt = stmt.where(Message.from_agent_id == from_agent_id)
+        if to_agent_id:
+            stmt = stmt.where(Message.to_agent_id == to_agent_id)
+        if q:
+            stmt = stmt.where(Message.content.ilike(f"%{q}%"))
+        stmt = stmt.order_by(desc(Message.created_at), desc(Message.sn)).limit(limit + 1)
+        rows = list(self.db.execute(stmt).scalars())
+        has_more = len(rows) > limit
+        return (rows[:limit], has_more)
+
+    def list_recent_partners(self, agent_id: str, max_partners: int = 10) -> list[str]:
+        """agents.realtime 의 partners — 최근 대화 partner agent_id list (중복 제거 순서 보존)."""
+        stmt = select(Message).where(
+            or_(Message.from_agent_id == agent_id, Message.to_agent_id == agent_id)
+        ).order_by(desc(Message.created_at), desc(Message.sn)).limit(100)
+        rows = list(self.db.execute(stmt).scalars())
+        partners: list[str] = []
+        seen: set[str] = set()
+        for m in rows:
+            partner = m.to_agent_id if m.from_agent_id == agent_id else m.from_agent_id
+            if partner in seen:
+                continue
+            seen.add(partner)
+            partners.append(partner)
+            if len(partners) >= max_partners:
+                break
+        return partners

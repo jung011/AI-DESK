@@ -1,25 +1,25 @@
-"""messages router — /api/messages/*. 핵심 6 endpoint.
+"""messages router — /api/messages/*. 9 endpoint.
 
-이번 turn 포함:
-- POST   /api/messages
-- GET    /api/messages/{messageId}
-- GET    /api/messages
-- GET    /api/messages/unread-count
-- PATCH  /api/messages/{messageId}/read
-- POST   /api/messages/{messageId}/ack
-
-다음 turn 포함 예정:
-- POST   /api/messages/broadcast
-- GET    /api/messages/conversations
-- GET    /api/messages/audit
+path 매칭 순서 주의: literal path (/unread-count, /broadcast, /conversations, /audit, /events)
+는 변수 path (/{message_id}) 보다 *위*에 등록해야 매칭 우선됨.
 """
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.common.response import ApiEnvelope, fail, ok
 from app.core.database import get_db
-from app.messages.schemas import MessageCreateRq, MessageItem, MessageListRs, UnreadCountRs
+from app.messages.schemas import (
+    ConversationItem,
+    MessageBroadcastRq,
+    MessageBroadcastRs,
+    MessageCreateRq,
+    MessageItem,
+    MessageListRs,
+    UnreadCountRs,
+)
 from app.messages.service import MessageService
+from app.messages.sse import broker
 
 router = APIRouter()
 
@@ -29,28 +29,12 @@ async def health() -> dict[str, str]:
     return {"router": "messages", "status": "ok"}
 
 
+# ---- collection endpoints (literal path first) ----
+
 @router.post("", response_model=ApiEnvelope[MessageItem])
 async def create(body: MessageCreateRq, db: Session = Depends(get_db)) -> ApiEnvelope[MessageItem]:
     svc = MessageService(db)
     item = svc.create(body)
-    return ok(item)
-
-
-@router.get("/unread-count", response_model=ApiEnvelope[UnreadCountRs])
-async def unread_count(
-    agentId: str | None = Query(default=None),  # noqa: N803
-    db: Session = Depends(get_db),
-) -> ApiEnvelope[UnreadCountRs]:
-    svc = MessageService(db)
-    return ok(svc.get_unread_count(agentId))
-
-
-@router.get("/{message_id}", response_model=ApiEnvelope[MessageItem])
-async def detail(message_id: str, db: Session = Depends(get_db)) -> ApiEnvelope[MessageItem]:
-    svc = MessageService(db)
-    item = svc.detail(message_id)
-    if item is None:
-        return fail(404, "message not found")  # type: ignore[return-value]
     return ok(item)
 
 
@@ -65,6 +49,73 @@ async def list_messages(
 ) -> ApiEnvelope[MessageListRs]:
     svc = MessageService(db)
     return ok(svc.get_list(agentId, direction, withId, status, limit))
+
+
+@router.get("/unread-count", response_model=ApiEnvelope[UnreadCountRs])
+async def unread_count(
+    agentId: str | None = Query(default=None),  # noqa: N803
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[UnreadCountRs]:
+    svc = MessageService(db)
+    return ok(svc.get_unread_count(agentId))
+
+
+@router.post("/broadcast", response_model=ApiEnvelope[MessageBroadcastRs])
+async def broadcast(
+    body: MessageBroadcastRq, db: Session = Depends(get_db)
+) -> ApiEnvelope[MessageBroadcastRs]:
+    svc = MessageService(db)
+    return ok(svc.broadcast(body))
+
+
+@router.get("/conversations", response_model=ApiEnvelope[list[ConversationItem]])
+async def conversations(
+    agentId: str = Query(...),  # noqa: N803
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[list[ConversationItem]]:
+    svc = MessageService(db)
+    return ok(svc.get_conversations(agentId))
+
+
+@router.get("/audit", response_model=ApiEnvelope[MessageListRs])
+async def audit(
+    status: str | None = Query(default=None),
+    fromAgentId: str | None = Query(default=None),  # noqa: N803
+    toAgentId: str | None = Query(default=None),  # noqa: N803
+    q: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[MessageListRs]:
+    svc = MessageService(db)
+    return ok(svc.audit(status, fromAgentId, toAgentId, q, limit))
+
+
+@router.get("/events")
+async def events() -> StreamingResponse:
+    """SSE stream — frontend / helper 가 subscribe. broadcast PoC.
+
+    `event: message.created` / `event: connected` / `: keepalive` (15초).
+    """
+    return StreamingResponse(
+        broker.event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ---- item endpoints (variable path — must come AFTER literal path matches) ----
+
+@router.get("/{message_id}", response_model=ApiEnvelope[MessageItem])
+async def detail(message_id: str, db: Session = Depends(get_db)) -> ApiEnvelope[MessageItem]:
+    svc = MessageService(db)
+    item = svc.detail(message_id)
+    if item is None:
+        return fail(404, "message not found")  # type: ignore[return-value]
+    return ok(item)
 
 
 @router.patch("/{message_id}/read", response_model=ApiEnvelope[None])

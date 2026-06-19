@@ -248,3 +248,104 @@ def test_ack_marks_delivered(client, two_agents, db_session):
 def test_detail_404_for_unknown(client):
     rs = client.get("/api/messages/unknown-msg")
     assert rs.json()["result"] == 404
+
+
+def test_broadcast_fanout(client, two_agents, db_session):
+    sender, receiver = two_agents
+    # 같은 user 의 또 다른 receiver 추가
+    extra = AiAgent(
+        agent_id="receiver-2",
+        agent_name="receiver2",
+        owner_account_sn=receiver.owner_account_sn,
+        workspace_dir="/tmp",
+        tmux_session="aidesk-r2",
+        status="idle",
+        model="claude-opus-4-7",
+        agent_type="internal",
+    )
+    db_session.add(extra)
+    db_session.commit()
+
+    rs = client.post(
+        "/api/messages/broadcast",
+        json={
+            "fromAgentId": sender.agent_id,
+            "toAgentIds": [receiver.agent_id, "receiver-2", "unknown-x"],
+            "content": "to all",
+        },
+    )
+    body = rs.json()["data"]
+    assert body["totalAttempted"] == 2  # unknown-x 는 list 안 안 들어감 (notFound 카운트)
+    assert body["succeeded"] == 2
+    assert body["failed"] == 0
+    assert body["notFound"] == 1
+    assert len(body["list"]) == 2
+
+
+def test_broadcast_dedupe_and_self_excluded(client, two_agents):
+    sender, receiver = two_agents
+    rs = client.post(
+        "/api/messages/broadcast",
+        json={
+            "fromAgentId": sender.agent_id,
+            "toAgentIds": [receiver.agent_id, receiver.agent_id, sender.agent_id],
+            "content": "x",
+        },
+    )
+    body = rs.json()["data"]
+    # 중복 + self 제거 → 1건
+    assert body["totalAttempted"] == 1
+    assert body["notFound"] == 2  # 중복 1 + self 1
+
+
+def test_conversations_lists_partner_recents(client, two_agents):
+    sender, receiver = two_agents
+    client.post(
+        "/api/messages",
+        json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": "hi 1"},
+    )
+    client.post(
+        "/api/messages",
+        json={"fromAgentId": receiver.agent_id, "toAgentId": sender.agent_id, "content": "reply 2"},
+    )
+
+    rs = client.get(f"/api/messages/conversations?agentId={sender.agent_id}")
+    rows = rs.json()["data"]
+    # partner = receiver 1명
+    assert len(rows) == 1
+    assert rows[0]["partnerAgentId"] == receiver.agent_id
+    assert rows[0]["partnerAgentName"] == "receiver"
+    # 최근 = receiver → sender (in)
+    assert rows[0]["lastDirection"] == "in"
+    assert rows[0]["lastMessageContent"] == "reply 2"
+    # sender 가 receiver 에게서 받은 1건이 미확인
+    assert rows[0]["unreadCount"] == 1
+
+
+def test_audit_q_substring(client, two_agents):
+    sender, receiver = two_agents
+    for c in ["hello world", "goodbye", "hello again"]:
+        client.post(
+            "/api/messages",
+            json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": c},
+        )
+    rs = client.get("/api/messages/audit?q=hello")
+    body = rs.json()["data"]
+    assert len(body["list"]) == 2
+
+
+def test_audit_status_filter(client, two_agents):
+    sender, receiver = two_agents
+    # 1개 sent + 1개 failed (context guard 등) — 본 케이스에서 두 번째는 self 차단으로 failed
+    client.post(
+        "/api/messages",
+        json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": "ok"},
+    )
+    client.post(
+        "/api/messages",
+        json={"fromAgentId": sender.agent_id, "toAgentId": sender.agent_id, "content": "self"},
+    )
+    rs = client.get("/api/messages/audit?status=failed")
+    assert len(rs.json()["data"]["list"]) == 1
+    rs = client.get("/api/messages/audit?status=sent")
+    assert len(rs.json()["data"]["list"]) == 1

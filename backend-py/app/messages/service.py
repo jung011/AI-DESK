@@ -24,13 +24,23 @@ from app.messages.policy import PolicyResult, check_send
 from app.messages.repository import MessageRepository
 from app.messages.schemas import (
     AgentUnread,
+    ConversationItem,
+    MessageBroadcastRq,
+    MessageBroadcastRs,
     MessageCreateRq,
     MessageItem,
     MessageListRs,
     UnreadCountRs,
 )
+from app.messages.sse import broker
 
 log = logging.getLogger(__name__)
+
+
+def _truncate(s: str | None, n: int) -> str:
+    if not s:
+        return ""
+    return s if len(s) <= n else s[:n] + "…"
 
 
 class MessageService:
@@ -83,7 +93,12 @@ class MessageService:
         self.repo.insert(msg)
         self.db.commit()
         self.db.refresh(msg)
-        return self._enrich(msg, sender_name=sender.agent_name, receiver_name=receiver.agent_name)
+        item = self._enrich(msg, sender_name=sender.agent_name, receiver_name=receiver.agent_name)
+
+        # SSE push — 모든 client 에 (broadcast PoC). frontend 가 to_agent_id 매칭 후 필터.
+        # 사용자 인박스 갱신 + helper 의 last-mile delivery 트리거.
+        broker.publish("message.created", item.model_dump(by_alias=True))
+        return item
 
     def _save_failed(
         self,
@@ -160,6 +175,99 @@ class MessageService:
     def ack_delivered(self, message_id: str) -> None:
         self.repo.ack_delivered(message_id)
         self.db.commit()
+
+    # ---- broadcast ----
+
+    def broadcast(self, body: MessageBroadcastRq) -> MessageBroadcastRs:
+        """fan-out 발신 — 각 수신자에게 create() 동일 흐름 적용.
+
+        Spring MessageService.broadcast 와 1:1.
+        """
+        sender = self.agent_repo.find_by_agent_id_any_owner(body.from_agent_id)
+        if sender is None:
+            # Spring: 404. 여기선 빈 결과 + notFound 카운트.
+            return MessageBroadcastRs(items=[], total_attempted=0, succeeded=0, failed=0, not_found=len(body.to_agent_ids))
+
+        # 자기 자신 + 중복 제거
+        unique_to: list[str] = []
+        seen: set[str] = set()
+        duplicate_or_self = 0
+        for tid in body.to_agent_ids:
+            if not tid or not tid.strip():
+                continue
+            if tid == sender.agent_id:
+                duplicate_or_self += 1
+                continue
+            if tid in seen:
+                duplicate_or_self += 1
+                continue
+            seen.add(tid)
+            unique_to.append(tid)
+
+        created: list[MessageItem] = []
+        not_found = duplicate_or_self
+
+        for tid in unique_to:
+            receiver = self.agent_repo.find_by_agent_id_any_owner(tid)
+            if receiver is None:
+                not_found += 1
+                continue
+            single = MessageCreateRq(
+                from_agent_id=sender.agent_id,
+                to_agent_id=tid,
+                content=body.content,
+            )
+            item = self.create(single)
+            created.append(item)
+
+        succ = sum(1 for m in created if m.status != "failed")
+        fail = len(created) - succ
+        return MessageBroadcastRs(
+            items=created,
+            total_attempted=len(created),
+            succeeded=succ,
+            failed=fail,
+            not_found=not_found,
+        )
+
+    # ---- conversations ----
+
+    def get_conversations(self, agent_id: str) -> list[ConversationItem]:
+        """대화 partner 별 최근 활동 — Spring MessageService.getConversations."""
+        partner_rows = self.repo.list_conversations_for(agent_id)
+        result: list[ConversationItem] = []
+        for partner_id, last_msg_id, last_at, direction, content in partner_rows:
+            partner = self.agent_repo.find_by_agent_id_any_owner(partner_id)
+            unread = self.repo.count_unread_with_partner(agent_id, partner_id)
+            result.append(
+                ConversationItem(
+                    partner_agent_id=partner_id,
+                    partner_agent_name=partner.agent_name if partner else partner_id,
+                    partner_status=partner.status if partner else None,
+                    partner_workspace_dir=partner.workspace_dir if partner else None,
+                    last_message_id=last_msg_id,
+                    last_message_content=_truncate(content, 200),
+                    last_activity_at=last_at,
+                    last_direction=direction,
+                    unread_count=unread,
+                )
+            )
+        return result
+
+    # ---- audit ----
+
+    def audit(
+        self,
+        status: str | None,
+        from_agent_id: str | None,
+        to_agent_id: str | None,
+        q: str | None,
+        limit: int = 100,
+    ) -> MessageListRs:
+        safe_limit = max(1, min(limit, 1000))
+        rows, has_more = self.repo.select_audit(status, from_agent_id, to_agent_id, q, safe_limit)
+        items = [self._enrich(r) for r in rows]
+        return MessageListRs(items=items, has_more=has_more)
 
     # ---- helper ----
 

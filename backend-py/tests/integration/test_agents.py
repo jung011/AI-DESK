@@ -136,3 +136,102 @@ def test_realtime_returns_all_active_agents(client):
 def test_create_requires_auth(client):
     rs = client.post("/api/agents", json={"agentName": "x", "workspaceDir": "/x", "model": "claude"})
     assert rs.status_code == 401
+
+
+def test_list_with_caller_agent_channel_aware(client, db_session):
+    """mcp 의 list_agents 호출 — callerAgentId 동봉 + channel-aware filter."""
+    # signup → user row + 휴먼 entity 자동
+    cookies = _login(client, "a@x.com")
+    _login(client, "b@x.com")  # bob signup (cookies 는 사용 안 함, alice 로 인증 유지)
+    alice = db_session.query(User).filter_by(login_id="a@x.com").one()
+    bob = db_session.query(User).filter_by(login_id="b@x.com").one()
+    # alice 로 다시 인증 (마지막 _login 호출이 bob 으로 cookies 박았을 수 있음)
+    cookies = _login(client, "a@x.com")
+
+    # alice 의 (me) + internal
+    alice_me = AiAgent(
+        agent_id="alice-me", agent_name="a (me)", owner_account_sn=alice.account_sn,
+        workspace_dir="/a", tmux_session="aidesk-self-a", status="active",
+        model="claude-opus-4-7", agent_type="me",
+    )
+    alice_int = AiAgent(
+        agent_id="alice-int", agent_name="alice-internal", owner_account_sn=alice.account_sn,
+        workspace_dir="/x", tmux_session="aidesk-ai", status="idle",
+        model="claude-opus-4-7", agent_type="internal",
+    )
+    # bob (다른 user) 의 (me) + external
+    bob_me = AiAgent(
+        agent_id="bob-me", agent_name="b (me)", owner_account_sn=bob.account_sn,
+        workspace_dir="/b", tmux_session="aidesk-self-b", status="active",
+        model="claude-opus-4-7", agent_type="me",
+    )
+    bob_ext = AiAgent(
+        agent_id="bob-ext", agent_name="bob-external", owner_account_sn=bob.account_sn,
+        workspace_dir="/b", tmux_session="aidesk-ext-b", status="active",
+        model="claude-opus-4-7", agent_type="external",
+    )
+    db_session.add_all([alice_me, alice_int, bob_me, bob_ext])
+    db_session.commit()
+
+    # callerAgentId = alice_int (channel A). A/A sameUser + BOTH 의 sameUser 만.
+    rs = client.get("/api/agents?callerAgentId=alice-int", cookies=cookies)
+    ids = {a["agentId"] for a in rs.json()["data"]["list"]}
+    assert "alice-me" in ids       # sameUser BOTH+A
+    assert "alice-int" not in ids  # self
+    assert "bob-me" not in ids     # cross-user BOTH+A
+    assert "bob-ext" not in ids    # A↔B 차단
+
+    # callerAgentId = bob_ext (channel B). B/B sameUser + BOTH/BOTH cross-user.
+    rs = client.get("/api/agents?callerAgentId=bob-ext", cookies=cookies)
+    ids = {a["agentId"] for a in rs.json()["data"]["list"]}
+    assert "bob-me" in ids         # sameUser BOTH+B
+    assert "alice-me" not in ids   # cross-user BOTH+B → sameUser only
+    assert "bob-ext" not in ids    # self
+
+
+def test_realtime_partners_filled_from_messages(client, two_agents_for_realtime, db_session):
+    sender, receiver = two_agents_for_realtime
+    client.post(
+        "/api/messages",
+        json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": "hi"},
+    )
+    rs = client.get("/api/agents/realtime")
+    by_id = {a["agentId"]: a for a in rs.json()["data"]}
+    assert receiver.agent_id in by_id[sender.agent_id]["partners"]
+    assert sender.agent_id in by_id[receiver.agent_id]["partners"]
+
+
+import pytest
+
+from app.agents.models import AiAgent
+from app.auth.models import User
+
+
+@pytest.fixture
+def two_agents_for_realtime(db_session):
+    u = User(login_id="rt@x.com", password="x", display_name="rt", role="USER")
+    db_session.add(u)
+    db_session.flush()
+    s = AiAgent(
+        agent_id="rt-sender",
+        agent_name="rt-sender",
+        owner_account_sn=u.account_sn,
+        workspace_dir="/",
+        tmux_session="aidesk-rts",
+        status="active",
+        model="claude-opus-4-7",
+        agent_type="internal",
+    )
+    r = AiAgent(
+        agent_id="rt-receiver",
+        agent_name="rt-receiver",
+        owner_account_sn=u.account_sn,
+        workspace_dir="/",
+        tmux_session="aidesk-rtr",
+        status="active",
+        model="claude-opus-4-7",
+        agent_type="internal",
+    )
+    db_session.add_all([s, r])
+    db_session.commit()
+    return s, r

@@ -1,8 +1,4 @@
-"""agents business logic — Spring AgentService 일부 (sameUser only).
-
-cross-user / channel-aware canCommunicate 는 messages 도메인 포팅 turn 에 합쳐 완성.
-realtime 도 messages 의 partners 의존 → 현재는 partners=[] stub.
-"""
+"""agents business logic — Spring AgentService 1:1 (channel-aware filter + realtime partners 포함)."""
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -12,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.agents.models import AiAgent
 from app.agents.repository import AgentRepository
 from app.agents.schemas import AgentCreateRq, AgentItem, AgentListRs, AgentRealtimeItem
+from app.messages.policy import can_communicate
+from app.messages.repository import MessageRepository
 
 log = logging.getLogger(__name__)
 
@@ -47,31 +45,52 @@ class AgentService:
 
     # ---- list / detail ----
 
-    def get_list(self, owner_account_sn: int, status: str | None = None) -> AgentListRs:
-        """dashboard cookie 인증 호출 — sameUser 안 agent. status 필터 optional.
+    def get_list(
+        self,
+        owner_account_sn: int | None,
+        status: str | None = None,
+        caller_agent_id: str | None = None,
+    ) -> AgentListRs:
+        """Spring AgentService.getList(status, callerAgentId) 1:1.
 
-        TODO (messages turn): mcp callerAgentId 동봉 시 channel-aware canCommunicate
-        로 cross-user 필터링.
+        Mode:
+        1) dashboard cookie 인증 호출 (caller_agent_id=None) — sameUser 안 agent
+        2) mcp 의 list_agents (caller_agent_id 주어짐) — caller 의 channel 기준 권한 filter
+        3) 비인증 + caller 모름 — fallback 전체 (mcp ensureAgentId 의 cwd 매칭용)
         """
-        rows = self.repo.list_by_owner(owner_account_sn, status)
+        caller: AiAgent | None = None
+        me = owner_account_sn
+        if caller_agent_id:
+            caller = self.repo.find_by_agent_id_any_owner(caller_agent_id)
+            if me is None and caller is not None:
+                me = caller.owner_account_sn
+
+        if me is None:
+            rows = self.repo.list_all_active()
+        elif caller is not None:
+            # channel-aware filter — canCommunicate 통과한 agent 만
+            all_rows = self.repo.list_all_active()
+            rows = [a for a in all_rows if can_communicate(caller, a)]
+        else:
+            rows = self.repo.list_by_owner(me, status)
+
         items = [_to_item(r) for r in rows]
         return AgentListRs(items=items)
 
     def get_realtime(self) -> list[AgentRealtimeItem]:
-        """외부 시각화 BE 가 소비하는 5필드 응답.
-
-        partners 는 messages 도메인의 최근 대화 partner 추적 필요 → 현재 stub (빈 list).
-        """
+        """외부 시각화 BE 가 소비하는 5필드 응답. partners 는 최근 대화 partner agent_id."""
+        msg_repo = MessageRepository(self.db)
         rows = self.repo.list_all_active()
         result: list[AgentRealtimeItem] = []
         for r in rows:
             state = _map_status_to_state(r.status)
+            partners = msg_repo.list_recent_partners(r.agent_id, max_partners=10)
             result.append(
                 AgentRealtimeItem(
                     agent_id=r.agent_id,
                     name=r.agent_name,
                     state=state,
-                    partners=[],  # TODO(messages-port)
+                    partners=partners,
                     last_seen_at=r.updated_at,
                 )
             )

@@ -34,12 +34,9 @@ async def list_agents(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[AgentListRs]:
-    """sameUser agent 목록.
-
-    TODO (messages turn): callerAgentId 동봉 시 channel-aware filter 로 cross-user 허용.
-    """
+    """sameUser agent 목록 + (callerAgentId 동봉 시) channel-aware filter."""
     svc = AgentService(db)
-    return ok(svc.get_list(user.account_sn, status))
+    return ok(svc.get_list(user.account_sn, status, callerAgentId))
 
 
 @router.get("/realtime", response_model=ApiEnvelope[list[AgentRealtimeItem]])

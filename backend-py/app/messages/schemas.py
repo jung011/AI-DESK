@@ -57,3 +57,37 @@ class UnreadCountRs(BaseModel):
     by_agent: list[AgentUnread] = Field(default_factory=list, serialization_alias="byAgent")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class MessageBroadcastRq(BaseModel):
+    from_agent_id: str = Field(alias="fromAgentId", min_length=1)
+    to_agent_ids: list[str] = Field(alias="toAgentIds", default_factory=list)
+    content: str = Field(min_length=1, max_length=_settings.message_content_max_length)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class MessageBroadcastRs(BaseModel):
+    items: list[MessageItem] = Field(default_factory=list, serialization_alias="list")
+    total_attempted: int = Field(serialization_alias="totalAttempted")
+    succeeded: int
+    failed: int
+    not_found: int = Field(serialization_alias="notFound")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ConversationItem(BaseModel):
+    """대화 partner 별 최근 활동 — Spring ConversationItemRsVo."""
+
+    partner_agent_id: str = Field(serialization_alias="partnerAgentId")
+    partner_agent_name: str | None = Field(default=None, serialization_alias="partnerAgentName")
+    partner_status: str | None = Field(default=None, serialization_alias="partnerStatus")
+    partner_workspace_dir: str | None = Field(default=None, serialization_alias="partnerWorkspaceDir")
+    last_message_id: str | None = Field(default=None, serialization_alias="lastMessageId")
+    last_message_content: str | None = Field(default=None, serialization_alias="lastMessageContent")
+    last_activity_at: datetime | None = Field(default=None, serialization_alias="lastActivityAt")
+    last_direction: str | None = Field(default=None, serialization_alias="lastDirection")  # in / out
+    unread_count: int = Field(default=0, serialization_alias="unreadCount")
+
+    model_config = ConfigDict(populate_by_name=True)

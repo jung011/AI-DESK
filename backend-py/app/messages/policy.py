@@ -34,37 +34,51 @@ class PolicyResult:
 
 
 def channel_of(agent: AiAgent) -> str:
-    """agent 의 통신 channel — internal / external / bridge (me 또는 human).
+    """agent 의 통신 channel — BOTH / A / B.
 
-    sameUser 안 internal AI 들끼리만 통신 가능. external 은 cross-user 가능. (me)/human 은
-    bridge 라 양쪽 모두 닿을 수 있음.
+    Spring MessageService.channelOf 와 1:1.
+    - BOTH : (me) 또는 휴먼 — 두 채널의 브릿지
+    - A    : internal AI (helper 환경 worker)
+    - B    : external AI (mcp service, 사내 동료 채널)
     """
-    t = (agent.agent_type or "internal").lower()
-    if t in ("me", "human"):
-        return "bridge"
-    if t == "external":
-        return "external"
-    return "internal"
+    if (agent.model or "").lower() == "human":
+        return "BOTH"
+    ts = agent.tmux_session or ""
+    if ts.startswith("aidesk-self-"):
+        return "BOTH"
+    if (agent.agent_type or "").lower() == "external":
+        return "B"
+    return "A"
 
 
 def can_communicate(caller: AiAgent, peer: AiAgent) -> bool:
-    """caller 가 peer 에게 통신 가능한지.
+    """두 agent 간 통신 허용 여부 — Spring canCommunicate 와 1:1.
 
-    Spring MessageService.canCommunicate(caller, peer, callerCh, peerCh) 의 본질.
-    핵심 규칙:
-    - 같은 user (sameUser) 항상 허용
-    - bridge (me / human) 양쪽 모두 닿음
-    - 다른 user → external ↔ external / external ↔ bridge 허용. internal ↔ internal 차단
+    핵심:
+    - self → self: 차단
+    - BOTH↔BOTH: cross-user 허용 (사내 동료 채널 브릿지 간 통신)
+    - BOTH↔A/B: sameUser 만 (internal/external 은 본인 user 의 사유 worker/service)
+    - A/A: sameUser 만
+    - B/B: sameUser 만 — 외부 AI 는 등록 user 격리
+    - A↔B: 차단 — internal/external 직접 통신은 (me) 브릿지 경유
     """
-    if caller.owner_account_sn == peer.owner_account_sn:
+    if caller is None or peer is None:
+        return False
+    if caller.agent_id == peer.agent_id:
+        return False
+    same_user = (
+        caller.owner_account_sn is not None
+        and caller.owner_account_sn == peer.owner_account_sn
+    )
+    from_ch = channel_of(caller)
+    to_ch = channel_of(peer)
+    if from_ch == "BOTH" and to_ch == "BOTH":
         return True
-    caller_ch = channel_of(caller)
-    peer_ch = channel_of(peer)
-    if "bridge" in (caller_ch, peer_ch):
-        return True
-    if caller_ch == "external" and peer_ch == "external":
-        return True
-    return False
+    if "BOTH" in (from_ch, to_ch):
+        return same_user
+    if from_ch != to_ch:
+        return False
+    return same_user
 
 
 def check_send(
