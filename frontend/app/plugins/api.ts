@@ -27,7 +27,11 @@ export default defineNuxtPlugin(() => {
     path.startsWith('/api/auth/signup');
 
   const tryRefresh = async (): Promise<boolean> => {
-    if (refreshPromise) return refreshPromise;
+    if (refreshPromise) {
+      console.warn('[auth-debug] refresh — re-using inflight promise', new Date().toISOString());
+      return refreshPromise;
+    }
+    console.warn('[auth-debug] refresh — attempt', new Date().toISOString());
     refreshPromise = (async () => {
       try {
         const res = await $fetch<{ result: number }>('/api/auth/refresh', {
@@ -35,8 +39,11 @@ export default defineNuxtPlugin(() => {
           method: 'POST',
           credentials: 'include',
         });
-        return res?.result === 0;
-      } catch {
+        const ok = res?.result === 0;
+        console.warn('[auth-debug] refresh — result', { ok, body: res, time: new Date().toISOString() });
+        return ok;
+      } catch (e) {
+        console.error('[auth-debug] refresh — exception', { error: String(e), time: new Date().toISOString() });
         return false;
       } finally {
         // 다음 refresh 가능하도록 마이크로태스크 뒤에 비움
@@ -46,12 +53,20 @@ export default defineNuxtPlugin(() => {
     return refreshPromise;
   };
 
-  const redirectToLogin = () => {
+  const redirectToLogin = (reason: string) => {
     if (!import.meta.client) return;
     const auth = useAuthStore();
+    const route = useRoute();
+    console.error('[auth-debug] redirectToLogin', {
+      reason,
+      time: new Date().toISOString(),
+      currentRoute: route.fullPath,
+      isAuthenticated: auth.isAuthenticated,
+      sessionStorageAuth: typeof window !== 'undefined' ? window.sessionStorage.getItem('aidesk.auth') : null,
+      stack: new Error('redirectToLogin stack').stack,
+    });
     auth.clearUser();
     const router = useRouter();
-    const route = useRoute();
     if (route.path !== '/login') {
       router.replace({ path: '/login', query: { redirect: route.fullPath } });
     }
@@ -69,8 +84,14 @@ export default defineNuxtPlugin(() => {
       const path = String(ctx.request);
       if (isAuthEndpoint(path)) return;
 
-      const body = ctx.response?._data as { code?: string } | undefined;
+      const body = ctx.response?._data as { code?: string; message?: string } | undefined;
       const code = body?.code;
+      console.warn('[auth-debug] 401 received', {
+        path,
+        code,
+        message: body?.message,
+        time: new Date().toISOString(),
+      });
 
       // ET: access 만료 → refresh 후 원 요청 재시도. 한 번만 시도해 무한 루프 방지.
       const opts = ctx.options as unknown as { _retried?: boolean };
@@ -90,18 +111,22 @@ export default defineNuxtPlugin(() => {
               Object.defineProperty(ctx.response, 'status', { value: 200, configurable: true });
             }
             return;
-          } catch {
-            // 재시도도 실패 — 아래 redirect 로 떨어짐
+          } catch (e) {
+            console.error('[auth-debug] ET retry failed', { path, error: String(e), time: new Date().toISOString() });
           }
         }
-        redirectToLogin();
+        redirectToLogin(`ET refresh fail (path=${path})`);
         return;
       }
 
       // NA: access 자체 없음/위조 → 즉시 로그인 화면
       if (code === 'NA') {
-        redirectToLogin();
+        redirectToLogin(`NA (path=${path})`);
+        return;
       }
+
+      // 그 외 401 (code 없음 등) — interceptor 가 logout 안 함. 호출자가 알아서.
+      console.warn('[auth-debug] 401 fall-through (no code match)', { path, code });
     },
   });
 

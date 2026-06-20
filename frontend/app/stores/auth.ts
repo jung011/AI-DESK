@@ -49,6 +49,14 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     clearUser() {
+      if (import.meta.client) {
+        console.error('[auth-debug] clearUser called', {
+          time: new Date().toISOString(),
+          prevUser: this.user ? { accountSn: this.user.accountSn, loginId: this.user.loginId } : null,
+          location: window.location.href,
+          stack: new Error('clearUser stack').stack,
+        });
+      }
       this.user = null;
       if (import.meta.client) {
         sessionStorage.removeItem(STORAGE_KEY);

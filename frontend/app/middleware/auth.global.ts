@@ -44,6 +44,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const isPublic = PUBLIC_PATHS.has(to.path);
 
   if (!auth.isAuthenticated && !isPublic) {
+    if (import.meta.client) {
+      console.error('[auth-debug] middleware redirect to /login', {
+        to: to.fullPath,
+        from: to.path,
+        time: new Date().toISOString(),
+        isAuthenticated: auth.isAuthenticated,
+        sessionStorageAuth: window.sessionStorage.getItem('aidesk.auth'),
+      });
+    }
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
   }
   if (auth.isAuthenticated && isPublic) {
