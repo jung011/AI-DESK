@@ -27,6 +27,32 @@ async def health() -> dict[str, str]:
     return {"router": "agents", "status": "ok"}
 
 
+@router.get("/wiring", response_model=ApiEnvelope[dict])
+async def wiring(
+    windowMin: int = 30,  # noqa: N803 — frontend query param 유지
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[dict]:
+    """대시보드 wiring view — 최근 windowMin 분 의 agent pair 대화 통계.
+
+    응답:
+      {
+        "links": [{"fromAgentId", "toAgentId", "count", "lastAt"}, ...],
+        "windowMin": int,
+      }
+    intensity 는 frontend 가 count max 대비 정규화.
+    """
+    from app.messages.repository import MessageRepository
+    repo = MessageRepository(db)
+    rows = repo.aggregate_wiring(window_min=windowMin)
+    return ok({
+        "links": [
+            {"fromAgentId": f, "toAgentId": t, "count": c, "lastAt": last.isoformat()}
+            for f, t, c, last in rows
+        ],
+        "windowMin": windowMin,
+    })
+
+
 @router.get("", response_model=ApiEnvelope[AgentListRs])
 async def list_agents(
     status: str | None = None,

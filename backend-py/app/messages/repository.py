@@ -16,6 +16,26 @@ class MessageRepository:
         self.db.flush()
         return msg
 
+    def aggregate_wiring(self, window_min: int = 30) -> list[tuple[str, str, int, datetime]]:
+        """최근 window_min 분 의 agent pair (from, to) 별 메시지 수 + 가장 최근 timestamp.
+
+        대시보드 wiring view 용 — 활발한 대화 쌍 visualize.
+        반환: [(fromAgentId, toAgentId, messageCount, lastAt), ...]
+        """
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(minutes=window_min)
+        stmt = (
+            select(
+                Message.from_agent_id,
+                Message.to_agent_id,
+                func.count(Message.message_id).label("count"),
+                func.max(Message.created_at).label("last_at"),
+            )
+            .where(Message.created_at >= cutoff)
+            .group_by(Message.from_agent_id, Message.to_agent_id)
+            .order_by(desc("count"))
+        )
+        return [(r.from_agent_id, r.to_agent_id, r.count, r.last_at) for r in self.db.execute(stmt).all()]
+
     def find_by_id(self, message_id: str) -> Message | None:
         return self.db.execute(
             select(Message).where(Message.message_id == message_id)
