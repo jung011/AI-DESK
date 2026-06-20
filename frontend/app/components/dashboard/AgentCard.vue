@@ -12,6 +12,14 @@
       </span>
     </div>
 
+    <div v-if="agent.contextPct != null" class="ctx-bar-wrap" :title="`컨텍스트 ${agent.contextPct}%`">
+      <span class="ctx-label">컨텍스트</span>
+      <div class="ctx-bar">
+        <div class="ctx-fill" :class="ctxLevel" :style="{ width: agent.contextPct + '%' }" />
+      </div>
+      <span class="ctx-pct" :class="ctxLevel">{{ agent.contextPct }}%</span>
+    </div>
+
     <div class="ai-card-footer">
       <span class="ai-model-tag" :class="modelClass">{{ modelLabel }}</span>
       <div class="ai-meta">{{ metaLabel }}: <strong>{{ metaValue }}</strong></div>
@@ -262,6 +270,14 @@ const metaLabel = computed(() => ({
 
 const metaValue = computed(() => formatTime(props.agent.startedAt, props.agent.status));
 
+/** context_pct 의 threshold 색 — 60 미만 green, 60~85 orange, 85+ red. */
+const ctxLevel = computed(() => {
+  const p = props.agent.contextPct ?? 0;
+  if (p >= 85) return 'level-high';
+  if (p >= 60) return 'level-mid';
+  return 'level-low';
+});
+
 /** 모델별 색상 구분 — 풀네임에서 prefix 만 매칭. 알 수 없는 모델은 기본 회색. */
 const modelClass = computed(() => {
   const m = (props.agent.model || '').toLowerCase();
@@ -331,6 +347,29 @@ function formatTime(iso: string, status: string): string {
   font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
   display: inline-flex; align-items: center; gap: 6px;
 }
+/* 컨텍스트 사용량 — 5h 사용량과 달리 agent 별 별도값. */
+.ctx-bar-wrap {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0 12px;
+}
+.ctx-label {
+  font-size: 11px; color: #94A3B8; flex-shrink: 0;
+}
+.ctx-bar {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: #F1F5F9; overflow: hidden;
+}
+.ctx-fill { height: 100%; transition: width .2s ease; }
+.ctx-fill.level-low  { background: #10B981; }
+.ctx-fill.level-mid  { background: #F59E0B; }
+.ctx-fill.level-high { background: #EF4444; }
+.ctx-pct {
+  font-size: 11px; font-weight: 600; min-width: 32px; text-align: right;
+}
+.ctx-pct.level-low  { color: #059669; }
+.ctx-pct.level-mid  { color: #D97706; }
+.ctx-pct.level-high { color: #DC2626; }
+
 .ai-card-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding-top: 14px; border-top: 1px solid #F0F2F5;

@@ -55,13 +55,6 @@
           </div>
           <div class="metric-pct" :class="levelOf(usage.fiveHourPct)">{{ pctLabel(usage.fiveHourPct) }}</div>
         </div>
-        <div class="metric">
-          <div class="metric-label">현재 세션 컨텍스트</div>
-          <div class="metric-bar">
-            <div class="metric-fill" :class="levelOf(usage.contextPct)" :style="{ width: barWidth(usage.contextPct) }" />
-          </div>
-          <div class="metric-pct" :class="levelOf(usage.contextPct)">{{ pctLabel(usage.contextPct) }}</div>
-        </div>
         <div v-if="usage.weeklyPct >= 0" class="metric">
           <div class="metric-label">주간 사용률</div>
           <div class="metric-bar">
