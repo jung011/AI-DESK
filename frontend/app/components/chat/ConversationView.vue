@@ -1,5 +1,5 @@
 <template>
-  <section class="conv-view" :class="`font-${fontSize}`">
+  <section class="conv-view" :style="{ '--cv-font-size': `${fontSizePx}px` }">
     <header v-if="partner" class="conv-head">
       <button v-if="showBack" class="cv-back" @click="$emit('back')" aria-label="뒤로">←</button>
       <span class="cv-avatar" :class="partner.status">{{ avatar(partner.status) }}</span>
@@ -16,19 +16,9 @@
           </template>
         </div>
       </div>
-      <!-- 상단 ... 메뉴 + 폰트 사이즈 조정 (16:23 누락 요청 회수) -->
+      <!-- 상단 ... 메뉴 — 클릭 시 폰트 사이즈 모달. iTerm 스타일 숫자 조절. -->
       <div class="cv-head-actions">
-        <button class="cv-menu-btn" @click.stop="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-label="메뉴">⋯</button>
-        <div v-if="menuOpen" class="cv-menu-pop" @click.stop>
-          <div class="cv-menu-section">
-            <div class="cv-menu-label">폰트 크기</div>
-            <div class="cv-font-row">
-              <button class="cv-font-btn" :class="{ active: fontSize === 'sm' }" @click="setFontSize('sm')">작게</button>
-              <button class="cv-font-btn" :class="{ active: fontSize === 'md' }" @click="setFontSize('md')">보통</button>
-              <button class="cv-font-btn" :class="{ active: fontSize === 'lg' }" @click="setFontSize('lg')">크게</button>
-            </div>
-          </div>
-        </div>
+        <button class="cv-menu-btn" @click.stop="settingsOpen = true" aria-label="설정">⋯</button>
       </div>
     </header>
     <header v-else class="conv-head empty">
@@ -93,6 +83,43 @@
       </ul>
     </div>
 
+    <!-- 폰트 크기 모달 — iTerm 스타일 숫자 조절. 바깥 클릭 / X / Esc 로 닫기. -->
+    <Teleport to="body">
+      <div v-if="settingsOpen" class="cv-settings-overlay" @click="settingsOpen = false">
+        <div class="cv-settings-modal" @click.stop>
+          <header class="cv-settings-head">
+            <h3>채팅 설정</h3>
+            <button class="cv-settings-x" @click="settingsOpen = false" aria-label="닫기">✕</button>
+          </header>
+          <div class="cv-settings-body">
+            <div class="cv-settings-field">
+              <label class="cv-settings-label">폰트 크기 (px)</label>
+              <div class="cv-settings-control">
+                <button class="cv-stepper" @click="bumpFontSize(-1)" :disabled="fontSizePx <= 10" aria-label="감소">−</button>
+                <input
+                  class="cv-settings-num"
+                  type="number"
+                  v-model.number="fontSizePxInput"
+                  min="10"
+                  max="24"
+                  @change="applyFontSizeInput"
+                />
+                <button class="cv-stepper" @click="bumpFontSize(1)" :disabled="fontSizePx >= 24" aria-label="증가">＋</button>
+                <span class="cv-settings-range">10 — 24</span>
+              </div>
+              <div class="cv-settings-preview" :style="{ fontSize: `${fontSizePx}px` }">
+                미리보기 — 안녕하세요, 채팅 글자 크기 샘플입니다.
+              </div>
+            </div>
+            <div class="cv-settings-actions">
+              <button class="cv-settings-reset" @click="resetFontSize">기본값으로</button>
+              <button class="cv-settings-done" @click="settingsOpen = false">완료</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <footer v-if="partner" class="conv-input">
       <!-- 선택된 첨부 chip (upload 전 또는 후) -->
       <div v-if="pendingAttachments.length > 0 || uploadingFiles" class="cv-pending-attachments">
@@ -110,7 +137,7 @@
         <textarea
           v-model="draft"
           class="cv-textarea"
-          rows="2"
+          rows="3"
           :placeholder="`${partner.agentName} 에게 메시지…`"
           :disabled="sending"
           @keydown.enter.exact="onEnter"
@@ -151,23 +178,55 @@ const bodyRef = ref<HTMLElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const pendingAttachments = ref<AttachmentRef[]>([]);
 const uploadingFiles = ref(false);
-const menuOpen = ref(false);
-const fontSize = ref<'sm' | 'md' | 'lg'>('md');
+const settingsOpen = ref(false);
+const FONT_DEFAULT_PX = 13;
+const FONT_MIN_PX = 10;
+const FONT_MAX_PX = 24;
+const fontSizePx = ref<number>(FONT_DEFAULT_PX);
+const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
 
-// 폰트 크기 — localStorage 저장 (페이지 reload 후 유지).
+// iTerm 스타일 — 숫자(px) 단위 직접 조절. localStorage 저장.
 onMounted(() => {
   if (typeof window === 'undefined') return;
-  const saved = window.localStorage.getItem('aidesk.chat.fontSize');
-  if (saved === 'sm' || saved === 'md' || saved === 'lg') fontSize.value = saved;
-  document.addEventListener('click', closeMenuOnOutside);
+  const saved = window.localStorage.getItem('aidesk.chat.fontSizePx');
+  const n = saved ? Number(saved) : NaN;
+  if (Number.isFinite(n) && n >= FONT_MIN_PX && n <= FONT_MAX_PX) {
+    fontSizePx.value = n;
+    fontSizePxInput.value = n;
+  }
+  document.addEventListener('keydown', onSettingsKey);
 });
 onBeforeUnmount(() => {
-  if (typeof document !== 'undefined') document.removeEventListener('click', closeMenuOnOutside);
+  if (typeof document !== 'undefined') document.removeEventListener('keydown', onSettingsKey);
 });
-function closeMenuOnOutside(): void { menuOpen.value = false; }
-function setFontSize(s: 'sm' | 'md' | 'lg'): void {
-  fontSize.value = s;
-  if (typeof window !== 'undefined') window.localStorage.setItem('aidesk.chat.fontSize', s);
+
+function onSettingsKey(e: KeyboardEvent): void {
+  if (e.key === 'Escape' && settingsOpen.value) {
+    settingsOpen.value = false;
+  }
+}
+
+function setFontSizePx(n: number): void {
+  const clamped = Math.max(FONT_MIN_PX, Math.min(FONT_MAX_PX, Math.round(n)));
+  fontSizePx.value = clamped;
+  fontSizePxInput.value = clamped;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('aidesk.chat.fontSizePx', String(clamped));
+  }
+}
+
+function bumpFontSize(delta: number): void {
+  setFontSizePx(fontSizePx.value + delta);
+}
+
+function applyFontSizeInput(): void {
+  const n = Number(fontSizePxInput.value);
+  if (Number.isFinite(n)) setFontSizePx(n);
+  else fontSizePxInput.value = fontSizePx.value;
+}
+
+function resetFontSize(): void {
+  setFontSizePx(FONT_DEFAULT_PX);
 }
 
 function onAttachClick(): void {
@@ -380,8 +439,9 @@ function formatSize(bytes: number): string {
   display: flex; gap: 10px; align-items: flex-end;
 }
 .cv-textarea {
-  flex: 1; resize: none; padding: 10px 14px;
+  flex: 1; resize: vertical; padding: 10px 14px;
   font-size: 13px; line-height: 1.55; font-family: inherit;
+  min-height: 72px;
   background: #1A2030; border: 1px solid #2A3447; border-radius: 12px;
   color: #E5E9EE;
   transition: border-color .15s, box-shadow .15s;
@@ -416,13 +476,10 @@ function formatSize(bytes: number): string {
 .conv-body::-webkit-scrollbar-thumb { background: #2A3447; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 .conv-body::-webkit-scrollbar-thumb:hover { background: #3A4A66; background-clip: padding-box; }
 
-/* 폰트 사이즈 — root section .font-sm/md/lg 가 메시지 본문/시간/입력 일괄 조정.
-   chip / header / status 같은 보조 요소는 고정. */
-.conv-view.font-sm .cv-content, .conv-view.font-sm .cv-textarea { font-size: 12px; }
-.conv-view.font-md .cv-content, .conv-view.font-md .cv-textarea { font-size: 13px; }
-.conv-view.font-lg .cv-content, .conv-view.font-lg .cv-textarea { font-size: 15px; }
-.conv-view.font-sm .cv-msg .cv-bubble { padding: 8px 12px; }
-.conv-view.font-lg .cv-msg .cv-bubble { padding: 12px 16px; }
+/* 폰트 사이즈 — root section 의 --cv-font-size cssvar 가 메시지 본문/입력창 일괄 조정.
+   사용자가 설정 모달에서 숫자 조절 (10-24px). chip / header / status 같은 보조 요소는 고정. */
+.conv-view .cv-content { font-size: var(--cv-font-size, 13px); }
+.conv-view .cv-textarea { font-size: var(--cv-font-size, 13px); }
 
 /* 헤더의 ... 메뉴 */
 .cv-head-actions { margin-left: auto; position: relative; }
@@ -433,26 +490,103 @@ function formatSize(bytes: number): string {
   transition: background .1s, color .12s;
 }
 .cv-menu-btn:hover { background: rgba(79, 127, 255, 0.1); color: #E5E9EE; }
-.cv-menu-pop {
-  position: absolute; right: 0; top: calc(100% + 6px);
-  background: #141C30; border: 1px solid #2A3447;
-  border-radius: 10px; padding: 12px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-  z-index: 20; min-width: 200px;
+/* 설정 모달 — iTerm 스타일 폰트 크기 조절. body 에 Teleport 됨. */
+.cv-settings-overlay {
+  position: fixed; inset: 0;
+  background: rgba(7, 11, 22, 0.6); backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  animation: settingsFadeIn .15s ease-out;
 }
-.cv-menu-section { display: flex; flex-direction: column; gap: 8px; }
-.cv-menu-label { font-size: 11px; color: #8B95A5; text-transform: uppercase; letter-spacing: 0.05em; }
-.cv-font-row { display: flex; gap: 6px; }
-.cv-font-btn {
-  flex: 1; padding: 6px 8px; font-size: 12px;
-  background: #1A2030; color: #C5CDD8;
-  border: 1px solid #2A3447; border-radius: 6px; cursor: pointer;
+@keyframes settingsFadeIn {
+  from { opacity: 0; } to { opacity: 1; }
+}
+.cv-settings-modal {
+  width: 380px; max-width: 90vw;
+  background: #141C30; border: 1px solid #2A3447;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  color: #E5E9EE;
+  animation: settingsSlideIn .18s ease-out;
+}
+@keyframes settingsSlideIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cv-settings-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #1E2738;
+}
+.cv-settings-head h3 {
+  margin: 0; font-size: 14px; font-weight: 700;
+  background: linear-gradient(90deg, #6BB6FF, #B89AFF);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cv-settings-x {
+  background: transparent; border: none; cursor: pointer;
+  color: #8B95A5; font-size: 14px; padding: 4px 8px; border-radius: 6px;
+  transition: background .12s, color .12s;
+}
+.cv-settings-x:hover { background: rgba(248, 113, 113, 0.15); color: #FCA5A5; }
+.cv-settings-body { padding: 18px; }
+.cv-settings-field { display: flex; flex-direction: column; gap: 10px; }
+.cv-settings-label {
+  font-size: 11px; color: #8B95A5;
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+}
+.cv-settings-control { display: flex; align-items: center; gap: 8px; }
+.cv-stepper {
+  width: 32px; height: 32px;
+  background: #1A2030; color: #B89AFF;
+  border: 1px solid #2A3447; border-radius: 8px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
   transition: background .12s, color .12s, border-color .12s;
 }
-.cv-font-btn:hover { background: #232C42; color: #fff; }
-.cv-font-btn.active {
+.cv-stepper:hover:not(:disabled) {
+  background: #232C42; border-color: #4F7FFF; color: #fff;
+}
+.cv-stepper:disabled { opacity: 0.4; cursor: not-allowed; }
+.cv-settings-num {
+  width: 70px; padding: 6px 10px;
+  background: #0F1729; border: 1px solid #2A3447; border-radius: 8px;
+  color: #E5E9EE; font-size: 14px; font-family: ui-monospace, SFMono-Regular, monospace;
+  text-align: center;
+}
+.cv-settings-num:focus {
+  outline: none; border-color: #4F7FFF;
+  box-shadow: 0 0 0 3px rgba(79, 127, 255, 0.15);
+}
+.cv-settings-range {
+  font-size: 11px; color: #6B7785;
+  margin-left: 6px; font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.cv-settings-preview {
+  margin-top: 4px; padding: 14px 16px;
+  background: #1F2937; border: 1px solid #2A3447; border-radius: 10px;
+  color: #C5CDD8; line-height: 1.55;
+}
+.cv-settings-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 18px;
+}
+.cv-settings-reset {
+  padding: 8px 14px; font-size: 12px;
+  background: transparent; color: #8B95A5;
+  border: 1px solid #2A3447; border-radius: 8px; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.cv-settings-reset:hover { background: #1A2030; color: #E5E9EE; }
+.cv-settings-done {
+  padding: 8px 18px; font-size: 12px; font-weight: 600;
   background: linear-gradient(135deg, #4F7FFF, #7C5CFF);
-  color: #fff; border-color: transparent;
+  color: #fff; border: none; border-radius: 8px; cursor: pointer;
+  transition: transform .1s, box-shadow .15s;
+}
+.cv-settings-done:hover {
+  box-shadow: 0 4px 14px rgba(79, 127, 255, 0.4);
+  transform: translateY(-1px);
 }
 
 /* 첨부 chip — 메시지 버블 안. 카카오톡 느낌 — 파일 아이콘 + 이름 + 크기 + 다운 아이콘 */
