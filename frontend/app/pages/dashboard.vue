@@ -277,7 +277,8 @@ onMounted(async () => {
   if (helperSetupOpen.value) return;
   await fetchAgents();
   await loadMeWorkspace();
-  startPolling(10_000);
+  // SSE (agent.changed) 가 주 — polling 은 SSE 끊긴 동안 60s fallback.
+  startPolling(60_000);
 });
 onUnmounted(() => stopPolling());
 </script>

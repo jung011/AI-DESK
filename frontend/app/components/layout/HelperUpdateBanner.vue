@@ -33,14 +33,24 @@ function dismiss(): void {
   dismissed.value = helperVersion.latest;
 }
 
-// 5분 폴링 — 페이지에 머문 사용자도 새 버전 감지.
+// SSE 의 helper.version.changed event 받으면 즉시 refresh. backend pod swap 시점에 발사.
+// polling 은 fallback — 5분 cycle (SSE 끊긴 경우 backup).
 let timer: ReturnType<typeof setInterval> | null = null;
+let evtSource: EventSource | null = null;
 onMounted(() => {
   void helperVersion.refresh();
   timer = setInterval(() => { void helperVersion.refresh(); }, 5 * 60 * 1000);
+  if (typeof window !== 'undefined' && typeof EventSource !== 'undefined') {
+    evtSource = new EventSource('/api/messages/events');
+    evtSource.addEventListener('helper.version.changed', () => {
+      void helperVersion.refresh();
+    });
+  }
 });
 onBeforeUnmount(() => {
   if (timer != null) clearInterval(timer);
+  evtSource?.close();
+  evtSource = null;
 });
 </script>
 

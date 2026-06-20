@@ -25,6 +25,16 @@ export function useAgents(initialStatus: string = 'all') {
   const error = ref<string | null>(null);
 
   let timer: ReturnType<typeof setInterval> | null = null;
+  let evtSource: EventSource | null = null;
+  let refreshDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleRefresh(): void {
+    if (refreshDebounce) return;
+    refreshDebounce = setTimeout(() => {
+      refreshDebounce = null;
+      void fetchAgents();
+    }, 300);
+  }
 
   /** 검색어를 추가로 적용한 클라이언트 측 필터 결과 */
   const filteredList = computed<AgentItem[]>(() => {
@@ -55,10 +65,19 @@ export function useAgents(initialStatus: string = 'all') {
     }
   }
 
-  function startPolling(intervalMs: number = 3_000): void {
+  /**
+   * 폴링 + SSE subscribe 시작.
+   * - SSE 가 살아있는 동안 즉시 갱신 (agent.changed event → debounced fetchAgents)
+   * - polling 은 SSE 끊긴 동안 fallback. interval 기본 60s — SSE 정상이면 거의 무부하.
+   */
+  function startPolling(intervalMs: number = 60_000): void {
     void fetchAgents();
     if (timer === null) {
       timer = setInterval(fetchAgents, intervalMs);
+    }
+    if (typeof window !== 'undefined' && typeof EventSource !== 'undefined' && evtSource === null) {
+      evtSource = new EventSource('/api/messages/events');
+      evtSource.addEventListener('agent.changed', () => scheduleRefresh());
     }
   }
 
@@ -67,6 +86,12 @@ export function useAgents(initialStatus: string = 'all') {
       clearInterval(timer);
       timer = null;
     }
+    if (refreshDebounce !== null) {
+      clearTimeout(refreshDebounce);
+      refreshDebounce = null;
+    }
+    evtSource?.close();
+    evtSource = null;
   }
 
   /**
