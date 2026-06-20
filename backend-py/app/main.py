@@ -32,6 +32,22 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """app startup / shutdown — agent status watcher 등 백그라운드 task."""
     log.info("aidesk-backend starting")
+
+    # 옛 Spring 시절 schema 의 t_ai_message.content = VARCHAR(1000) → ALTER TO TEXT.
+    # idempotent — 이미 TEXT 면 noop. 권한 없으면 warning + 진행.
+    try:
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            db.execute(text("ALTER TABLE t_ai_message ALTER COLUMN content TYPE TEXT"))
+            db.commit()
+            log.info("startup: ALTER t_ai_message.content TYPE TEXT — OK (or noop)")
+        finally:
+            db.close()
+    except Exception as e:  # noqa: BLE001
+        log.warning("startup: ALTER content failed (권한 부족 또는 옛 PG) — %s", e)
+
     from app.agents.watcher import start as start_watcher
     watcher_task = start_watcher()
 
