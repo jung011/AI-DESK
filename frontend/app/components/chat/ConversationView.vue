@@ -137,7 +137,7 @@
         <textarea
           v-model="draft"
           class="cv-textarea"
-          rows="3"
+          rows="2"
           :placeholder="`${partner.agentName} 에게 메시지…`"
           :disabled="sending"
           @keydown.enter.exact="onEnter"
@@ -439,9 +439,8 @@ function formatSize(bytes: number): string {
   display: flex; gap: 10px; align-items: flex-end;
 }
 .cv-textarea {
-  flex: 1; resize: vertical; padding: 10px 14px;
+  flex: 1; resize: none; padding: 10px 14px;
   font-size: 13px; line-height: 1.55; font-family: inherit;
-  min-height: 72px;
   background: #1A2030; border: 1px solid #2A3447; border-radius: 12px;
   color: #E5E9EE;
   transition: border-color .15s, box-shadow .15s;
