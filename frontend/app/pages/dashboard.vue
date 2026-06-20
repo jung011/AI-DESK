@@ -32,8 +32,26 @@
       백엔드 호출 실패: {{ error }}
     </div>
 
+    <!-- view 모드 토글 — 카드 grid / wiring -->
+    <div class="view-toggle">
+      <button type="button" :class="['toggle-btn', viewMode === 'grid' ? 'active' : '']" @click="viewMode = 'grid'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></svg>
+        Grid
+      </button>
+      <button type="button" :class="['toggle-btn', viewMode === 'wiring' ? 'active' : '']" @click="viewMode = 'wiring'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 8c-1.66 0-3 1.34-3 3 0 .34.06.66.16.97l-3.32 3.32c-.31-.1-.63-.16-.97-.16-.34 0-.66.06-.97.16L7.59 12c.1-.31.16-.63.16-.97 0-1.66-1.34-3-3-3s-3 1.34-3 3 1.34 3 3 3c.34 0 .66-.06.97-.16l3.32 3.32c-.1.31-.16.63-.16.97 0 1.66 1.34 3 3 3s3-1.34 3-3c0-.34-.06-.66-.16-.97l3.32-3.32c.31.1.63.16.97.16 1.66 0 3-1.34 3-3s-1.34-3-3-3z"/></svg>
+        Wiring
+      </button>
+    </div>
+
     <!-- AI 카드 그리드 -->
     <AgentCardGrid
+      v-if="viewMode === 'grid'"
+      :agents="filteredList"
+      @delete="onDeleteRequest"
+      @select="onAgentSelect" />
+    <AgentWiringView
+      v-else
       :agents="filteredList"
       @delete="onDeleteRequest"
       @select="onAgentSelect" />
@@ -100,6 +118,9 @@ import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
 import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
+import AgentWiringView from '~/components/dashboard/AgentWiringView.vue';
+
+const viewMode = ref<'grid' | 'wiring'>('grid');
 import AgentCreateDialog from '~/components/dashboard/AgentCreateDialog.vue';
 import ConfirmDialog from '~/components/common/ConfirmDialog.vue';
 import ColleagueGrid from '~/components/dashboard/ColleagueGrid.vue';
@@ -348,5 +369,20 @@ onUnmounted(() => stopPolling());
   border: 1px solid #FFB4BD;
   color: #B22B45;
   font-size: 13px;
+}
+.view-toggle {
+  display: flex; justify-content: flex-end; gap: 4px;
+  margin-bottom: 12px;
+}
+.toggle-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: #fff; border: 1px solid #D4DCE4; border-radius: 4px;
+  font-size: 12px; color: #64748B; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.toggle-btn:hover { background: #F8FAFC; }
+.toggle-btn.active {
+  background: #0062FF; color: #fff; border-color: #0062FF;
 }
 </style>
