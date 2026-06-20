@@ -11,6 +11,7 @@ from typing import Any
 
 from app.agents.repository import AgentRepository
 from app.core.database import SessionLocal
+from app.messages.ws import ws_broker
 
 log = logging.getLogger(__name__)
 
@@ -52,12 +53,42 @@ async def _check_once() -> int:
         db.close()
 
 
+async def _touch_ws_active_once() -> int:
+    """ws session 활성 agent 의 updated_at 갱신 — colleague online window (5분) 유지용.
+
+    외부 AI 는 helper reporter 없어 stale 만으로 회색이 됨. ws connect 살아있는 동안
+    backend 가 주기 touch → updated_at fresh → ColleagueService 의 5분 window 안 유지.
+    내부 봇은 helper 30s reporter 가 이미 touch 하므로 중복 영향 X.
+    """
+    agent_ids = [aid for aid in list(ws_broker._by_agent.keys()) if ws_broker._by_agent.get(aid)]
+    if not agent_ids:
+        return 0
+    db = SessionLocal()
+    try:
+        repo = AgentRepository(db)
+        touched = 0
+        for agent_id in agent_ids:
+            n = repo.touch_updated_at(agent_id)
+            if n > 0:
+                touched += 1
+        db.commit()
+        if touched > 0:
+            log.info("ws-touch: touched=%d agents (online window 유지)", touched)
+        return touched
+    finally:
+        db.close()
+
+
 async def _loop() -> None:
     while True:
         try:
             await _check_once()
         except Exception:  # noqa: BLE001 — 어떤 예외도 loop 멈추지 못하게
             log.exception("watcher: check failed")
+        try:
+            await _touch_ws_active_once()
+        except Exception:  # noqa: BLE001
+            log.exception("ws-touch: failed")
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
