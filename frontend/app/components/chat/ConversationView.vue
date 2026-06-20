@@ -436,7 +436,7 @@ function formatSize(bytes: number): string {
   background: rgba(15, 23, 41, 0.6);
   backdrop-filter: blur(8px);
   flex-shrink: 0;
-  display: flex; gap: 10px; align-items: flex-end;
+  display: flex; flex-direction: column; gap: 8px;
 }
 .cv-textarea {
   flex: 1; resize: none; padding: 10px 14px;
@@ -648,7 +648,7 @@ function formatSize(bytes: number): string {
 }
 .cv-pending-x:hover { color: #F87171; }
 
-.cv-composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.cv-composer-row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
 .cv-attach-btn {
   background: #1A2030; color: #B89AFF;
   border: 1px solid #2A3447; border-radius: 10px;
