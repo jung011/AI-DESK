@@ -36,6 +36,7 @@ class WorkspaceInfo:
     latest_mtime_iso: str | None
     age_sec: int | None
     status: str  # "active" | "idle" | "done" | "unknown"
+    context_pct: int | None = None  # aidesk-usage 의 cwd 매칭으로 추출
 
     def as_dict(self) -> dict:
         return {
@@ -45,6 +46,7 @@ class WorkspaceInfo:
             "latestMtime": self.latest_mtime_iso,
             "ageSec": self.age_sec,
             "status": self.status,
+            "contextPct": self.context_pct,
         }
 
 
@@ -124,9 +126,41 @@ def _extract_cwd(jsonl_path: Path) -> str | None:
     return None
 
 
+def _load_cwd_to_context_pct() -> dict[str, int]:
+    """`~/.claude/aidesk-usage/{sessionId}.json` 파일들을 읽어 cwd → context_pct dict 반환.
+
+    같은 cwd 에 여러 session 파일이 있으면 *가장 최근 mtime* 의 값을 사용.
+    statusline 의 record.cwd 가 *해당 claude code session 의 working dir* — agent 의
+    workspace_dir 와 매칭됨.
+    """
+    usage_dir = Path.home() / ".claude" / "aidesk-usage"
+    if not usage_dir.is_dir():
+        return {}
+    out: dict[str, tuple[float, int]] = {}  # cwd → (mtime, context_pct)
+    for p in usage_dir.iterdir():
+        if not p.is_file() or not p.suffix == ".json":
+            continue
+        try:
+            mtime = p.stat().st_mtime
+            with p.open("r", encoding="utf-8") as f:
+                rec = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        cwd = rec.get("cwd")
+        rem = rec.get("contextRemainingPct")
+        if not cwd or rem is None:
+            continue
+        ctx_pct = max(0, min(100, 100 - int(rem)))
+        prev = out.get(cwd)
+        if prev is None or mtime > prev[0]:
+            out[cwd] = (mtime, ctx_pct)
+    return {cwd: v[1] for cwd, v in out.items()}
+
+
 def scan_workspaces() -> list[WorkspaceInfo]:
     if not CLAUDE_PROJECTS_ROOT.is_dir():
         return []
+    cwd_to_ctx = _load_cwd_to_context_pct()
     results: list[WorkspaceInfo] = []
     now = datetime.now(timezone.utc).timestamp()
     for entry in sorted(CLAUDE_PROJECTS_ROOT.iterdir()):
@@ -167,6 +201,7 @@ def scan_workspaces() -> list[WorkspaceInfo]:
                 latest_mtime_iso=latest_mtime_iso,
                 age_sec=age_sec,
                 status=base_status,
+                context_pct=cwd_to_ctx.get(cwd) if cwd else None,
             )
         )
     return results
