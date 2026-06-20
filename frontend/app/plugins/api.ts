@@ -13,6 +13,7 @@
  *   const res = await $api<MyType>('/api/agents');
  */
 import { useAuthStore } from '~/stores/auth';
+import { authDebug } from '~/utils/authDebug';
 
 // refresh 동시 다발성 큐잉 — 한 번에 한 refresh 만 진행.
 let refreshPromise: Promise<boolean> | null = null;
@@ -28,22 +29,26 @@ export default defineNuxtPlugin(() => {
 
   const tryRefresh = async (): Promise<boolean> => {
     if (refreshPromise) {
-      console.warn('[auth-debug] refresh — re-using inflight promise', new Date().toISOString());
+      authDebug('warn', 'refresh — re-using inflight promise');
       return refreshPromise;
     }
-    console.warn('[auth-debug] refresh — attempt', new Date().toISOString());
+    authDebug('warn', 'refresh — attempt');
     refreshPromise = (async () => {
       try {
-        const res = await $fetch<{ result: number }>('/api/auth/refresh', {
-          baseURL,
-          method: 'POST',
-          credentials: 'include',
-        });
+        const res = await $fetch<{ result: number; message?: string; code?: string }>(
+          '/api/auth/refresh',
+          { baseURL, method: 'POST', credentials: 'include' },
+        );
         const ok = res?.result === 0;
-        console.warn('[auth-debug] refresh — result', { ok, body: res, time: new Date().toISOString() });
+        authDebug('warn', 'refresh — result', { ok, body: res });
         return ok;
       } catch (e) {
-        console.error('[auth-debug] refresh — exception', { error: String(e), time: new Date().toISOString() });
+        const err = e as { response?: { status?: number; _data?: unknown }; message?: string };
+        authDebug('error', 'refresh — exception', {
+          message: err?.message ?? String(e),
+          responseStatus: err?.response?.status,
+          responseBody: err?.response?._data,
+        });
         return false;
       } finally {
         // 다음 refresh 가능하도록 마이크로태스크 뒤에 비움
@@ -57,12 +62,11 @@ export default defineNuxtPlugin(() => {
     if (!import.meta.client) return;
     const auth = useAuthStore();
     const route = useRoute();
-    console.error('[auth-debug] redirectToLogin', {
+    authDebug('error', 'redirectToLogin', {
       reason,
-      time: new Date().toISOString(),
       currentRoute: route.fullPath,
       isAuthenticated: auth.isAuthenticated,
-      sessionStorageAuth: typeof window !== 'undefined' ? window.sessionStorage.getItem('aidesk.auth') : null,
+      sessionStorageAuth: window.sessionStorage.getItem('aidesk.auth'),
       stack: new Error('redirectToLogin stack').stack,
     });
     auth.clearUser();
@@ -82,16 +86,14 @@ export default defineNuxtPlugin(() => {
 
       // /api/auth/* 자신의 401 은 인터셉터 개입 X — 호출자가 알아서 처리.
       const path = String(ctx.request);
-      if (isAuthEndpoint(path)) return;
+      if (isAuthEndpoint(path)) {
+        authDebug('warn', '401 on /api/auth/* — interceptor skip', { path });
+        return;
+      }
 
       const body = ctx.response?._data as { code?: string; message?: string } | undefined;
       const code = body?.code;
-      console.warn('[auth-debug] 401 received', {
-        path,
-        code,
-        message: body?.message,
-        time: new Date().toISOString(),
-      });
+      authDebug('warn', '401 received', { path, code, message: body?.message });
 
       // ET: access 만료 → refresh 후 원 요청 재시도. 한 번만 시도해 무한 루프 방지.
       const opts = ctx.options as unknown as { _retried?: boolean };
@@ -110,9 +112,16 @@ export default defineNuxtPlugin(() => {
               ctx.response._data = retried;
               Object.defineProperty(ctx.response, 'status', { value: 200, configurable: true });
             }
+            authDebug('warn', 'ET retry success', { path });
             return;
           } catch (e) {
-            console.error('[auth-debug] ET retry failed', { path, error: String(e), time: new Date().toISOString() });
+            const err = e as { response?: { status?: number; _data?: unknown }; message?: string };
+            authDebug('error', 'ET retry failed', {
+              path,
+              message: err?.message ?? String(e),
+              responseStatus: err?.response?.status,
+              responseBody: err?.response?._data,
+            });
           }
         }
         redirectToLogin(`ET refresh fail (path=${path})`);
@@ -126,7 +135,7 @@ export default defineNuxtPlugin(() => {
       }
 
       // 그 외 401 (code 없음 등) — interceptor 가 logout 안 함. 호출자가 알아서.
-      console.warn('[auth-debug] 401 fall-through (no code match)', { path, code });
+      authDebug('warn', '401 fall-through (no code match)', { path, code });
     },
   });
 
