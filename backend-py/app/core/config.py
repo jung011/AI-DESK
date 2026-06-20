@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     message_hop_limit: int = Field(default=10, alias="MESSAGES_POLICY_HOP_LIMIT")
     message_rate_limit_per_minute: int = Field(default=30, alias="MESSAGES_POLICY_RATE_LIMIT_PER_MINUTE")
     message_content_max_length: int = Field(default=4000, alias="MESSAGES_CONTENT_MAX_LENGTH")
+    # 채팅 첨부 — 옵션 A. inline BYTEA 5MB default.
+    message_attachment_max_bytes: int = Field(default=5 * 1024 * 1024, alias="MESSAGES_ATTACHMENT_MAX_BYTES")
+    message_attachment_max_count: int = Field(default=5, alias="MESSAGES_ATTACHMENT_MAX_COUNT")
 
     # 외부 URL (frontend 사용)
     metaverse_url: str = ""

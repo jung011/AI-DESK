@@ -13,6 +13,28 @@ class MessageCreateRq(BaseModel):
     to_agent_id: str = Field(alias="toAgentId", min_length=1)
     content: str = Field(min_length=1, max_length=_settings.message_content_max_length)
     reply_to_message_id: str | None = Field(default=None, alias="replyToMessageId")
+    # 채팅 첨부 — 옵션 A. POST /api/attachments 로 먼저 upload 한 attachment_id 들.
+    attachment_ids: list[str] = Field(default_factory=list, alias="attachmentIds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AttachmentRef(BaseModel):
+    """message 응답에 포함되는 첨부 메타. download URL 은 frontend 가 조립."""
+
+    attachment_id: str = Field(serialization_alias="attachmentId")
+    original_filename: str = Field(serialization_alias="originalFilename")
+    content_type: str = Field(serialization_alias="contentType")
+    size_bytes: int = Field(serialization_alias="sizeBytes")
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+class AttachmentUploadRs(BaseModel):
+    attachment_id: str = Field(serialization_alias="attachmentId")
+    original_filename: str = Field(serialization_alias="originalFilename")
+    content_type: str = Field(serialization_alias="contentType")
+    size_bytes: int = Field(serialization_alias="sizeBytes")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -33,6 +55,7 @@ class MessageItem(BaseModel):
     delivered_at: datetime | None = Field(default=None, serialization_alias="deliveredAt")
     read_at: datetime | None = Field(default=None, serialization_alias="readAt")
     replied_at: datetime | None = Field(default=None, serialization_alias="repliedAt")
+    attachments: list[AttachmentRef] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

@@ -17,6 +17,7 @@ from app.core.middleware import register_middlewares
 from app.desktop.router import router as desktop_router
 from app.helper.router import router as helper_router
 from app.logs.router import router as logs_router
+from app.messages.attachment_router import router as attachments_router
 from app.messages.router import router as messages_router
 from app.settings.router import router as settings_router
 
@@ -95,6 +96,7 @@ app.include_router(auth_router,             prefix="/api/auth",            tags=
 app.include_router(agents_router,           prefix="/api/agents",          tags=["agents"])
 app.include_router(agents_external_router,  prefix="/api/agents/external", tags=["agents-external"])
 app.include_router(messages_router,         prefix="/api/messages",        tags=["messages"])
+app.include_router(attachments_router,      prefix="/api/attachments",     tags=["attachments"])
 app.include_router(desktop_router,          prefix="/api/desktop",         tags=["desktop"])
 app.include_router(helper_router,           prefix="/api/helper",          tags=["helper"])
 app.include_router(colleagues_router,       prefix="/api/colleagues",      tags=["colleagues"])

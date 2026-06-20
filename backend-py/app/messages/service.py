@@ -20,11 +20,14 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.agents.repository import AgentRepository
+from app.messages.attachment_models import MessageAttachment
+from app.messages.attachment_repository import AttachmentRepository
 from app.messages.models import Message
 from app.messages.policy import PolicyResult, check_send
 from app.messages.repository import MessageRepository
 from app.messages.schemas import (
     AgentUnread,
+    AttachmentRef,
     ConversationItem,
     MessageBroadcastRq,
     MessageBroadcastRs,
@@ -50,6 +53,7 @@ class MessageService:
         self.db = db
         self.repo = MessageRepository(db)
         self.agent_repo = AgentRepository(db)
+        self.attachment_repo = AttachmentRepository(db)
 
     # ---- send (create) ----
 
@@ -93,6 +97,11 @@ class MessageService:
             retry_count=0,
         )
         self.repo.insert(msg)
+        # 첨부 link — owner=sender 검증. ID mismatch / 이미 link 된 attachment 는 무시.
+        if body.attachment_ids:
+            self.attachment_repo.link_to_message(
+                body.attachment_ids, msg.message_id, sender.agent_id
+            )
         self.db.commit()
         self.db.refresh(msg)
         item = self._enrich(msg, sender_name=sender.agent_name, receiver_name=receiver.agent_name)
@@ -170,7 +179,8 @@ class MessageService:
         limit: int = 100,
     ) -> MessageListRs:
         rows, has_more = self.repo.list_for_agent(agent_id, direction, with_id, status, limit)
-        items = [self._enrich(r) for r in rows]
+        attachments_by_msg = self.attachment_repo.list_by_message_ids([r.message_id for r in rows])
+        items = [self._enrich(r, attachments=attachments_by_msg.get(r.message_id, [])) for r in rows]
         return MessageListRs(items=items, has_more=has_more)
 
     # ---- unread count ----
@@ -303,15 +313,19 @@ class MessageService:
         msg: Message,
         sender_name: str | None = None,
         receiver_name: str | None = None,
+        attachments: list[MessageAttachment] | None = None,
     ) -> MessageItem:
-        """MessageItem 에 from/to agent_name 채워서 반환."""
+        """MessageItem 에 from/to agent_name + attachments 채워서 반환."""
         if sender_name is None:
             sender = self.agent_repo.find_by_agent_id_any_owner(msg.from_agent_id)
             sender_name = sender.agent_name if sender else None
         if receiver_name is None:
             receiver = self.agent_repo.find_by_agent_id_any_owner(msg.to_agent_id)
             receiver_name = receiver.agent_name if receiver else None
+        if attachments is None:
+            attachments = self.attachment_repo.list_by_message_id(msg.message_id)
         item = MessageItem.model_validate(msg)
         item.from_agent_name = sender_name
         item.to_agent_name = receiver_name
+        item.attachments = [AttachmentRef.model_validate(a) for a in attachments]
         return item
