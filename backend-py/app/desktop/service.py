@@ -72,6 +72,11 @@ class DesktopService:
                 # 변화 없어도 helper 살아있다는 신호 — colleague online window 용
                 self.repo.touch_updated_at(agent.agent_id)
 
+            # context_pct — workspace 별 별도. helper 가 aidesk-usage/{sessionId}.json
+            # 의 cwd 매칭으로 추출. None 이면 갱신 skip.
+            if w.context_pct is not None:
+                self.repo.update_context_pct(agent.agent_id, w.context_pct)
+
         self.db.commit()
         rs.matched_agents = matched
         rs.updated_agents = updated

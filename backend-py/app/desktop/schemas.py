@@ -9,6 +9,7 @@ class WorkspaceItem(BaseModel):
     latest_mtime: str | None = Field(default=None, alias="latestMtime")
     age_sec: int | None = Field(default=None, alias="ageSec")
     status: str | None = None
+    context_pct: int | None = Field(default=None, alias="contextPct")
 
     model_config = ConfigDict(populate_by_name=True)
 

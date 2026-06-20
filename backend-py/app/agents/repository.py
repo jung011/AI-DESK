@@ -84,6 +84,15 @@ class AgentRepository:
         )
         return result.rowcount
 
+    def update_context_pct(self, agent_id: str, context_pct: int) -> int:
+        """statusline / helper reporter 가 호출 — agent 별 context 사용률 갱신."""
+        result = self.db.execute(
+            update(AiAgent)
+            .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
+            .values(context_pct=context_pct)
+        )
+        return result.rowcount
+
     def update_workspace_dir(self, agent_id: str, workspace_dir: str, owner_account_sn: int) -> int:
         result = self.db.execute(
             update(AiAgent)
