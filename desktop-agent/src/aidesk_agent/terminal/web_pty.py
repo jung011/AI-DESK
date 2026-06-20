@@ -69,10 +69,14 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
         rows = 24
     shell_q = request.query.get("shell", "").strip()
     shell = shell_q if shell_q and os.path.exists(shell_q) else _pick_shell()
+    # agentId — claude 의 aidesk-channel mcp 가 *어떤 agent 로* 메시지 보낼지 결정.
+    # AIDESK_AGENT_ID env 가 helper-spawned shell 에 있어야 mcp 가 정상 작동
+    # (memory: workspace-local mcp 패턴, AIDESK_AGENT_ID env 명시).
+    agent_id = request.query.get("agentId", "").strip()
 
     log.info(
-        "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s",
-        request.remote, cwd, cols, rows, shell,
+        "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s",
+        request.remote, cwd, cols, rows, shell, agent_id or "-",
     )
 
     pid, fd = pty.fork()
@@ -83,6 +87,10 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
         env["LC_ALL"] = "ko_KR.UTF-8"
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
+        if agent_id:
+            # claude code 가 spawn 한 mcp server 들에 propagate 되어
+            # aidesk-channel mcp 가 어떤 agent 로 메시지 보낼지 결정.
+            env["AIDESK_AGENT_ID"] = agent_id
         # 사용자 셸 prompt 가 cwd 잡도록 디렉토리 이동.
         try:
             os.chdir(cwd)

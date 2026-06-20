@@ -117,7 +117,7 @@ async function ensureXterm(): Promise<void> {
   term = new Terminal({
     cursorBlink: true,
     cursorStyle: 'bar',
-    fontFamily: "'D2Coding', 'Pretendard Mono', 'Apple SD Gothic Neo', ui-monospace, SFMono-Regular, monospace",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, 'Apple SD Gothic Neo', monospace",
     fontSize: fontSizePx.value,
     lineHeight: 1.2,
     scrollback: 5000,
@@ -182,9 +182,10 @@ function connectWs(): void {
   if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
 
   const cwd = props.partner?.workspaceDir || '';
+  const agentId = props.partner?.agentId || '';
   const cols = term.cols || 80;
   const rows = term.rows || 24;
-  const url = `${HELPER_WS_URL}?cwd=${encodeURIComponent(cwd)}&cols=${cols}&rows=${rows}`;
+  const url = `${HELPER_WS_URL}?cwd=${encodeURIComponent(cwd)}&agentId=${encodeURIComponent(agentId)}&cols=${cols}&rows=${rows}`;
   connClass.value = 'pending';
 
   let s: WebSocket;
