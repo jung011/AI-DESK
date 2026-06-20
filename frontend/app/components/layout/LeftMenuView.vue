@@ -25,6 +25,15 @@
         </NuxtLink>
       </li>
 
+      <li class="side-menu-item" :class="{ active: route.path.startsWith('/terminal') }">
+        <NuxtLink class="side-menu-link" to="/terminal">
+          <svg class="menu-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.1.89 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.11-.9-2-2-2zM5.5 8.5l2.5 2.5-2.5 2.5L4 12l1.5-3.5zM12 16h-2v-1h2v1zm6 0h-5v-1h5v1z"/>
+          </svg>
+          터미널
+        </NuxtLink>
+      </li>
+
       <li class="side-menu-item" :class="{ active: route.path.startsWith('/logs') }">
         <NuxtLink class="side-menu-link" to="/logs">
           <svg class="menu-icon" viewBox="0 0 24 24" fill="currentColor">
