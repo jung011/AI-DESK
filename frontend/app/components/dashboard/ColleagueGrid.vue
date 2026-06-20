@@ -13,6 +13,13 @@
     </div>
 
     <ExternalAgentDialog v-model="dialogOpen" @created="onExternalCreated" />
+    <ExternalAgentRotateDialog
+      v-if="rotateTarget"
+      v-model="rotateOpen"
+      :agent-id="rotateTarget.agentId"
+      :agent-name="rotateTarget.agentName"
+      @rotated="onExternalCreated"
+    />
 
     <div v-if="deleteTarget" class="confirm-backdrop" @click.self="closeConfirm">
       <div class="confirm-modal" role="dialog" aria-modal="true">
@@ -69,7 +76,21 @@
         <span class="online-dot" :class="{ online: c.online }" />
         <button
           v-if="c.agentType === 'external'"
-          class="ext-delete-btn"
+          class="ext-action-btn ext-rotate-btn"
+          title="외부 AI token rotate — 새 token 발급. 옛 token 은 즉시 무효."
+          @click="onRotateExternal(c)"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+        </button>
+        <button
+          v-if="c.agentType === 'external'"
+          class="ext-action-btn ext-delete-btn"
           title="외부 AI 삭제 — backend 통신만 차단. 외부 daemon/mcp cleanup 은 사용자 책임."
           @click="onDeleteExternal(c)"
         >
@@ -110,6 +131,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useColleagues } from '~/composables/useColleagues';
 import ExternalAgentDialog from './ExternalAgentDialog.vue';
+import ExternalAgentRotateDialog from './ExternalAgentRotateDialog.vue';
 
 const colleagues = useColleagues();
 const POLL_INTERVAL_MS = 10_000;
@@ -118,6 +140,14 @@ let timer: ReturnType<typeof setInterval> | null = null;
 const dialogOpen = ref(false);
 function onExternalCreated() {
   colleagues.refresh();
+}
+
+const rotateOpen = ref(false);
+const rotateTarget = ref<{ agentId: string; agentName: string } | null>(null);
+function onRotateExternal(c: { meAgentId?: string | null; meAgentName?: string | null }) {
+  if (!c.meAgentId) return;
+  rotateTarget.value = { agentId: c.meAgentId, agentName: c.meAgentName || '' };
+  rotateOpen.value = true;
 }
 
 const { $api } = useNuxtApp();
@@ -264,8 +294,8 @@ const onlineCount = computed(() =>
   background: #DEEDFD; padding: 1px 6px; border-radius: 3px;
   margin-left: 6px;
 }
-.ext-delete-btn {
-  position: absolute; top: 8px; right: 26px;
+.ext-action-btn {
+  position: absolute; top: 8px;
   width: 20px; height: 20px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: none; border-radius: 4px;
@@ -273,7 +303,10 @@ const onlineCount = computed(() =>
   cursor: pointer; opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
-.colleague-card.external:hover .ext-delete-btn { opacity: 1; }
+.colleague-card.external:hover .ext-action-btn { opacity: 1; }
+.ext-rotate-btn { right: 48px; }
+.ext-rotate-btn:hover { color: #2D7FF9; background: #DEEDFD; }
+.ext-delete-btn { right: 26px; }
 .ext-delete-btn:hover { color: #E25555; background: #FFE9E9; }
 
 /* Confirm modal — ExternalAgentDialog 와 톤 통일. */

@@ -13,6 +13,7 @@
  *   const res = await $api<MyType>('/api/agents');
  */
 import { useAuthStore } from '~/stores/auth';
+import { clientLog } from '~/utils/clientLogger';
 
 // refresh 동시 다발성 큐잉 — 한 번에 한 refresh 만 진행.
 let refreshPromise: Promise<boolean> | null = null;
@@ -46,12 +47,17 @@ export default defineNuxtPlugin(() => {
     return refreshPromise;
   };
 
-  const redirectToLogin = () => {
+  const redirectToLogin = (reason?: string) => {
     if (!import.meta.client) return;
     const auth = useAuthStore();
+    const route = useRoute();
+    clientLog('error', 'redirectToLogin', {
+      reason: reason ?? 'unknown',
+      currentRoute: route.fullPath,
+      hasSession: !!window.sessionStorage.getItem('aidesk.auth'),
+    });
     auth.clearUser();
     const router = useRouter();
-    const route = useRoute();
     if (route.path !== '/login') {
       router.replace({ path: '/login', query: { redirect: route.fullPath } });
     }
@@ -90,17 +96,17 @@ export default defineNuxtPlugin(() => {
               Object.defineProperty(ctx.response, 'status', { value: 200, configurable: true });
             }
             return;
-          } catch {
-            // 재시도도 실패 — 아래 redirect 로 떨어짐
+          } catch (e) {
+            clientLog('error', 'ET retry failed', { path, error: String(e) });
           }
         }
-        redirectToLogin();
+        redirectToLogin(`ET refresh fail (path=${path})`);
         return;
       }
 
       // NA: access 자체 없음/위조 → 즉시 로그인 화면
       if (code === 'NA') {
-        redirectToLogin();
+        redirectToLogin(`NA (path=${path})`);
       }
     },
   });
