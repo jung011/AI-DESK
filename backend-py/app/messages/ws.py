@@ -163,31 +163,10 @@ def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, b
 
 
 def _toggle_status(db: Session, agent_id: str, new_status: str) -> None:
-    """ws connect/disconnect 시점에 agent.status 토글. Spring AgentMapper.updateStatusSystem 동등.
-
-    *진단용 trace SSE event* — 외부에서 직접 backend 흐름 확인 가능. 안정화 후 제거.
-    """
+    """ws connect/disconnect 시점에 agent.status 토글. Spring AgentMapper.updateStatusSystem 동등."""
     repo = AgentRepository(db)
-    try:
-        n = repo.update_status_from_watcher(agent_id, new_status)
-        db.commit()
-        log.info("[ws-toggle-status] agentId=%s status=%s rowcount=%d", agent_id, new_status, n)
-        # SSE trace — frontend 가 진행 확인 가능 (rc31)
-        from app.messages.sse import broker as _broker
-        _broker.publish("ws.toggle.trace", {
-            "agentId": agent_id,
-            "status": new_status,
-            "rowcount": n,
-        })
-    except Exception as e:  # noqa: BLE001
-        log.exception("[ws-toggle-status] failed agentId=%s status=%s", agent_id, new_status)
-        from app.messages.sse import broker as _broker
-        _broker.publish("ws.toggle.trace", {
-            "agentId": agent_id,
-            "status": new_status,
-            "error": str(e),
-        })
-        raise
+    repo.update_status_from_watcher(agent_id, new_status)
+    db.commit()
 
 
 async def messages_ws_endpoint(
@@ -200,52 +179,17 @@ async def messages_ws_endpoint(
     cookie 는 websocket.cookies 에서 추출 — Spring JwtHandshakeInterceptor 의 SecurityContext 와 동일 효과.
     """
     cookie_token = websocket.cookies.get(settings.cookie_access_name)
-    _trace_id = f"ws-{id(websocket)}"
-    ws_broker_module = None  # late import 차단용
-
-    # client IP + token prefix 추출 (debug 용)
-    xff = websocket.headers.get("x-forwarded-for") or websocket.headers.get("X-Forwarded-For")
-    client_ip = xff.split(",")[0].strip() if xff else (websocket.client.host if websocket.client else None)
-    token_prefix = (token[:14] + "...") if token else None
-    try:
-        from app.messages.sse import broker as _br
-        ws_broker_module = _br
-        _br.publish("ws.trace", {
-            "stage": "enter", "traceId": _trace_id,
-            "hasCookie": bool(cookie_token), "hasAgentId": bool(agentId), "hasToken": bool(token),
-            "tokenPrefix": token_prefix, "clientIp": client_ip,
-        })
-    except Exception:  # noqa: BLE001
-        log.exception("[ws-trace] publish enter failed")
 
     db = SessionLocal()
     try:
         auth = _authenticate(db, cookie_token, agentId, token)
-        if ws_broker_module:
-            ws_broker_module.publish("ws.trace", {
-                "stage": "authenticated", "traceId": _trace_id, "ok": auth is not None,
-                "agentId": auth[1] if auth else None,
-                "tokenPrefix": token_prefix, "clientIp": client_ip,
-            })
         if auth is None:
-            if ws_broker_module:
-                ws_broker_module.publish("ws.trace", {
-                    "stage": "rejected", "traceId": _trace_id,
-                    "reason": "auth_failed",
-                    "tokenPrefix": token_prefix, "clientIp": client_ip,
-                    "hasCookie": bool(cookie_token), "hasAgentId": bool(agentId), "hasToken": bool(token),
-                })
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         account_sn, ws_agent_id = auth
 
         await websocket.accept()
-        if ws_broker_module:
-            ws_broker_module.publish("ws.trace", {"stage": "accepted", "traceId": _trace_id, "agentId": ws_agent_id})
-
         await ws_broker.register(account_sn, ws_agent_id, websocket)
-        if ws_broker_module:
-            ws_broker_module.publish("ws.trace", {"stage": "registered", "traceId": _trace_id, "agentId": ws_agent_id})
 
         # connect → agent status='idle' (Spring 동등)
         if ws_agent_id:

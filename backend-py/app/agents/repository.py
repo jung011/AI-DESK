@@ -1,6 +1,5 @@
 """agents DB 접근 — Spring AgentMapper 와 1:1."""
 import logging
-import traceback
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
@@ -72,13 +71,11 @@ class AgentRepository:
         """status 갱신. Spring updateStatus — context_pct 는 statusline 이 별도로 기록.
 
         rc24 — 외부 AI 의 'offline' 마킹 차단. mcp ws 가 유일한 status source.
+        staging shared DB 같은 잔재 사고 ([[feedback-staging-shared-db-hazard]]) 대비
+        defense-in-depth.
         """
         if status == "offline" and self._is_external_agent(agent_id):
-            stack = "".join(traceback.format_stack()[:-1])
-            log.warning(
-                "[trace] update_status 'offline' BLOCKED for external agent_id=%s\n%s",
-                agent_id, stack,
-            )
+            log.warning("update_status 'offline' BLOCKED for external agent_id=%s", agent_id)
             return 0
         result = self.db.execute(
             update(AiAgent)
@@ -102,15 +99,11 @@ class AgentRepository:
     def update_status_from_watcher(self, agent_id: str, status: str) -> int:
         """desktop reporter / scheduler 가 status 갱신. updated_at 도 갱신.
 
-        rc24 — 외부 AI 의 'offline' 마킹 차단 + stack trace log (어떤 path 가 시도하는지 확인).
-        mcp ws 가 외부 AI 의 유일한 status source. ws connect 시 'idle' 마킹만 통과.
+        rc24 — 외부 AI 의 'offline' 마킹 차단. mcp ws 가 외부 AI 의 유일한 status source.
+        ws connect 시 'idle' 마킹만 통과. staging shared DB 같은 잔재 사고 대비 defense-in-depth.
         """
         if status == "offline" and self._is_external_agent(agent_id):
-            stack = "".join(traceback.format_stack()[:-1])  # 자기 frame 제외
-            log.warning(
-                "[trace] update_status_from_watcher 'offline' BLOCKED for external agent_id=%s\n%s",
-                agent_id, stack,
-            )
+            log.warning("update_status_from_watcher 'offline' BLOCKED for external agent_id=%s", agent_id)
             return 0
         result = self.db.execute(
             update(AiAgent)
