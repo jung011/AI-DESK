@@ -173,10 +173,12 @@ def _register_local_mcp(workspace_dir: str, agent_id: str) -> bool:
     if not isinstance(servers, dict):
         servers = proj["mcpServers"] = {}
 
+    # rc20 — aidesk-channel mcp 가 bun compile standalone binary.
+    # 옛 'node' + script 패턴 → binary 직접 실행. node 의존 X + 외부 AI mcp 와 통일.
     servers[_LOCAL_MCP_NAME] = {
         "type": "stdio",
-        "command": "node",
-        "args": [_LOCAL_MCP_BIN],
+        "command": _LOCAL_MCP_BIN,
+        "args": [],
         "env": {
             "AIDESK_AGENT_ID": agent_id,
             "AIDESK_API_URL": _resolve_backend_url(),

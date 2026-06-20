@@ -58,18 +58,19 @@ cp "$DESKTOP_AGENT/scripts/aidesk-action-hook.cjs" "$PAYLOAD/usr/local/share/aid
 cp "$DESKTOP_AGENT/scripts/aidesk-prompt-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 cp "$DESKTOP_AGENT/scripts/aidesk-compact-hook.cjs" "$PAYLOAD/usr/local/share/aidesk/hooks/"
 
-# aidesk-channel mcp 서버 — Node.js 패키지. helper 와 같이 묶어 배포하면
-# 신규 PC 마다 별도 배포 + ~/.claude.json 수동 편집 불필요. postinstall 이 자동 등록.
+# aidesk-channel mcp 서버 — bun compile standalone binary (rc20+: 외부 AI 와 통일).
+# 옛 node + server.js + node_modules 패턴 → 단일 binary.
+# node 의존 X + 외부 AI 의 bun binary 와 *같은 build* → fix 일관 적용.
 AIDESK_CHANNEL_SRC="$(cd "$DESKTOP_AGENT/.." && pwd)/aidesk-channel"
 if [[ -d "$AIDESK_CHANNEL_SRC" ]]; then
-    mkdir -p "$PAYLOAD/usr/local/share/aidesk/aidesk-channel"
-    # node_modules 포함 — mac arm64 끼리는 그대로 동작.
-    cp -R "$AIDESK_CHANNEL_SRC/bin" \
-          "$AIDESK_CHANNEL_SRC/src" \
-          "$AIDESK_CHANNEL_SRC/node_modules" \
-          "$AIDESK_CHANNEL_SRC/package.json" \
-          "$AIDESK_CHANNEL_SRC/package-lock.json" \
-          "$PAYLOAD/usr/local/share/aidesk/aidesk-channel/"
+    mkdir -p "$PAYLOAD/usr/local/share/aidesk/aidesk-channel/bin"
+    echo "→ bun build aidesk-channel binary (darwin-${ARCH})"
+    pushd "$AIDESK_CHANNEL_SRC" > /dev/null
+    bun install --production
+    BUN_TARGET="bun-darwin-${ARCH}"
+    bun build --compile --target="$BUN_TARGET" src/server.js \
+        --outfile "$PAYLOAD/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
+    popd > /dev/null
     chmod 755 "$PAYLOAD/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
 else
     echo "⚠ aidesk-channel 소스 없음 — 건너뜀: $AIDESK_CHANNEL_SRC"

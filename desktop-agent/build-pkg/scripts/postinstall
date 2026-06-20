@@ -107,6 +107,14 @@ if isinstance(legacy, dict) and "aidesk-channel" in legacy:
     print("✓ legacy 글로벌 mcpServers.aidesk-channel 제거 — workspace local 패턴으로 이전")
 PYEOF
 
+# rc20 — aidesk-channel mcp = bun compile binary. macOS Gatekeeper 가 unsigned binary
+# spawn 시 SIGKILL 가능. ad-hoc 재서명 으로 Gatekeeper 우회.
+if [[ -x "/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel" ]]; then
+    codesign --force --sign - /usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel 2>/dev/null \
+        && echo "✓ aidesk-channel binary codesigned (ad-hoc)" \
+        || echo "⚠ aidesk-channel codesign failed (binary 가 spawn 시 SIGKILL 가능)"
+fi
+
 echo "✓ AI Desk Helper 설치 완료"
 echo "  - 바이너리: /usr/local/bin/aidesk-helper"
 echo "  - LaunchAgent: $PLIST"
