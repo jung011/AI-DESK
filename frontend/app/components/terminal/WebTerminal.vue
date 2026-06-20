@@ -98,7 +98,10 @@ let term: any = null;
 let fitAddon: any = null;
 let webLinks: any = null;
 let resizeObserver: ResizeObserver | null = null;
-let line = '';
+let ws: WebSocket | null = null;
+
+// helper WS URL — 사용자 mac 의 127.0.0.1:30083 으로 직접 연결.
+const HELPER_WS_URL = 'ws://127.0.0.1:30083/ws/terminal';
 
 async function ensureXterm(): Promise<void> {
   if (import.meta.server) return;
@@ -152,15 +155,80 @@ async function ensureXterm(): Promise<void> {
     requestAnimationFrame(() => doFit());
   }
   term.onData((data: string) => {
-    // TA-4 부터: WebSocket 으로 backend pty 에 전달.
-    // 지금은 mockup REPL — 입력 echo + 일부 명령.
-    if (connClass.value === 'mock') handleMockInput(data);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      // binary frame — utf-8 encode 후 ArrayBuffer 로 전송.
+      const buf = new TextEncoder().encode(data);
+      ws.send(buf);
+    }
   });
 
-  resizeObserver = new ResizeObserver(() => doFit());
+  resizeObserver = new ResizeObserver(() => {
+    doFit();
+    sendResize();
+  });
   if (termHost.value) resizeObserver.observe(termHost.value);
+}
 
-  resetTerminal();
+function sendResize(): void {
+  if (!term) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  try {
+    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+  } catch { /* ignore */ }
+}
+
+function connectWs(): void {
+  if (!term) return;
+  if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
+
+  const cwd = props.partner?.workspaceDir || '';
+  const cols = term.cols || 80;
+  const rows = term.rows || 24;
+  const url = `${HELPER_WS_URL}?cwd=${encodeURIComponent(cwd)}&cols=${cols}&rows=${rows}`;
+  connClass.value = 'pending';
+
+  let s: WebSocket;
+  try {
+    s = new WebSocket(url);
+  } catch (e) {
+    term.writeln(`\r\n\x1b[38;2;248;113;113m✗ helper WS 연결 실패: ${e}\x1b[0m`);
+    connClass.value = 'down';
+    return;
+  }
+  s.binaryType = 'arraybuffer';
+  ws = s;
+
+  s.onopen = () => {
+    connClass.value = 'live';
+    sendResize();
+  };
+  s.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      // control TEXT (pong 등) 은 무시 — 출력은 binary 만.
+      return;
+    }
+    const data = ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data;
+    if (term && data) term.write(data);
+  };
+  s.onerror = () => {
+    if (term) term.writeln('\r\n\x1b[38;2;248;113;113m✗ helper WS 오류\x1b[0m');
+    connClass.value = 'down';
+  };
+  s.onclose = (ev) => {
+    connClass.value = 'down';
+    if (term) {
+      term.writeln(`\r\n\x1b[38;2;248;113;113m[연결 종료]\x1b[0m code=${ev.code} reason=${ev.reason || ''}`);
+      term.writeln('helper 가 닫혔거나 shell 이 exit 된 상태. 다른 에이전트 클릭 시 재연결.');
+    }
+  };
+}
+
+function disconnectWs(): void {
+  if (ws) {
+    try { ws.close(); } catch { /* ignore */ }
+    ws = null;
+  }
+  connClass.value = 'pending';
 }
 
 function doFit(): void {
@@ -172,58 +240,15 @@ function doFit(): void {
   } catch { /* ignore */ }
 }
 
-function writePrompt(): void {
-  if (!term) return;
-  term.write('\x1b[1;38;2;79;127;255m❯ \x1b[0m');
-}
-
-function resetTerminal(): void {
+function resetAndConnect(): void {
   if (!term) return;
   term.clear();
-  line = '';
   const name = props.partner?.agentName ?? '(선택 없음)';
   const cwd = props.partner?.workspaceDir ?? '/';
   term.writeln('\x1b[1;38;2;107;182;255mAI Desk\x1b[0m 웹 터미널 — \x1b[38;2;184;154;255m' + name + '\x1b[0m');
   term.writeln('cwd: \x1b[38;2;107;182;255m' + cwd + '\x1b[0m');
-  term.writeln('');
-  term.writeln('\x1b[38;2;245;158;11m[mockup]\x1b[0m TA-2 단계 — 실제 pty 연결 전. 입력 echo + 일부 명령 동작.');
-  term.writeln('  /help · /clear · echo <msg>');
-  term.writeln('');
-  writePrompt();
-}
-
-function handleMockInput(data: string): void {
-  if (!term) return;
-  for (const ch of data) {
-    const code = ch.charCodeAt(0);
-    if (code === 13) {
-      term.write('\r\n');
-      const c = line.trim();
-      line = '';
-      if (!c) {
-        writePrompt();
-        continue;
-      }
-      if (c === '/help' || c === 'help') {
-        term.writeln('\x1b[38;2;184;154;255m사용 가능\x1b[0m: /help · /clear · echo <msg>');
-      } else if (c === '/clear' || c === 'clear') {
-        term.clear();
-      } else if (c.startsWith('echo ')) {
-        term.writeln(c.slice(5));
-      } else {
-        term.writeln('\x1b[38;2;248;113;113m✗\x1b[0m mockup — 실제 pty 는 TA-4 단계에서 연결됨');
-      }
-      writePrompt();
-    } else if (code === 127) {
-      if (line.length > 0) {
-        line = line.slice(0, -1);
-        term.write('\b \b');
-      }
-    } else if (code >= 32) {
-      line += ch;
-      term.write(ch);
-    }
-  }
+  term.writeln('\x1b[38;2;107;117;133mhelper 에 연결 중…\x1b[0m');
+  connectWs();
 }
 
 // 폰트 사이즈
@@ -262,18 +287,26 @@ onMounted(async () => {
     }
     document.addEventListener('keydown', onSettingsKey);
   }
-  if (props.partner) await ensureXterm();
+  if (props.partner) {
+    await ensureXterm();
+    resetAndConnect();
+  }
 });
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') document.removeEventListener('keydown', onSettingsKey);
+  disconnectWs();
   if (resizeObserver) { resizeObserver.disconnect(); resizeObserver = null; }
   if (term) { try { term.dispose(); } catch { /* ignore */ } term = null; }
 });
 
 watch(() => props.partner?.agentId, async (id) => {
-  if (!id) return;
+  if (!id) {
+    disconnectWs();
+    return;
+  }
   if (!term) await ensureXterm();
-  resetTerminal();
+  disconnectWs();
+  resetAndConnect();
 });
 
 function statusLabel(s: AgentStatus): string {

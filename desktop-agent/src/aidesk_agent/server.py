@@ -27,10 +27,8 @@ from .vscode.code_server import start_code_server, stop_code_server
 # route + vscode/__init__.py + vscode/external.py 다 같이 해제.
 # from .vscode import open_vscode
 from .terminal import ensure_iterm_dynamic_profile, open_terminal
+from .terminal.web_pty import web_terminal_handler
 from .workspace import browse_file, browse_workspace, cleanup_agent, scope_workspace
-# 임베드 터미널 사이드 패널 비활성화에 맞춰 pty WebSocket handler 도 보류.
-# 복원하려면 이 import 와 아래의 라우터 등록 두 곳을 같이 주석 해제.
-# from .tmux.pty_bridge import terminal_handler
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .tmux import consumer_loop, scan_sessions
 from .watchdog import watchdog_loop
@@ -571,7 +569,8 @@ def build_app() -> web.Application:
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
-    # app.router.add_get("/api/terminal", terminal_handler)  # 임베드 터미널 비활성
+    # 웹 터미널 WS endpoint — xterm.js ↔ pty(zsh) bridge. 2026-06-21 부활.
+    app.router.add_get("/ws/terminal", web_terminal_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
     app.on_startup.append(_start_background_tasks)
