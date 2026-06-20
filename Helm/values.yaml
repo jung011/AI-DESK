@@ -8,7 +8,7 @@ backend:
     # staging deploy 통과 (모든 endpoint wire OK + envelope 호환 확인).
     # 문제 시 roll-back: 두 줄을 jsh125/aidesk-backend:1.53.10-rc1 로 되돌리고 push.
     repository: jsh125/aidesk-backend-py
-    tag: "0.1.0-rc34"
+    tag: "0.1.0-rc35"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 30081
