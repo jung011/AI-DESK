@@ -2,10 +2,19 @@
   <section class="conv-view">
     <header v-if="partner" class="conv-head">
       <button v-if="showBack" class="cv-back" @click="$emit('back')" aria-label="뒤로">←</button>
-      <span class="cv-avatar">{{ avatar(partner.status) }}</span>
+      <span class="cv-avatar" :class="partner.status">{{ avatar(partner.status) }}</span>
       <div class="cv-title">
         <div class="cv-name">{{ partner.agentName }}</div>
-        <div class="cv-meta">{{ statusLabel(partner.status) }} · {{ shortModel(partner.model) }}</div>
+        <div class="cv-meta">
+          <span class="cv-status-dot" :class="partner.status"></span>
+          <span>{{ statusLabel(partner.status) }}</span>
+          <span class="cv-meta-sep">·</span>
+          <span>{{ shortModel(partner.model) }}</span>
+          <template v-if="partner.contextPct != null && partner.contextPct > 0">
+            <span class="cv-meta-sep">·</span>
+            <span class="cv-ctx" :class="ctxLevel(partner.contextPct)">{{ partner.contextPct }}% context</span>
+          </template>
+        </div>
       </div>
     </header>
     <header v-else class="conv-head empty">
@@ -129,6 +138,11 @@ function shortModel(m: string | null | undefined): string {
   if (!m) return '';
   return m.toLowerCase().startsWith('claude') ? 'claude' : m;
 }
+function ctxLevel(pct: number): string {
+  if (pct >= 85) return 'red';
+  if (pct >= 60) return 'orange';
+  return 'green';
+}
 
 function statusBadge(status: string): string {
   return { sent: '⏳', delivered: '✓', replied: '✓✓', failed: '⚠' }[status] ?? '';
@@ -169,9 +183,27 @@ function formatTime(iso: string): string {
   border: 1px solid #2A3447;
   display: flex; align-items: center; justify-content: center; font-size: 18px;
 }
-.cv-title { display: flex; flex-direction: column; gap: 2px; }
+.cv-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cv-name { font-size: 14px; font-weight: 700; color: #E5E9EE; }
-.cv-meta { font-size: 11px; color: #8B95A5; }
+.cv-meta {
+  font-size: 11px; color: #8B95A5;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.cv-meta-sep { color: #4B5563; }
+.cv-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #4B5563; flex-shrink: 0;
+}
+.cv-status-dot.active    { background: #10B981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6); }
+.cv-status-dot.waiting   { background: #4F7FFF; box-shadow: 0 0 6px rgba(79, 127, 255, 0.6); }
+.cv-status-dot.idle      { background: #F59E0B; }
+.cv-status-dot.offline   { background: #4B5563; }
+.cv-status-dot.error     { background: #F87171; }
+.cv-status-dot.compacting{ background: #B89AFF; box-shadow: 0 0 6px rgba(184, 154, 255, 0.6); }
+.cv-ctx { font-weight: 600; }
+.cv-ctx.green  { color: #10B981; }
+.cv-ctx.orange { color: #F59E0B; }
+.cv-ctx.red    { color: #F87171; }
 
 .conv-body { flex: 1; overflow-y: auto; padding: 24px 28px; }
 .cv-empty { color: #6B7785; font-size: 13px; text-align: center; margin-top: 40px; }
