@@ -53,16 +53,20 @@
 
         <!-- 외부 운영 setup 가이드 — 외부 AI 의 mac/linux 서버에서 그대로 실행 가능. -->
         <div class="ext-modal-label">
-          <span>외부 운영 setup script</span>
-          <p class="ext-modal-help">아래 script 를 외부 AI 운영자에게 전달 → 그대로 실행. linux/macOS 자동 판별. claude code 설치 사전 필요.</p>
+          <span>외부 운영 setup 명령</span>
+          <p class="ext-modal-help">
+            외부 AI 운영자에게 <strong>아래 명령 전체</strong>를 전달 → 외부 AI 의 워크스페이스 디렉토리에서 <strong>한 번에 paste + Enter</strong>.
+            <br>(heredoc 패턴 — zsh / bash 모두 호환. binary 다운로드 + (mac) codesign + mcp 등록 자동.)
+          </p>
           <pre class="ext-setup-script">{{ setupScript }}</pre>
           <div class="ext-modal-actions">
-            <button class="ext-btn" @click="copySetupScript">{{ scriptCopied ? '복사됨!' : 'Setup script 복사' }}</button>
+            <button class="ext-btn" @click="copySetupScript">{{ scriptCopied ? '복사됨!' : '명령 복사' }}</button>
           </div>
         </div>
         <p class="ext-modal-help">
-          실행 후 claude code 시작:
-          <code>claude --dangerously-load-development-channels server:aidesk-channel-ext</code>
+          <strong>실행 후</strong> — 같은 디렉토리에서 claude code 시작:
+          <br><code>claude --dangerously-load-development-channels server:aidesk-channel-ext</code>
+          <br>= 사전 조건: claude code 설치. 사내 망에서 backend 접근 가능.
         </p>
 
         <footer class="ext-modal-foot">
@@ -99,15 +103,15 @@ const idCopied = ref(false);
 const scriptCopied = ref(false);
 const nameInput = ref<HTMLInputElement | null>(null);
 
-// 외부 운영 setup script — token + agent_id + backend URL 박힌 1-script.
+// 외부 운영 setup script — heredoc 안에 박아서 zsh paste 시 wrap / `!` history expansion 우회.
+// 사용자가 그대로 paste 하면 /tmp/aidesk-setup.sh 에 저장 + bash 실행. 한 번에 완료.
 const setupScript = computed(() => {
   if (!created.value) return '';
   const backendUrl = window.location.origin;
   const token = created.value.token;
   const agentId = created.value.agentId;
-  return `#!/bin/bash
+  return `cat > /tmp/aidesk-setup.sh <<'AIDESK_EOF'
 set -e
-# OS / arch 자동 판별 (darwin-arm64 / linux-x64 / linux-arm64)
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')
 PLATFORM="\${OS}-\${ARCH}"
@@ -120,14 +124,17 @@ chmod +x aidesk-channel-mcp
 [[ "\$OS" == "darwin" ]] && codesign --force --sign - aidesk-channel-mcp
 
 # 3. claude code mcp 등록 (scope local — 현재 디렉토리만)
+claude mcp remove aidesk-channel-ext --scope local 2>/dev/null || true
 claude mcp add aidesk-channel-ext --scope local --transport stdio \\
   --env "AIDESK_BEARER_TOKEN=${token}" \\
   --env "AIDESK_AGENT_ID=${agentId}" \\
   --env "AIDESK_API_URL=${backendUrl}" \\
   -- "$(pwd)/aidesk-channel-mcp"
 
-echo "Setup 완료. 다음 명령으로 실행:"
-echo "  claude --dangerously-load-development-channels server:aidesk-channel-ext"`;
+echo "✓ Setup 완료. 다음 명령으로 claude code 실행:"
+echo "  claude --dangerously-load-development-channels server:aidesk-channel-ext"
+AIDESK_EOF
+bash /tmp/aidesk-setup.sh`;
 });
 
 watch(() => props.modelValue, (open) => {
@@ -231,6 +238,8 @@ function onClose() {
 .ext-modal {
   background: #fff; border-radius: 8px;
   width: 480px; max-width: 92vw;
+  max-height: 90vh;
+  display: flex; flex-direction: column;
   box-shadow: 0 10px 40px rgba(0,0,0,.2);
 }
 .ext-modal-head {
@@ -242,7 +251,7 @@ function onClose() {
   background: none; border: none; font-size: 24px; cursor: pointer; color: #999;
   line-height: 1; padding: 0;
 }
-.ext-modal-body { padding: 20px; }
+.ext-modal-body { padding: 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .ext-modal-help { font-size: 13px; color: #555; margin: 0 0 16px; line-height: 1.5; }
 .ext-modal-help.token-warn {
   background: #FFF7E1; border-left: 3px solid #F0AD4E;
