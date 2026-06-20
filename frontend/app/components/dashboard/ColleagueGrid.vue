@@ -134,8 +134,19 @@ import ExternalAgentDialog from './ExternalAgentDialog.vue';
 import ExternalAgentRotateDialog from './ExternalAgentRotateDialog.vue';
 
 const colleagues = useColleagues();
-const POLL_INTERVAL_MS = 10_000;
+// SSE 가 살아있는 동안 polling 은 *backup* 으로만 — 60s. SSE 끊기면 polling 이 fallback.
+const POLL_INTERVAL_MS = 60_000;
 let timer: ReturnType<typeof setInterval> | null = null;
+let evtSource: EventSource | null = null;
+let refreshDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRefresh() {
+  if (refreshDebounce) return;
+  refreshDebounce = setTimeout(() => {
+    refreshDebounce = null;
+    colleagues.refresh();
+  }, 300);
+}
 
 const dialogOpen = ref(false);
 function onExternalCreated() {
@@ -187,10 +198,18 @@ async function confirmDelete() {
 onMounted(() => {
   colleagues.refresh();
   timer = setInterval(() => colleagues.refresh(), POLL_INTERVAL_MS);
+  // SSE — agent.changed 받으면 즉시 refresh (debounce). 끊기면 polling 60s 가 fallback.
+  if (typeof window !== 'undefined' && typeof EventSource !== 'undefined') {
+    evtSource = new EventSource('/api/messages/events');
+    evtSource.addEventListener('agent.changed', () => scheduleRefresh());
+  }
 });
 
 onBeforeUnmount(() => {
   if (timer != null) clearInterval(timer);
+  if (refreshDebounce != null) clearTimeout(refreshDebounce);
+  evtSource?.close();
+  evtSource = null;
 });
 
 const sorted = computed(() => {
