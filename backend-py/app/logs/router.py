@@ -1,16 +1,21 @@
-"""logs router — /api/action-logs + /api/logs. Spring LogController 와 1:1.
+"""logs router — /api/action-logs + /api/logs + /api/logs/client. Spring LogController 와 1:1.
 
 router prefix = /api (main.py 에서 mount).
 """
-from fastapi import APIRouter, Depends, Query
+import logging
+
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
+from app.auth.deps import optional_user
+from app.auth.schemas import AuthenticatedUser
 from app.common.response import ApiEnvelope, ok
 from app.core.database import get_db
-from app.logs.schemas import ActionLogCreateRq, LogFeedItem
+from app.logs.schemas import ActionLogCreateRq, ClientLogRq, LogFeedItem
 from app.logs.service import LogService
 
 router = APIRouter()
+client_log = logging.getLogger("app.client")
 
 
 @router.get("/_health")
@@ -35,3 +40,27 @@ async def feed(
 ) -> ApiEnvelope[list[LogFeedItem]]:
     svc = LogService(db)
     return ok(svc.get_feed(category, limit))
+
+
+@router.post("/logs/client", response_model=ApiEnvelope[str])
+async def record_client_log(
+    body: ClientLogRq,
+    request: Request,
+    user: AuthenticatedUser | None = Depends(optional_user),
+) -> ApiEnvelope[str]:
+    """frontend 의 사고/진단 로그 적재. backend application logger 의 'app.client' channel.
+
+    K8s stdout 에 모이므로 별도 DB schema 없이도 진단 가능. 옛 console 손실 사고
+    ([[feedback-browser-debug-persist]]) 해소 — 미래 사고 시 backend log 직접 조회.
+    """
+    level = (body.level or "warn").lower()
+    log_fn = getattr(client_log, level, client_log.warning)
+    log_fn(
+        "[client-log] msg=%s user=%s route=%s ua=%s data=%s",
+        body.msg,
+        user.login_id if user else "anonymous",
+        body.route or "-",
+        (request.headers.get("user-agent") or "-")[:200],
+        body.data,
+    )
+    return ok("ok")

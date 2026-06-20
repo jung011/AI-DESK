@@ -18,6 +18,20 @@ class ActionLogCreateRq(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ClientLogRq(BaseModel):
+    """frontend 에서 backend 적재용 로그 entry. console / localStorage 와 동등 정보.
+
+    DB 저장 X — backend application logger (app.client channel) 만. K8s stdout 에 모임.
+    """
+
+    level: str = Field(default="warn", max_length=10)
+    msg: str = Field(min_length=1, max_length=500)
+    data: dict | None = None
+    route: str | None = Field(default=None, max_length=300)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class LogFeedItem(BaseModel):
     """통합 피드 — type='message' / 'action' 분기."""
 
