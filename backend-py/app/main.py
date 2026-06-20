@@ -2,6 +2,7 @@
 
 AI Desk backend (FastAPI 마이그). Spring Boot 의 대체.
 """
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -33,10 +34,30 @@ async def lifespan(app: FastAPI):
     log.info("aidesk-backend starting")
     from app.agents.watcher import start as start_watcher
     watcher_task = start_watcher()
+
+    # helper-pkg 새 image 가 swap 되면 사용자 frontend 가 즉시 banner 갱신하도록 SSE event.
+    # 5초 지연 = frontend EventSource 가 reconnect 후 subscribe 완료할 시간 확보.
+    async def _publish_helper_version_after_warmup() -> None:
+        import asyncio as _asyncio
+        from app.helper.service import locate_pkg, extract_version
+        from app.messages.sse import broker as _broker
+        await _asyncio.sleep(5)
+        try:
+            pkg = locate_pkg()
+            version = extract_version(pkg) if pkg else None
+            if version:
+                _broker.publish("helper.version.changed", {"version": version})
+                log.info("startup: helper.version.changed broadcast — version=%s", version)
+        except Exception:  # noqa: BLE001
+            log.exception("startup: helper version publish failed")
+
+    helper_task = asyncio.create_task(_publish_helper_version_after_warmup(), name="helper-version-publish")
+
     try:
         yield
     finally:
         watcher_task.cancel()
+        helper_task.cancel()
         log.info("aidesk-backend stopping")
 
 
