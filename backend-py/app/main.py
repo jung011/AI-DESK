@@ -33,20 +33,16 @@ async def lifespan(app: FastAPI):
     """app startup / shutdown — agent status watcher 등 백그라운드 task."""
     log.info("aidesk-backend starting")
 
-    # 옛 Spring 시절 schema 의 t_ai_message.content = VARCHAR(1000) → ALTER TO TEXT.
-    # idempotent — 이미 TEXT 면 noop. 권한 없으면 warning + 진행.
+    # alembic upgrade head — schema 변경을 *정식 migration* 으로 적용.
+    # idempotent (이미 적용된 migration 은 noop). DB 권한 부족 시 warning + 진행.
     try:
-        from sqlalchemy import text
-        from app.core.database import SessionLocal
-        db = SessionLocal()
-        try:
-            db.execute(text("ALTER TABLE t_ai_message ALTER COLUMN content TYPE TEXT"))
-            db.commit()
-            log.info("startup: ALTER t_ai_message.content TYPE TEXT — OK (or noop)")
-        finally:
-            db.close()
+        from alembic import command
+        from alembic.config import Config
+        cfg = Config("alembic.ini")
+        command.upgrade(cfg, "head")
+        log.info("startup: alembic upgrade head — OK")
     except Exception as e:  # noqa: BLE001
-        log.warning("startup: ALTER content failed (권한 부족 또는 옛 PG) — %s", e)
+        log.warning("startup: alembic upgrade failed — %s", e)
 
     from app.agents.watcher import start as start_watcher
     watcher_task = start_watcher()
