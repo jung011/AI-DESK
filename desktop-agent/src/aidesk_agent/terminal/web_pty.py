@@ -79,6 +79,15 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
         request.remote, cwd, cols, rows, shell, agent_id or "-",
     )
 
+    # spawn 전 ~/.claude.json 의 mcp 등록 갱신 — 옛 'node + script' patterns 가 남아있으면
+    # 새 binary 직접 실행으로 자동 마이그. 0.8.15 까지는 사용자가 수동 fix 필요했음.
+    if agent_id and cwd_q:
+        try:
+            from ..claude.bootstrap import _register_local_mcp  # noqa: PLC0415
+            _register_local_mcp(cwd_q, agent_id)
+        except Exception as e:  # noqa: BLE001
+            log.warning("ws-terminal: mcp re-register failed cwd=%s agent=%s err=%s", cwd_q, agent_id, e)
+
     pid, fd = pty.fork()
     if pid == 0:
         # child process — exec shell. 이 분기는 절대 return 안 함.
