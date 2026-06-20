@@ -84,4 +84,16 @@ jobs:
             exit 0
           fi
           git commit -m "chore(helm): bump frontend image tag to ${IMAGE_TAG}"
-          git push origin HEAD:master
+          # master race fix — 우리 build 진행 중에 사람 또는 다른 workflow 가 master 에 push 했으면
+          # 단순 push 가 'fetch first' 로 rejected. rebase + retry 로 회복. 최대 3회.
+          for i in 1 2 3; do
+            if git push origin HEAD:master; then
+              echo "push OK (attempt=$i)"
+              exit 0
+            fi
+            echo "push rejected — fetch + rebase + retry (attempt=$i)"
+            git fetch origin master
+            git rebase origin/master || { git rebase --abort; break; }
+          done
+          echo "::error::push failed after retries — manual helm bump 필요"
+          exit 1
