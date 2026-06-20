@@ -110,15 +110,24 @@ onBeforeUnmount(() => {
 .chat-page {
   display: flex; flex-direction: column;
   height: calc(100vh - 56px);
-  background: #fff;
+  background: linear-gradient(180deg, #0B0F19 0%, #0F1729 100%);
+  color: #E5E9EE;
 }
 .chat-header {
-  padding: 18px 24px; border-bottom: 1px solid #E5E9EF;
-  display: flex; align-items: baseline; gap: 12px;
+  padding: 18px 28px;
+  border-bottom: 1px solid #1E2738;
+  display: flex; align-items: center; gap: 16px;
   flex-shrink: 0;
+  background: rgba(15, 23, 41, 0.6);
+  backdrop-filter: blur(12px);
 }
-.chat-header h1 { font-size: 22px; font-weight: 700; margin: 0; }
-.chat-subtitle { font-size: 12px; color: #64748B; }
+.chat-header h1 {
+  font-size: 18px; font-weight: 700; margin: 0;
+  background: linear-gradient(90deg, #6BB6FF, #B89AFF);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.chat-subtitle { font-size: 12px; color: #6B7785; }
 
 .chat-layout {
   flex: 1; display: grid;
@@ -128,7 +137,8 @@ onBeforeUnmount(() => {
 .chat-pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 
 .chat-error {
-  padding: 10px 16px; background: #FEE2E2; color: #B91C1C;
+  padding: 10px 16px; background: rgba(248, 113, 113, 0.12); color: #FCA5A5;
+  border-bottom: 1px solid rgba(248, 113, 113, 0.3);
   font-size: 13px; text-align: center;
 }
 

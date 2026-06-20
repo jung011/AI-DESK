@@ -53,51 +53,72 @@ function shortModel(m: string | null | undefined): string {
 <style scoped>
 .agent-list {
   display: flex; flex-direction: column;
-  border-right: 1px solid #E5E9EF;
-  background: #fff;
-  /* parent .chat-pane (flex column) 안에서 남은 높이를 다 차지해야
-     스크롤이 .al-list 안에서만 일어나고, page 전체가 같이 스크롤되며
-     이 패널이 위로 사라지는 증상이 안 생긴다. */
+  border-right: 1px solid #1E2738;
+  background: rgba(20, 28, 48, 0.5);
   flex: 1; min-height: 0;
 }
 .al-head {
-  padding: 16px 18px;
-  border-bottom: 1px solid #F0F2F5;
+  padding: 14px 18px;
+  border-bottom: 1px solid #1E2738;
 }
-.al-head h3 { font-size: 15px; font-weight: 700; margin: 0; color: #101010; }
-.al-empty { padding: 30px 18px; color: #94A3B8; font-size: 13px; text-align: center; }
+.al-head h3 {
+  font-size: 12px; font-weight: 600; margin: 0;
+  color: #8B95A5;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.al-empty { padding: 30px 18px; color: #6B7785; font-size: 13px; text-align: center; }
 
-.al-list { list-style: none; padding: 0; margin: 0; flex: 1; overflow-y: auto; }
+.al-list { list-style: none; padding: 6px 8px; margin: 0; flex: 1; overflow-y: auto; }
 .al-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 18px; cursor: pointer;
-  border-bottom: 1px solid #F5F7FA;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; cursor: pointer;
+  border-radius: 8px;
+  margin-bottom: 2px;
   transition: background 0.12s;
 }
-.al-item:hover { background: #F8FAFC; }
-.al-item.active { background: #EEF4FF; }
-.al-item.active .al-name { color: #2A50C8; font-weight: 700; }
+.al-item:hover { background: rgba(79, 127, 255, 0.08); }
+.al-item.active {
+  background: linear-gradient(90deg, rgba(79, 127, 255, 0.18), rgba(184, 154, 255, 0.08));
+  border-left: 3px solid #4F7FFF;
+  padding-left: 9px;
+}
+.al-item.active .al-name { color: #fff; }
 
 .al-avatar {
-  width: 38px; height: 38px; border-radius: 8px;
+  width: 36px; height: 36px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 18px; flex-shrink: 0;
-  background: #F1F5F9;
+  font-size: 16px; flex-shrink: 0;
+  background: linear-gradient(135deg, #2A3447, #1A2030);
+  border: 1px solid #2A3447;
+  position: relative;
 }
-.al-avatar.active  { background: #E8F5E9; }
-.al-avatar.waiting { background: #E3F2FD; }
-.al-avatar.idle    { background: #FFF8E1; }
-.al-avatar.error   { background: #FFEBEE; }
+/* status dot */
+.al-avatar::after {
+  content: ''; position: absolute; bottom: 0; right: 0;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid #0B0F19;
+  background: #4B5563;
+}
+.al-avatar.active::after  { background: #10B981; }
+.al-avatar.waiting::after { background: #4F7FFF; }
+.al-avatar.idle::after    { background: #F59E0B; }
+.al-avatar.error::after   { background: #F87171; }
 
 .al-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .al-name {
-  font-size: 14px; font-weight: 600; color: #101010;
+  font-size: 13px; font-weight: 600; color: #E5E9EE;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.al-meta { font-size: 11px; color: #64748B; display: flex; gap: 4px; align-items: center; }
-.al-status.active  { color: #2E7D32; font-weight: 600; }
-.al-status.waiting { color: #0D47A1; font-weight: 600; }
-.al-status.idle    { color: #E65100; }
-.al-status.error   { color: #B71C1C; font-weight: 600; }
-.al-model { color: #94A3B8; }
+.al-meta { font-size: 11px; color: #6B7785; display: flex; gap: 4px; align-items: center; }
+.al-status.active  { color: #10B981; font-weight: 600; }
+.al-status.waiting { color: #4F7FFF; font-weight: 600; }
+.al-status.idle    { color: #F59E0B; }
+.al-status.error   { color: #F87171; font-weight: 600; }
+.al-model { color: #6B7785; }
+
+/* scrollbar */
+.al-list::-webkit-scrollbar { width: 8px; }
+.al-list::-webkit-scrollbar-track { background: transparent; }
+.al-list::-webkit-scrollbar-thumb { background: #2A3447; border-radius: 4px; }
+.al-list::-webkit-scrollbar-thumb:hover { background: #3A4A66; }
 </style>
