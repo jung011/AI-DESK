@@ -50,6 +50,21 @@
             <button class="ext-btn" @click="copyToken">{{ copied ? '복사됨!' : '토큰 복사' }}</button>
           </div>
         </label>
+
+        <!-- 외부 운영 setup 가이드 — 외부 AI 의 mac/linux 서버에서 그대로 실행 가능. -->
+        <div class="ext-modal-label">
+          <span>외부 운영 setup script</span>
+          <p class="ext-modal-help">아래 script 를 외부 AI 운영자에게 전달 → 그대로 실행. linux/macOS 자동 판별. claude code 설치 사전 필요.</p>
+          <pre class="ext-setup-script">{{ setupScript }}</pre>
+          <div class="ext-modal-actions">
+            <button class="ext-btn" @click="copySetupScript">{{ scriptCopied ? '복사됨!' : 'Setup script 복사' }}</button>
+          </div>
+        </div>
+        <p class="ext-modal-help">
+          실행 후 claude code 시작:
+          <code>claude --dangerously-load-development-channels server:aidesk-channel-ext</code>
+        </p>
+
         <footer class="ext-modal-foot">
           <button class="ext-btn primary" @click="onClose">완료</button>
         </footer>
@@ -59,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 
 interface ExternalAgentTokenRs {
@@ -81,7 +96,39 @@ const errorMsg = ref<string | null>(null);
 const created = ref<ExternalAgentTokenRs | null>(null);
 const copied = ref(false);
 const idCopied = ref(false);
+const scriptCopied = ref(false);
 const nameInput = ref<HTMLInputElement | null>(null);
+
+// 외부 운영 setup script — token + agent_id + backend URL 박힌 1-script.
+const setupScript = computed(() => {
+  if (!created.value) return '';
+  const backendUrl = window.location.origin;
+  const token = created.value.token;
+  const agentId = created.value.agentId;
+  return `#!/bin/bash
+set -e
+# OS / arch 자동 판별 (darwin-arm64 / linux-x64 / linux-arm64)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')
+PLATFORM="\${OS}-\${ARCH}"
+
+# 1. binary download
+curl -fsSL -o aidesk-channel-mcp "${backendUrl}/api/external/mcp/aidesk-channel-mcp-\${PLATFORM}"
+chmod +x aidesk-channel-mcp
+
+# 2. macOS Gatekeeper 우회 (linux skip)
+[[ "\$OS" == "darwin" ]] && codesign --force --sign - aidesk-channel-mcp
+
+# 3. claude code mcp 등록 (scope local — 현재 디렉토리만)
+claude mcp add aidesk-channel-ext --scope local --transport stdio \\
+  --env "AIDESK_BEARER_TOKEN=${token}" \\
+  --env "AIDESK_AGENT_ID=${agentId}" \\
+  --env "AIDESK_API_URL=${backendUrl}" \\
+  -- "$(pwd)/aidesk-channel-mcp"
+
+echo "Setup 완료. 다음 명령으로 실행:"
+echo "  claude --dangerously-load-development-channels server:aidesk-channel-ext"`;
+});
 
 watch(() => props.modelValue, (open) => {
   if (open) {
@@ -162,6 +209,14 @@ async function copyAgentId() {
   }
 }
 
+async function copySetupScript() {
+  if (!setupScript.value) return;
+  if (await copyText(setupScript.value)) {
+    scriptCopied.value = true;
+    setTimeout(() => { scriptCopied.value = false; }, 2000);
+  }
+}
+
 function onClose() {
   emit('update:modelValue', false);
 }
@@ -228,5 +283,10 @@ function onClose() {
 }
 .ext-btn.primary:disabled {
   background: #B0C8E3; border-color: #B0C8E3; cursor: not-allowed;
+}
+.ext-setup-script {
+  background: #1e1e1e; color: #e6e6e6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; line-height: 1.5; padding: 12px; border-radius: 6px;
+  max-height: 280px; overflow: auto; white-space: pre; margin: 6px 0 8px;
 }
 </style>
