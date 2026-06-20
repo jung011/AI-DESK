@@ -27,6 +27,22 @@ async def health() -> dict[str, str]:
     return {"router": "agents", "status": "ok"}
 
 
+@router.get("/ws-active")
+async def ws_active() -> dict[str, list[str] | int]:
+    """현재 backend 의 ws_broker._by_agent 의 *active session* agent_id list 반환.
+
+    debug endpoint — 외부 mcp daemon 이 backend 에 ws connect 진행 중인지 직접 확인.
+    [auth 우선순위 fix (rc33) + mcp 자가 종료 (rc30) 진단용]. 안정화 후 제거.
+    """
+    from app.messages.ws import ws_broker
+    agent_ids = sorted(ws_broker._by_agent.keys())
+    return {
+        "activeAgentIds": agent_ids,
+        "count": len(agent_ids),
+        "totalSubscribers": sum(len(s) for s in ws_broker._by_agent.values()),
+    }
+
+
 @router.get("", response_model=ApiEnvelope[AgentListRs])
 async def list_agents(
     status: str | None = None,
