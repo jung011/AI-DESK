@@ -21,7 +21,12 @@ CHECK_INTERVAL_SECONDS = 30
 
 
 async def _check_once() -> int:
-    """stale agent 를 offline 으로 강등. 갱신된 row 수 반환."""
+    """stale agent 를 active → idle 강등. 갱신된 row 수 반환.
+
+    rc19 design 정정 — idle = 살아있는 상태, offline ≠ idle. watcher 는 *active* 만
+    *idle* 으로 강등 (생존 신호 끊김, 그러나 살아있다 가정). offline 마킹은 helper 의
+    명시적 종료 보고 (tmux session 없음) 또는 agent delete 만.
+    """
     db = SessionLocal()
     try:
         repo = AgentRepository(db)
@@ -31,17 +36,17 @@ async def _check_once() -> int:
             return 0
         updated = 0
         for agent in stale:
-            n = repo.update_status_from_watcher(agent.agent_id, "offline")
+            n = repo.update_status_from_watcher(agent.agent_id, "idle")
             if n > 0:
                 updated += 1
                 log.info(
-                    "watcher: agent=%s (id=%s type=%s) %s -> offline (stale, updated_at=%s)",
+                    "watcher: agent=%s (id=%s type=%s) %s -> idle (stale, updated_at=%s)",
                     agent.agent_name, agent.agent_id, agent.agent_type,
                     agent.status, agent.updated_at,
                 )
         db.commit()
         if updated > 0:
-            log.info("watcher: tick complete — %d agent(s) demoted to offline", updated)
+            log.info("watcher: tick complete — %d agent(s) demoted active->idle", updated)
         return updated
     finally:
         db.close()

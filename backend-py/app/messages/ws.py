@@ -203,24 +203,18 @@ async def messages_ws_endpoint(
             log.warning("[ws-handler] recv loop crashed: %s", e)
         finally:
             await ws_broker.unregister(account_sn, ws_agent_id, websocket)
-            # disconnect → 남은 ws session 0개면 status='offline'. 다른 session 살아있으면
-            # idle 유지 (Spring countSessionsForAgent 패턴). 멀티 mcp / multi tab 시 false
-            # offline 방지 — rc13 fix.
+            # rc19 design 정정 — ws disconnect ≠ claude exit. session close 만으로 offline
+            # 마킹 금지. mcp ws 의 분 단위 disconnect/reconnect cycle 시 false offline
+            # 방지. status='offline' 은 helper 의 명시적 종료 보고 (tmux 없음) 또는 agent
+            # delete 만. ws session 만 status 결정하지 않음 — idle 유지.
             if ws_agent_id:
                 try:
                     remaining = ws_broker.count_sessions_for_agent(ws_agent_id)
-                    if remaining == 0:
-                        _toggle_status(db, ws_agent_id, "offline")
-                        log.info(
-                            "[ws-handler] disconnect (last session) → status=offline agentId=%s",
-                            ws_agent_id,
-                        )
-                    else:
-                        log.info(
-                            "[ws-handler] disconnect (sessions remain=%d, keep idle) agentId=%s",
-                            remaining, ws_agent_id,
-                        )
+                    log.info(
+                        "[ws-handler] disconnect agentId=%s remaining_sessions=%d (status unchanged)",
+                        ws_agent_id, remaining,
+                    )
                 except Exception:  # noqa: BLE001
-                    log.exception("[ws-handler] disconnect status toggle failed")
+                    log.exception("[ws-handler] disconnect log failed")
     finally:
         db.close()

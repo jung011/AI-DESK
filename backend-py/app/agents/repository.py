@@ -100,16 +100,20 @@ class AgentRepository:
         return result.rowcount
 
     def list_stale_active(self, threshold_seconds: int) -> list[AiAgent]:
-        """updated_at 이 threshold 이전 + status 가 idle/active 인 agent — stale 판정 대상.
+        """updated_at 이 threshold 이전 + status 가 'active' 인 agent — active → idle 강등 대상.
 
-        외부 AI (agent_type='external') 는 제외 — helper reporter 없이 ws session 만이
-        status source. watcher 가 무차별 강등 시 ws ESTABLISHED 인데 DB='offline' mismatch
-        발생 (rc12 fix).
+        rc19 design 정정 — idle ≠ offline:
+        - idle = 살아있는 상태 (prompt 대기 중). 90초 stale 라도 idle 유지.
+        - active → idle 강등 만 (생존 신호 끊김, 그러나 살아있다 가정).
+        - offline = 진짜 종료 (helper reporter 의 tmux 없음 보고 또는 agent delete) 만 마킹.
+
+        외부 AI 도 제외 (helper 없음 + ws session 만이 status source).
+        Spring 정합 — 옛 Spring 의 watcher 도 offline 마킹 안 함.
         """
         cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=threshold_seconds)
         stmt = select(AiAgent).where(
             AiAgent.deleted_at.is_(None),
-            AiAgent.status.in_(["idle", "active"]),
+            AiAgent.status == "active",  # idle 제외 — idle = 살아있는 상태
             AiAgent.updated_at < cutoff,
             AiAgent.agent_type != "external",
         )
