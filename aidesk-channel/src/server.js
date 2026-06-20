@@ -574,8 +574,26 @@ function startWsSubscribe() {
     : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
 
   const RECONNECT_MS = 3000;
+  // 401 (token rotate/revoke/delete) 같은 *명시적 인증 거부* 면 *자가 종료*.
+  // 옛 token 박힌 daemon 의 무한 reconnect storm 방지 — backend log 도배 + 사용자 mac CPU 낭비
+  // 차단. 사용자는 새 setup script 만 다시 실행하면 됨.
+  //
+  // 종료 trigger:
+  //   - ws.on('close') code=1008 (backend 의 WS_1008_POLICY_VIOLATION — _authenticate reject)
+  //   - ws.on('error') 의 메시지 안 'Unexpected server response: 401' (npm ws 의 handshake 401)
   let ws = null;
   let reconnectTimer = null;
+  let lastErrorMsg = '';
+  function exitOnAuthReject(reason) {
+    dbg(`aidesk-channel: auth reject — exiting daemon. reason=${reason}`);
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    // claude code mcp client 에 stderr 로 알림 (사용자가 새 setup 진행 필요).
+    process.stderr.write(`[aidesk-channel] auth rejected (${reason}) — daemon exiting. Run new setup script.\n`);
+    process.exit(1);
+  }
   function connect() {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -584,6 +602,7 @@ function startWsSubscribe() {
     ws = new WebSocket(wsUrl);
     ws.on('open', () => {
       dbg(`ws connected url=${wsUrl}`);
+      lastErrorMsg = '';
     });
     ws.on('message', async (data) => {
       let evt;
@@ -598,13 +617,24 @@ function startWsSubscribe() {
         content: evt.content,
       });
     });
-    ws.on('close', () => {
-      dbg(`aidesk-channel: ws disconnected — reconnect in ${RECONNECT_MS}ms`);
+    ws.on('close', (code, reason) => {
+      const reasonStr = reason ? reason.toString() : '';
+      dbg(`aidesk-channel: ws disconnected — code=${code} reason=${reasonStr} (reconnect in ${RECONNECT_MS}ms)`);
       ws = null;
+      // 1008 = WS_1008_POLICY_VIOLATION (backend 의 명시적 인증 reject). 1006 등 abnormal closure 는 reconnect.
+      if (code === 1008 || /401/.test(lastErrorMsg)) {
+        exitOnAuthReject(`code=${code} lastError=${lastErrorMsg}`);
+        return;
+      }
       reconnectTimer = setTimeout(connect, RECONNECT_MS);
     });
     ws.on('error', (err) => {
-      dbg(`aidesk-channel: ws error ${err?.message ?? err}`);
+      lastErrorMsg = String(err?.message ?? err);
+      dbg(`aidesk-channel: ws error ${lastErrorMsg}`);
+      // npm ws 의 handshake 401 패턴 — 'Unexpected server response: 401'. close 호출 안 될 수도 있어 즉시 exit.
+      if (/401/.test(lastErrorMsg)) {
+        exitOnAuthReject(`error="${lastErrorMsg}"`);
+      }
     });
   }
   connect();
