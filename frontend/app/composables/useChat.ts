@@ -14,7 +14,7 @@
  */
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 import type { AgentItem, AgentListResponse } from '~/vo/agents/AgentVo';
-import type { MessageItem, MessageCreateRequest } from '~/vo/messages/MessageVo';
+import type { AttachmentUploadResponse, MessageItem, MessageCreateRequest } from '~/vo/messages/MessageVo';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -85,8 +85,11 @@ export function useChat() {
     await fetchMessages();
   }
 
-  async function send(content: string): Promise<boolean> {
-    if (!currentUser.value || !partnerId.value || !content.trim()) return false;
+  async function send(content: string, attachmentIds: string[] = []): Promise<boolean> {
+    if (!currentUser.value || !partnerId.value) return false;
+    // 첨부만 보내는 케이스는 허용 — 빈 content 는 backend min_length=1 이라 한 칸 공백.
+    const trimmed = content.trim();
+    if (!trimmed && attachmentIds.length === 0) return false;
     sending.value = true;
     error.value = null;
     try {
@@ -94,8 +97,9 @@ export function useChat() {
       const body: MessageCreateRequest = {
         fromAgentId: currentUser.value.agentId,
         toAgentId: partnerId.value,
-        content: content.trim(),
+        content: trimmed || ' ',
       };
+      if (attachmentIds.length > 0) body.attachmentIds = attachmentIds;
       const env = await $api<ApiEnvelope<MessageItem>>('/api/messages', {
         method: 'POST',
         body,
@@ -112,6 +116,26 @@ export function useChat() {
       return false;
     } finally {
       sending.value = false;
+    }
+  }
+
+  async function uploadAttachment(file: File): Promise<AttachmentUploadResponse | null> {
+    if (!currentUser.value) return null;
+    const { $api } = useNuxtApp();
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('ownerAgentId', currentUser.value.agentId);
+    try {
+      const env = await $api<ApiEnvelope<AttachmentUploadResponse>>('/api/attachments', {
+        method: 'POST',
+        body: fd,
+      });
+      if (env.result === 0 && env.data) return env.data;
+      error.value = env.message ?? '첨부 업로드 실패';
+      return null;
+    } catch (e) {
+      error.value = `첨부 업로드 실패: ${e instanceof Error ? e.message : String(e)}`;
+      return null;
     }
   }
 
@@ -190,6 +214,7 @@ export function useChat() {
     fetchMessages,
     selectPartner,
     send,
+    uploadAttachment,
     startPolling,
     stopPolling,
   };

@@ -3,6 +3,13 @@
  */
 export type MessageStatus = 'sent' | 'delivered' | 'replied' | 'failed';
 
+export interface AttachmentRef {
+  attachmentId: string;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
 export interface MessageItem {
   messageId: string;
   fromAgentId: string;
@@ -17,6 +24,7 @@ export interface MessageItem {
   deliveredAt: string | null;
   readAt: string | null;
   repliedAt: string | null;
+  attachments?: AttachmentRef[];
 }
 
 export interface MessageCreateRequest {
@@ -24,4 +32,12 @@ export interface MessageCreateRequest {
   toAgentId: string;
   content: string;
   replyToMessageId?: string;
+  attachmentIds?: string[];
+}
+
+export interface AttachmentUploadResponse {
+  attachmentId: string;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
 }

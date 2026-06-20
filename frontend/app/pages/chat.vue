@@ -22,6 +22,7 @@
           :loading="loadingMessages"
           :sending="sending"
           :show-back="true"
+          :upload-fn="uploadAttachment"
           @send="onSend"
           @back="showConvMobile = false"
         />
@@ -39,7 +40,7 @@ import ConversationView from '~/components/chat/ConversationView.vue';
 const {
   agents, currentUser, partnerId, messages,
   loadingAgents, loadingMessages, sending, error,
-  fetchAgents, fetchMessages, selectPartner, send, startPolling, stopPolling,
+  fetchAgents, fetchMessages, selectPartner, send, uploadAttachment, startPolling, stopPolling,
 } = useChat();
 
 // 휴먼(사용자 본인)만 제외 — (me) 리키도 채팅 가능한 partner 로 노출.
@@ -59,8 +60,8 @@ async function onSelectPartner(agentId: string): Promise<void> {
   showConvMobile.value = true;
 }
 
-async function onSend(content: string): Promise<void> {
-  await send(content);
+async function onSend(content: string, attachmentIds: string[] = []): Promise<void> {
+  await send(content, attachmentIds);
 }
 
 onMounted(async () => {

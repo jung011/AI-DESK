@@ -1,5 +1,5 @@
 <template>
-  <section class="conv-view">
+  <section class="conv-view" :class="`font-${fontSize}`">
     <header v-if="partner" class="conv-head">
       <button v-if="showBack" class="cv-back" @click="$emit('back')" aria-label="뒤로">←</button>
       <span class="cv-avatar" :class="partner.status">{{ avatar(partner.status) }}</span>
@@ -14,6 +14,20 @@
             <span class="cv-meta-sep">·</span>
             <span class="cv-ctx" :class="ctxLevel(partner.contextPct)">{{ partner.contextPct }}% context</span>
           </template>
+        </div>
+      </div>
+      <!-- 상단 ... 메뉴 + 폰트 사이즈 조정 (16:23 누락 요청 회수) -->
+      <div class="cv-head-actions">
+        <button class="cv-menu-btn" @click.stop="menuOpen = !menuOpen" :aria-expanded="menuOpen" aria-label="메뉴">⋯</button>
+        <div v-if="menuOpen" class="cv-menu-pop" @click.stop>
+          <div class="cv-menu-section">
+            <div class="cv-menu-label">폰트 크기</div>
+            <div class="cv-font-row">
+              <button class="cv-font-btn" :class="{ active: fontSize === 'sm' }" @click="setFontSize('sm')">작게</button>
+              <button class="cv-font-btn" :class="{ active: fontSize === 'md' }" @click="setFontSize('md')">보통</button>
+              <button class="cv-font-btn" :class="{ active: fontSize === 'lg' }" @click="setFontSize('lg')">크게</button>
+            </div>
+          </div>
         </div>
       </div>
     </header>
@@ -46,7 +60,24 @@
               class="cv-sender">
               {{ m.fromAgentName }}
             </div>
-            <div class="cv-content">{{ m.content }}</div>
+            <div v-if="m.content && m.content.trim()" class="cv-content">{{ m.content }}</div>
+            <!--
+              첨부 chip — 카카오톡 스타일. 파일명/크기 + 다운로드 아이콘.
+              backend = permitAll (cookie auth 없음) 이라 단순 <a download> 로 충분.
+              filename 은 backend content-disposition 에 박혀있어 다운로드 시 보존.
+            -->
+            <ul v-if="m.attachments && m.attachments.length > 0" class="cv-attachments">
+              <li v-for="a in m.attachments" :key="a.attachmentId" class="cv-attachment">
+                <a class="cv-att-chip" :href="`/api/attachments/${a.attachmentId}`" :download="a.originalFilename" :title="`${a.originalFilename} 다운로드`">
+                  <span class="cv-att-icon">{{ attachmentIcon(a.contentType) }}</span>
+                  <span class="cv-att-info">
+                    <span class="cv-att-name">{{ a.originalFilename }}</span>
+                    <span class="cv-att-size">{{ formatSize(a.sizeBytes) }}</span>
+                  </span>
+                  <span class="cv-att-download" aria-hidden="true">⬇</span>
+                </a>
+              </li>
+            </ul>
             <div class="cv-foot">
               <span class="cv-time">{{ formatTime(m.createdAt) }}</span>
               <span
@@ -63,27 +94,41 @@
     </div>
 
     <footer v-if="partner" class="conv-input">
-      <textarea
-        v-model="draft"
-        class="cv-textarea"
-        rows="2"
-        :placeholder="`${partner.agentName} 에게 메시지…`"
-        :disabled="sending"
-        @keydown.enter.exact="onEnter"
-      />
-      <button
-        class="cv-send"
-        :disabled="!draft.trim() || sending"
-        @click="onSend">
-        {{ sending ? '전송 중…' : '전송' }}
-      </button>
+      <!-- 선택된 첨부 chip (upload 전 또는 후) -->
+      <div v-if="pendingAttachments.length > 0 || uploadingFiles" class="cv-pending-attachments">
+        <span v-if="uploadingFiles" class="cv-pending-uploading">⏳ 업로드 중…</span>
+        <span v-for="a in pendingAttachments" :key="a.attachmentId" class="cv-pending-chip">
+          <span class="cv-att-icon">{{ attachmentIcon(a.contentType) }}</span>
+          <span class="cv-pending-name">{{ a.originalFilename }}</span>
+          <span class="cv-pending-size">{{ formatSize(a.sizeBytes) }}</span>
+          <button class="cv-pending-x" @click="removePending(a.attachmentId)" aria-label="제거">✕</button>
+        </span>
+      </div>
+      <div class="cv-composer-row">
+        <button class="cv-attach-btn" :title="'파일 첨부'" :disabled="sending || uploadingFiles" @click="onAttachClick">📎</button>
+        <input ref="fileInputRef" type="file" multiple class="cv-file-input" @change="onFileChange" />
+        <textarea
+          v-model="draft"
+          class="cv-textarea"
+          rows="2"
+          :placeholder="`${partner.agentName} 에게 메시지…`"
+          :disabled="sending"
+          @keydown.enter.exact="onEnter"
+        />
+        <button
+          class="cv-send"
+          :disabled="(!draft.trim() && pendingAttachments.length === 0) || sending || uploadingFiles"
+          @click="onSend">
+          {{ sending ? '전송 중…' : '전송' }}
+        </button>
+      </div>
     </footer>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
-import type { MessageItem } from '~/vo/messages/MessageVo';
+import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
 
 const props = defineProps<{
   partner: AgentItem | null;
@@ -92,21 +137,70 @@ const props = defineProps<{
   loading: boolean;
   sending: boolean;
   showBack: boolean;
+  /** 첨부 업로드 함수 — useChat.uploadAttachment 주입. */
+  uploadFn?: (file: File) => Promise<AttachmentUploadResponse | null>;
 }>();
 
 const emit = defineEmits<{
-  (e: 'send', content: string): void;
+  (e: 'send', content: string, attachmentIds: string[]): void;
   (e: 'back'): void;
 }>();
 
 const draft = ref('');
 const bodyRef = ref<HTMLElement | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const pendingAttachments = ref<AttachmentRef[]>([]);
+const uploadingFiles = ref(false);
+const menuOpen = ref(false);
+const fontSize = ref<'sm' | 'md' | 'lg'>('md');
+
+// 폰트 크기 — localStorage 저장 (페이지 reload 후 유지).
+onMounted(() => {
+  if (typeof window === 'undefined') return;
+  const saved = window.localStorage.getItem('aidesk.chat.fontSize');
+  if (saved === 'sm' || saved === 'md' || saved === 'lg') fontSize.value = saved;
+  document.addEventListener('click', closeMenuOnOutside);
+});
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') document.removeEventListener('click', closeMenuOnOutside);
+});
+function closeMenuOnOutside(): void { menuOpen.value = false; }
+function setFontSize(s: 'sm' | 'md' | 'lg'): void {
+  fontSize.value = s;
+  if (typeof window !== 'undefined') window.localStorage.setItem('aidesk.chat.fontSize', s);
+}
+
+function onAttachClick(): void {
+  fileInputRef.value?.click();
+}
+
+async function onFileChange(e: Event): Promise<void> {
+  const target = e.target as HTMLInputElement;
+  const files = Array.from(target.files ?? []);
+  target.value = ''; // 같은 파일 다시 선택 가능하게.
+  if (files.length === 0 || !props.uploadFn) return;
+  uploadingFiles.value = true;
+  try {
+    for (const f of files) {
+      const result = await props.uploadFn(f);
+      if (result) pendingAttachments.value.push(result);
+    }
+  } finally {
+    uploadingFiles.value = false;
+  }
+}
+
+function removePending(attachmentId: string): void {
+  pendingAttachments.value = pendingAttachments.value.filter((a) => a.attachmentId !== attachmentId);
+}
 
 async function onSend(): Promise<void> {
   const text = draft.value.trim();
-  if (!text) return;
-  emit('send', text);
+  if (!text && pendingAttachments.value.length === 0) return;
+  const ids = pendingAttachments.value.map((a) => a.attachmentId);
+  emit('send', text, ids);
   draft.value = '';
+  pendingAttachments.value = [];
   await nextTick();
   scrollToBottom();
 }
@@ -153,6 +247,23 @@ function formatTime(iso: string): string {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+function attachmentIcon(contentType: string | null | undefined): string {
+  const ct = (contentType ?? '').toLowerCase();
+  if (ct.startsWith('image/')) return '🖼';
+  if (ct.startsWith('video/')) return '🎬';
+  if (ct.startsWith('audio/')) return '🎵';
+  if (ct === 'application/pdf') return '📄';
+  if (ct.includes('zip') || ct.includes('tar') || ct.includes('gzip')) return '🗜';
+  if (ct.startsWith('text/')) return '📝';
+  return '📎';
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 </script>
 
@@ -305,8 +416,124 @@ function formatTime(iso: string): string {
 .conv-body::-webkit-scrollbar-thumb { background: #2A3447; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 .conv-body::-webkit-scrollbar-thumb:hover { background: #3A4A66; background-clip: padding-box; }
 
+/* 폰트 사이즈 — root section .font-sm/md/lg 가 메시지 본문/시간/입력 일괄 조정.
+   chip / header / status 같은 보조 요소는 고정. */
+.conv-view.font-sm .cv-content, .conv-view.font-sm .cv-textarea { font-size: 12px; }
+.conv-view.font-md .cv-content, .conv-view.font-md .cv-textarea { font-size: 13px; }
+.conv-view.font-lg .cv-content, .conv-view.font-lg .cv-textarea { font-size: 15px; }
+.conv-view.font-sm .cv-msg .cv-bubble { padding: 8px 12px; }
+.conv-view.font-lg .cv-msg .cv-bubble { padding: 12px 16px; }
+
+/* 헤더의 ... 메뉴 */
+.cv-head-actions { margin-left: auto; position: relative; }
+.cv-menu-btn {
+  background: transparent; border: none; cursor: pointer;
+  color: #8B95A5; font-size: 22px; font-weight: 700; line-height: 1;
+  padding: 4px 10px; border-radius: 8px;
+  transition: background .1s, color .12s;
+}
+.cv-menu-btn:hover { background: rgba(79, 127, 255, 0.1); color: #E5E9EE; }
+.cv-menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  background: #141C30; border: 1px solid #2A3447;
+  border-radius: 10px; padding: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  z-index: 20; min-width: 200px;
+}
+.cv-menu-section { display: flex; flex-direction: column; gap: 8px; }
+.cv-menu-label { font-size: 11px; color: #8B95A5; text-transform: uppercase; letter-spacing: 0.05em; }
+.cv-font-row { display: flex; gap: 6px; }
+.cv-font-btn {
+  flex: 1; padding: 6px 8px; font-size: 12px;
+  background: #1A2030; color: #C5CDD8;
+  border: 1px solid #2A3447; border-radius: 6px; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.cv-font-btn:hover { background: #232C42; color: #fff; }
+.cv-font-btn.active {
+  background: linear-gradient(135deg, #4F7FFF, #7C5CFF);
+  color: #fff; border-color: transparent;
+}
+
+/* 첨부 chip — 메시지 버블 안. 카카오톡 느낌 — 파일 아이콘 + 이름 + 크기 + 다운 아이콘 */
+.cv-attachments { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.cv-att-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.18); border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  color: inherit; text-decoration: none;
+  transition: background .12s, transform .1s;
+  min-width: 200px;
+}
+.cv-msg.mine .cv-att-chip { background: rgba(0, 0, 0, 0.15); border-color: rgba(255, 255, 255, 0.18); }
+.cv-msg.theirs .cv-att-chip { background: rgba(255, 255, 255, 0.04); border-color: #2A3447; }
+.cv-att-chip:hover {
+  background: rgba(79, 127, 255, 0.18);
+  transform: translateY(-1px);
+}
+.cv-att-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+.cv-att-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cv-att-name {
+  font-size: 13px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 240px;
+}
+.cv-att-size { font-size: 11px; color: #8B95A5; margin-top: 1px; }
+.cv-msg.mine .cv-att-size { color: rgba(255, 255, 255, 0.7); }
+.cv-att-download {
+  flex-shrink: 0;
+  font-size: 16px;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  transition: background .12s;
+}
+.cv-att-chip:hover .cv-att-download { background: rgba(255, 255, 255, 0.22); }
+
+/* composer pending chips */
+.cv-pending-attachments {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-bottom: 8px;
+}
+.cv-pending-uploading {
+  font-size: 12px; color: #8B95A5;
+  padding: 4px 10px; background: #1A2030; border-radius: 12px;
+}
+.cv-pending-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px;
+  background: #1A2030; border: 1px solid #2A3447; border-radius: 14px;
+  font-size: 12px;
+}
+.cv-pending-name { max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-pending-size { color: #8B95A5; font-size: 11px; }
+.cv-pending-x {
+  background: transparent; border: none; cursor: pointer;
+  color: #8B95A5; font-size: 13px; padding: 0 2px;
+}
+.cv-pending-x:hover { color: #F87171; }
+
+.cv-composer-row { display: flex; gap: 8px; align-items: flex-end; }
+.cv-attach-btn {
+  background: #1A2030; color: #B89AFF;
+  border: 1px solid #2A3447; border-radius: 10px;
+  width: 40px; height: 40px;
+  font-size: 18px; cursor: pointer;
+  transition: background .12s, transform .1s, border-color .12s;
+  flex-shrink: 0;
+}
+.cv-attach-btn:hover:not(:disabled) {
+  background: #232C42; border-color: #4F7FFF;
+  transform: translateY(-1px);
+}
+.cv-attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cv-file-input { display: none; }
+
 /* 모바일 */
 @media (max-width: 768px) {
   .cv-back { display: block; }
+  .cv-att-name { max-width: 160px; }
 }
 </style>
