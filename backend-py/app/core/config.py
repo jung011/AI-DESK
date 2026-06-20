@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     message_context_limit_pct: int = Field(default=90, alias="MESSAGES_POLICY_CONTEXT_LIMIT_PCT")
     message_hop_limit: int = Field(default=10, alias="MESSAGES_POLICY_HOP_LIMIT")
     message_rate_limit_per_minute: int = Field(default=30, alias="MESSAGES_POLICY_RATE_LIMIT_PER_MINUTE")
-    message_content_max_length: int = 1000
+    message_content_max_length: int = Field(default=4000, alias="MESSAGES_CONTENT_MAX_LENGTH")
 
     # 외부 URL (frontend 사용)
     metaverse_url: str = ""

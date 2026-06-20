@@ -93,13 +93,14 @@ def test_send_context_guard_rejects(client, two_agents, db_session):
     assert "컨텍스트" in rs.json()["data"]["errorReason"]
 
 
-def test_send_1000char_limit_validation(client, two_agents):
+def test_send_4000char_limit_validation(client, two_agents):
+    """message content max = 4000 (rc36 — Discord/WhatsApp 수준 상향)."""
     sender, receiver = two_agents
+    # 4001자 = pydantic 422
     rs = client.post(
         "/api/messages",
-        json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": "x" * 1001},
+        json={"fromAgentId": sender.agent_id, "toAgentId": receiver.agent_id, "content": "x" * 4001},
     )
-    # Pydantic validation → 422
     assert rs.status_code == 422
 
 
