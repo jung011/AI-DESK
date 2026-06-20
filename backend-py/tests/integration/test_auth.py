@@ -150,3 +150,69 @@ def test_sign_out_revokes_all_and_clears_cookies(client, db_session):
 
     tokens = db_session.query(RefreshToken).filter_by(login_id="alice@example.com").all()
     assert all(t.revoked_yn == "Y" for t in tokens)
+
+
+# ---- access token expired/invalid 처리 (rc26) ----
+# expired = {code:'ET'} (frontend interceptor 가 refresh 자동 호출)
+# invalid / missing = {code:'NA'} (즉시 logout)
+# 두 case 가 *반드시 다르게* 응답해야 frontend refresh path 정상 작동.
+
+from datetime import datetime, timedelta, timezone
+
+from jose import jwt as _jwt
+
+from app.core.config import get_settings as _get_settings
+
+
+def _make_access(login_id: str, account_sn: int, exp_delta_seconds: int) -> str:
+    """test 용 access token. exp_delta_seconds 가 음수면 expired."""
+    settings = _get_settings()
+    payload = {
+        "sub": login_id,
+        "accountSn": account_sn,
+        "role": "USER",
+        "exp": datetime.now(tz=timezone.utc) + timedelta(seconds=exp_delta_seconds),
+    }
+    return _jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def test_protected_endpoint_returns_ET_on_expired_access(client):
+    """rc26 핵심 — expired access → {code:'ET'}. frontend 가 자동 refresh + 재시도 path 진입."""
+    _signup(client)
+    expired = _make_access("alice@example.com", 1, exp_delta_seconds=-60)
+
+    rs = client.get("/api/colleagues", cookies={"accessToken": expired})
+    assert rs.status_code == 401
+    body = rs.json()
+    assert body == {"code": "ET", "message": "Token expired"}
+
+
+def test_protected_endpoint_returns_NA_on_invalid_access(client):
+    """signature 위조 / format 깨진 token → {code:'NA'} (refresh 시도 X — 즉시 logout)."""
+    rs = client.get("/api/colleagues", cookies={"accessToken": "garbage-not-a-jwt"})
+    assert rs.status_code == 401
+    body = rs.json()
+    assert body == {"code": "NA", "message": "Not authenticated"}
+
+
+def test_protected_endpoint_returns_NA_on_missing_access(client):
+    """access cookie 자체 없음 → {code:'NA'}."""
+    rs = client.get("/api/colleagues")
+    assert rs.status_code == 401
+    body = rs.json()
+    assert body == {"code": "NA", "message": "Not authenticated"}
+
+
+def test_protected_endpoint_returns_NA_on_signature_mismatch(client):
+    """다른 secret 으로 sign 된 token → {code:'NA'} (signature invalid)."""
+    payload = {
+        "sub": "alice@example.com",
+        "accountSn": 1,
+        "role": "USER",
+        "exp": datetime.now(tz=timezone.utc) + timedelta(seconds=60),
+    }
+    forged = _jwt.encode(payload, "wrong-secret-32-bytes-long-for-test", algorithm="HS256")
+    rs = client.get("/api/colleagues", cookies={"accessToken": forged})
+    assert rs.status_code == 401
+    body = rs.json()
+    assert body == {"code": "NA", "message": "Not authenticated"}
