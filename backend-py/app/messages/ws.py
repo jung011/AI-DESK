@@ -111,34 +111,21 @@ def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, b
     """3경로 인증 — Spring JwtHandshakeInterceptor 1:1.
 
     Returns (account_sn, agent_id) 또는 None (인증 실패).
+
+    **우선순위 (rc33 변경)** — 명시적 인증 (bearer / agentId) 가 cookie 보다 우선.
+    이유: dashboard 와 같은 origin (kaflix.internal) 에서 외부 AI mcp 의 ws connect
+    시 *browser 의 cookie 자동 첨부* 가 backend 의 cookie path 통과 → agent_id=null
+    반환 → _toggle_status 의 idle 마킹 path 안 거침. bearer 가 *명시적 인증 의도*
+    이므로 cookie 보다 먼저 검사.
     """
     log.info(
         "[ws-handshake] start — cookie=%s agentId=%s bearer=%s",
         bool(cookie_token), bool(agent_id), bool(bearer_token),
     )
-    # 1) cookie JWT
-    if cookie_token:
-        user = AuthService.decode_access_token(cookie_token)
-        if user is not None:
-            log.info("[ws-handshake] OK via cookie account_sn=%s", user.account_sn)
-            return (user.account_sn, None)
-        log.warning("[ws-handshake] cookie present but decode failed")
-
-    # 2) ?agentId=<UUID> — 내부 봇 어댑터
-    if agent_id:
-        repo = AgentRepository(db)
-        agent: AiAgent | None = repo.find_by_agent_id_any_owner(agent_id)
-        if agent is not None and agent.owner_account_sn is not None:
-            log.info("[ws-handshake] OK via agentId=%s owner=%s", agent_id, agent.owner_account_sn)
-            return (agent.owner_account_sn, agent_id)
-        log.warning("[ws-handshake] reject — agentId=%s not found", agent_id)
-        return None
-
-    # 3) ?token=aidesk_ext_... — 외부 AI Bearer token
+    # 1) ?token=aidesk_ext_... — 외부 AI Bearer token (명시적 외부 인증 — 가장 먼저 처리)
     if _looks_like_bearer(bearer_token):
         repo = AgentRepository(db)
         token_hash = _hash_bearer(bearer_token)  # type: ignore[arg-type]
-        # bearer_token_hash 컬럼으로 agent 조회 — Spring AgentMapper.selectByBearerTokenHash 와 동등
         match: AiAgent | None = None
         for a in repo.list_all_active():
             if a.bearer_token_hash == token_hash:
@@ -152,6 +139,24 @@ def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, b
             return (match.owner_account_sn, match.agent_id)
         log.warning("[ws-handshake] reject — bearer token not matched (token_hash=%s...)", token_hash[:12])
         return None
+
+    # 2) ?agentId=<UUID> — 내부 봇 어댑터 (명시적 agent 인증)
+    if agent_id:
+        repo = AgentRepository(db)
+        agent: AiAgent | None = repo.find_by_agent_id_any_owner(agent_id)
+        if agent is not None and agent.owner_account_sn is not None:
+            log.info("[ws-handshake] OK via agentId=%s owner=%s", agent_id, agent.owner_account_sn)
+            return (agent.owner_account_sn, agent_id)
+        log.warning("[ws-handshake] reject — agentId=%s not found", agent_id)
+        return None
+
+    # 3) cookie JWT (frontend dashboard default — agent_id 없음)
+    if cookie_token:
+        user = AuthService.decode_access_token(cookie_token)
+        if user is not None:
+            log.info("[ws-handshake] OK via cookie account_sn=%s", user.account_sn)
+            return (user.account_sn, None)
+        log.warning("[ws-handshake] cookie present but decode failed")
 
     log.warning("[ws-handshake] reject — no cookie / agentId / token")
     return None
