@@ -1,0 +1,37 @@
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.uv/
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# uv lockfile - 포함 (재현성)
+# !uv.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# env
+.env
+.env.local
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+
+# helper-pkg (binary) — backend-py/helper-pkg/ 의 .pkg 는 git 에 포함 (negation)
+!helper-pkg/*.pkg
+
+# aidesk-channel mcp standalone binaries — GHA bun build 시점에 생성
+static/mcp/aidesk-channel-mcp*
+dev.db

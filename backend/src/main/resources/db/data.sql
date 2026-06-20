@@ -1,6 +1,0 @@
--- AI Desk 시드 데이터 — 1단계 데모용 더미를 제거했음.
--- 적용: docker exec -i postgres-db psql -U postgres -d aidesk < backend/src/main/resources/db/data.sql
---
--- 새 환경을 깨끗하게 시작하려면 schema.sql 만 적용하면 충분하다.
--- 이전 시드(에이전트 3종 + 메시지 4건)가 필요하면 git history 에서 복구:
---   git show 0784537^:backend/src/main/resources/db/data.sql
