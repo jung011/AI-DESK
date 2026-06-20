@@ -158,10 +158,31 @@ def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, b
 
 
 def _toggle_status(db: Session, agent_id: str, new_status: str) -> None:
-    """ws connect/disconnect 시점에 agent.status 토글. Spring AgentMapper.updateStatusSystem 동등."""
+    """ws connect/disconnect 시점에 agent.status 토글. Spring AgentMapper.updateStatusSystem 동등.
+
+    *진단용 trace SSE event* — 외부에서 직접 backend 흐름 확인 가능. 안정화 후 제거.
+    """
     repo = AgentRepository(db)
-    repo.update_status_from_watcher(agent_id, new_status)
-    db.commit()
+    try:
+        n = repo.update_status_from_watcher(agent_id, new_status)
+        db.commit()
+        log.info("[ws-toggle-status] agentId=%s status=%s rowcount=%d", agent_id, new_status, n)
+        # SSE trace — frontend 가 진행 확인 가능 (rc31)
+        from app.messages.sse import broker as _broker
+        _broker.publish("ws.toggle.trace", {
+            "agentId": agent_id,
+            "status": new_status,
+            "rowcount": n,
+        })
+    except Exception as e:  # noqa: BLE001
+        log.exception("[ws-toggle-status] failed agentId=%s status=%s", agent_id, new_status)
+        from app.messages.sse import broker as _broker
+        _broker.publish("ws.toggle.trace", {
+            "agentId": agent_id,
+            "status": new_status,
+            "error": str(e),
+        })
+        raise
 
 
 async def messages_ws_endpoint(
