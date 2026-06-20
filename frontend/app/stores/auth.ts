@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia';
-import { authDebug } from '~/utils/authDebug';
 
 const STORAGE_KEY = 'aidesk.auth';
 
@@ -47,17 +46,9 @@ export const useAuthStore = defineStore('auth', {
       this.user = user;
       if (import.meta.client) {
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-        authDebug('log', 'setUser', { accountSn: user.accountSn, loginId: user.loginId });
       }
     },
     clearUser() {
-      if (import.meta.client) {
-        authDebug('error', 'clearUser called', {
-          prevUser: this.user ? { accountSn: this.user.accountSn, loginId: this.user.loginId } : null,
-          location: window.location.href,
-          stack: new Error('clearUser stack').stack,
-        });
-      }
       this.user = null;
       if (import.meta.client) {
         sessionStorage.removeItem(STORAGE_KEY);
@@ -66,16 +57,11 @@ export const useAuthStore = defineStore('auth', {
     hydrate() {
       if (!import.meta.client) return;
       const raw = sessionStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        authDebug('log', 'hydrate — no sessionStorage entry');
-        return;
-      }
+      if (!raw) return;
       try {
         this.user = JSON.parse(raw) as AuthUser;
-        authDebug('log', 'hydrate ok', { accountSn: this.user?.accountSn });
       } catch {
         sessionStorage.removeItem(STORAGE_KEY);
-        authDebug('error', 'hydrate parse fail — sessionStorage cleared');
       }
     },
   },

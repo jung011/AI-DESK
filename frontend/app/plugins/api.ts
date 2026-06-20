@@ -13,7 +13,6 @@
  *   const res = await $api<MyType>('/api/agents');
  */
 import { useAuthStore } from '~/stores/auth';
-import { authDebug } from '~/utils/authDebug';
 
 // refresh 동시 다발성 큐잉 — 한 번에 한 refresh 만 진행.
 let refreshPromise: Promise<boolean> | null = null;
@@ -28,27 +27,16 @@ export default defineNuxtPlugin(() => {
     path.startsWith('/api/auth/signup');
 
   const tryRefresh = async (): Promise<boolean> => {
-    if (refreshPromise) {
-      authDebug('warn', 'refresh — re-using inflight promise');
-      return refreshPromise;
-    }
-    authDebug('warn', 'refresh — attempt');
+    if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
       try {
-        const res = await $fetch<{ result: number; message?: string; code?: string }>(
-          '/api/auth/refresh',
-          { baseURL, method: 'POST', credentials: 'include' },
-        );
-        const ok = res?.result === 0;
-        authDebug('warn', 'refresh — result', { ok, body: res });
-        return ok;
-      } catch (e) {
-        const err = e as { response?: { status?: number; _data?: unknown }; message?: string };
-        authDebug('error', 'refresh — exception', {
-          message: err?.message ?? String(e),
-          responseStatus: err?.response?.status,
-          responseBody: err?.response?._data,
+        const res = await $fetch<{ result: number }>('/api/auth/refresh', {
+          baseURL,
+          method: 'POST',
+          credentials: 'include',
         });
+        return res?.result === 0;
+      } catch {
         return false;
       } finally {
         // 다음 refresh 가능하도록 마이크로태스크 뒤에 비움
@@ -58,19 +46,12 @@ export default defineNuxtPlugin(() => {
     return refreshPromise;
   };
 
-  const redirectToLogin = (reason: string) => {
+  const redirectToLogin = () => {
     if (!import.meta.client) return;
     const auth = useAuthStore();
-    const route = useRoute();
-    authDebug('error', 'redirectToLogin', {
-      reason,
-      currentRoute: route.fullPath,
-      isAuthenticated: auth.isAuthenticated,
-      sessionStorageAuth: window.sessionStorage.getItem('aidesk.auth'),
-      stack: new Error('redirectToLogin stack').stack,
-    });
     auth.clearUser();
     const router = useRouter();
+    const route = useRoute();
     if (route.path !== '/login') {
       router.replace({ path: '/login', query: { redirect: route.fullPath } });
     }
@@ -86,14 +67,10 @@ export default defineNuxtPlugin(() => {
 
       // /api/auth/* 자신의 401 은 인터셉터 개입 X — 호출자가 알아서 처리.
       const path = String(ctx.request);
-      if (isAuthEndpoint(path)) {
-        authDebug('warn', '401 on /api/auth/* — interceptor skip', { path });
-        return;
-      }
+      if (isAuthEndpoint(path)) return;
 
-      const body = ctx.response?._data as { code?: string; message?: string } | undefined;
+      const body = ctx.response?._data as { code?: string } | undefined;
       const code = body?.code;
-      authDebug('warn', '401 received', { path, code, message: body?.message });
 
       // ET: access 만료 → refresh 후 원 요청 재시도. 한 번만 시도해 무한 루프 방지.
       const opts = ctx.options as unknown as { _retried?: boolean };
@@ -112,30 +89,19 @@ export default defineNuxtPlugin(() => {
               ctx.response._data = retried;
               Object.defineProperty(ctx.response, 'status', { value: 200, configurable: true });
             }
-            authDebug('warn', 'ET retry success', { path });
             return;
-          } catch (e) {
-            const err = e as { response?: { status?: number; _data?: unknown }; message?: string };
-            authDebug('error', 'ET retry failed', {
-              path,
-              message: err?.message ?? String(e),
-              responseStatus: err?.response?.status,
-              responseBody: err?.response?._data,
-            });
+          } catch {
+            // 재시도도 실패 — 아래 redirect 로 떨어짐
           }
         }
-        redirectToLogin(`ET refresh fail (path=${path})`);
+        redirectToLogin();
         return;
       }
 
       // NA: access 자체 없음/위조 → 즉시 로그인 화면
       if (code === 'NA') {
-        redirectToLogin(`NA (path=${path})`);
-        return;
+        redirectToLogin();
       }
-
-      // 그 외 401 (code 없음 등) — interceptor 가 logout 안 함. 호출자가 알아서.
-      authDebug('warn', '401 fall-through (no code match)', { path, code });
     },
   });
 

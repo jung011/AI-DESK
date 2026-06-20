@@ -1,5 +1,4 @@
 import { useAuthStore } from '~/stores/auth';
-import { authDebug } from '~/utils/authDebug';
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 import type {
   LoginAuthenticateRqVo,
@@ -36,9 +35,6 @@ export const useAuth = () => {
   };
 
   const signOut = async () => {
-    authDebug('warn', 'useAuth.signOut called', {
-      stack: new Error('signOut stack').stack,
-    });
     try {
       await $api<ApiEnvelope<number>>('/api/auth/sign-out', { method: 'POST' });
     } finally {

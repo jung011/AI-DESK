@@ -1,7 +1,6 @@
 import { defineNuxtRouteMiddleware, navigateTo } from '#app';
 import { useAuthStore } from '~/stores/auth';
 import { useHelperVersionStore } from '~/stores/helperVersion';
-import { authDebug } from '~/utils/authDebug';
 
 /**
  * 글로벌 인증 가드 (sample 패턴 동일).
@@ -45,13 +44,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const isPublic = PUBLIC_PATHS.has(to.path);
 
   if (!auth.isAuthenticated && !isPublic) {
-    if (import.meta.client) {
-      authDebug('error', 'middleware redirect to /login', {
-        to: to.fullPath,
-        from: to.path,
-        sessionStorageAuth: window.sessionStorage.getItem('aidesk.auth'),
-      });
-    }
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
   }
   if (auth.isAuthenticated && isPublic) {
