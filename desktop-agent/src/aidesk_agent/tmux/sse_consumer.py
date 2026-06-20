@@ -56,10 +56,23 @@ _QUEUE_GRACE_SEC = 0.5
 
 
 def _render_message(payload: dict) -> str:
+    content = payload.get("content", "")
+    attachments = payload.get("attachments") or []
+    if attachments:
+        # 채팅 첨부 (옵션 A) — backend가 보낸 attachments[] 를 tmux 텍스트 라인으로 append.
+        # AI 는 path 만 보고 본인 backend host 와 합성해 GET 으로 다운로드. URL prefix 는
+        # AI 환경마다 다를 수 있어 helper 가 host 까지 박지 않음.
+        lines = []
+        for a in attachments:
+            aid = a.get("attachmentId", "")
+            name = a.get("originalFilename", "")
+            size = a.get("sizeBytes", 0)
+            lines.append(f"📎 첨부 {name} ({size}b) — GET /api/attachments/{aid}")
+        content = content + "\n" + "\n".join(lines)
     return _HEADER_TEMPLATE.format(
         from_name=payload.get("fromAgentName", ""),
         msg_id=payload.get("messageId", ""),
-        content=payload.get("content", ""),
+        content=content,
     )
 
 
