@@ -69,7 +69,8 @@ export function useChat() {
         `/api/messages?${params}`
       );
       if (env.result === 0 && env.data) {
-        messages.value = env.data.list ?? [];
+        // backend = createdAt DESC (최신 first). 채팅 UI 는 최신이 *하단* — reverse.
+        messages.value = (env.data.list ?? []).slice().reverse();
       }
     } catch (e) {
       error.value = `메시지 조회 실패: ${e instanceof Error ? e.message : String(e)}`;
