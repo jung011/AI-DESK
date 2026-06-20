@@ -1,10 +1,16 @@
-"""SSE broker — recipient 별 emitter 분리 (rc20).
+"""SSE broker — recipient 별 emitter 분리 (rc25).
 
-옛 broadcast PoC ([[sse-emitter-separation-followup]]) 한계 fix:
-- 옛: 모든 subscriber 에 fan-out → 99% client 가 event 받자마자 skip
-- 새: subscribe 시 *tmux session filter* + publish 시 매칭 만 push
+이전 구조 (rc20) = 모든 subscriber 를 단일 list 에 두고 publish 시 for-loop fan-out
++ skip-by-filter. subscriber N 명일 때 publish 가 O(N).
 
-스레드/asyncio 안전 — asyncio.Queue 사용. backward compatible — filter 비어있으면 옛 broadcast 동작.
+새 구조 (rc25) = recipient (tmux_session) 별 set + filter 없는 broadcast set 분리.
+publish 시 target tmux 의 set 만 직접 lookup → O(1) (matched subscribers 수에 비례
+만 push). 다른 recipient 의 event 가 다른 subscriber queue 에 *애초에 enqueue 안 됨*
+= cross-recipient leakage 차단.
+
+스레드/asyncio 안전 — asyncio.Queue + dict/set 작업은 single event loop 안에서 진행.
+backward compatible — filter 빈 subscriber 는 broadcast set 으로 가서 *모든 event*
+수신 (dashboard frontend 등 옛 동작).
 """
 import asyncio
 import json
@@ -18,58 +24,92 @@ log = logging.getLogger(__name__)
 class SseBroker:
     """프로세스 안 in-memory broker. K8s replica > 1 시 Redis pub/sub 같은 외부 broker 필요.
 
-    subscriber 별 tmux_filter — publish 시 event.payload.toTmuxSession 매칭 시만 push.
-    filter 빈 값 = 모든 event 받음 (옛 broadcast 호환 — dashboard frontend 등).
+    구조:
+    - `_by_tmux[tmux]` = set of queues — 그 tmux 를 filter 에 박은 subscriber.
+    - `_broadcast` = set of queues — filter 비어있는 subscriber (모든 event 수신).
+
+    publish target:
+    - `data.toTmuxSession` 있음 → `_by_tmux[target]` ∪ `_broadcast`
+    - `data.toTmuxSession` 없음 (예: agent 상태) → 모든 subscriber (broadcast + 모든 by_tmux 합집합)
     """
 
     def __init__(self) -> None:
-        # queue → tmux_filter (frozenset). filter 빈 = 모든 event 수신.
-        self._subscribers: dict[asyncio.Queue[str], frozenset[str]] = {}
+        self._by_tmux: dict[str, set[asyncio.Queue[str]]] = {}
+        self._broadcast: set[asyncio.Queue[str]] = set()
+
+    @property
+    def total_subscribers(self) -> int:
+        """unique subscriber 수 — broadcast + 모든 by_tmux 합집합. 같은 queue 가 여러
+        tmux 에 박혀있을 수 있어 단순 합산 X.
+        """
+        unique: set[asyncio.Queue[str]] = set(self._broadcast)
+        for qs in self._by_tmux.values():
+            unique |= qs
+        return len(unique)
 
     async def subscribe(self, tmux_filter: frozenset[str] | None = None) -> asyncio.Queue[str]:
         q: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
-        self._subscribers[q] = tmux_filter or frozenset()
+        if not tmux_filter:
+            self._broadcast.add(q)
+        else:
+            for t in tmux_filter:
+                self._by_tmux.setdefault(t, set()).add(q)
         log.info(
-            "[sse-broker] subscribe — filter=%s total_subscribers=%d",
-            list(tmux_filter) if tmux_filter else "ALL", len(self._subscribers),
+            "[sse-broker] subscribe — filter=%s total=%d (by_tmux=%d broadcast=%d)",
+            sorted(tmux_filter) if tmux_filter else "ALL",
+            self.total_subscribers, len(self._by_tmux), len(self._broadcast),
         )
         return q
 
     def unsubscribe(self, q: asyncio.Queue[str]) -> None:
-        self._subscribers.pop(q, None)
-        log.info("[sse-broker] unsubscribe — total_subscribers=%d", len(self._subscribers))
+        self._broadcast.discard(q)
+        empty: list[str] = []
+        for t, qs in self._by_tmux.items():
+            qs.discard(q)
+            if not qs:
+                empty.append(t)
+        for t in empty:
+            self._by_tmux.pop(t, None)
+        log.info(
+            "[sse-broker] unsubscribe — total=%d (by_tmux=%d broadcast=%d)",
+            self.total_subscribers, len(self._by_tmux), len(self._broadcast),
+        )
 
     def publish(self, event_type: str, data: dict[str, Any]) -> None:
-        """매칭 subscriber 에만 push. queue full = drop (slow client 대비).
+        """target lookup → 매칭 subscriber 의 queue 에만 enqueue. queue full = drop.
 
-        매칭 규칙:
-        - subscriber 의 tmux_filter 가 비어있으면 = 모든 event 수신 (옛 broadcast)
-        - filter 있으면 = event.toTmuxSession 가 그 filter set 안 일 때만 push
-        - event 에 toTmuxSession 없으면 = filter 무관 모든 subscriber 받음 (예: agent 상태 broadcast)
+        target 결정:
+        - data 안 'toTmuxSession' 가 있으면 → `_by_tmux[target]` (없으면 빈 set) ∪ `_broadcast`
+        - 없으면 → broadcast 의 모든 subscriber (예: agent 상태처럼 recipient 무관 event)
         """
         payload = json.dumps(data, default=str, ensure_ascii=False)
         msg = f"event: {event_type}\ndata: {payload}\n\n"
         target_tmux = (data.get("toTmuxSession") or "").strip()
+
+        targets: set[asyncio.Queue[str]]
+        if target_tmux:
+            targets = set(self._broadcast) | self._by_tmux.get(target_tmux, set())
+        else:
+            # toTmuxSession 무관 event — broadcast 만. by_tmux 의 specific subscriber 에는
+            # *그 tmux 의 event 만* 가야 cross-recipient leakage 안 남. rc25 design 의 핵심.
+            targets = set(self._broadcast)
+
         sent = 0
-        skipped_filter = 0
-        for q, tmux_filter in list(self._subscribers.items()):
-            # filter 빈 = 모든 event. filter 있으면 target 매칭 확인.
-            if tmux_filter and target_tmux and target_tmux not in tmux_filter:
-                skipped_filter += 1
-                continue
+        for q in targets:
             try:
                 q.put_nowait(msg)
                 sent += 1
             except asyncio.QueueFull:
-                log.warning("sse subscriber queue full — dropping event")
+                log.warning("sse subscriber queue full — dropping event=%s", event_type)
         if target_tmux:
             log.info(
-                "[sse-broker] publish event=%s target=%s sent=%d skip_filter=%d",
-                event_type, target_tmux, sent, skipped_filter,
+                "[sse-broker] publish event=%s target=%s sent=%d (matched=%d broadcast=%d)",
+                event_type, target_tmux, sent,
+                len(self._by_tmux.get(target_tmux, set())), len(self._broadcast),
             )
 
     async def event_stream(self, tmux_filter: frozenset[str] | None = None) -> AsyncIterator[str]:
-        """starlette EventSourceResponse 패턴. tmux_filter = subscribe filter (rc20)."""
+        """starlette EventSourceResponse 패턴. tmux_filter = subscribe filter."""
         q = await self.subscribe(tmux_filter)
         try:
             yield "event: connected\ndata: {}\n\n"
