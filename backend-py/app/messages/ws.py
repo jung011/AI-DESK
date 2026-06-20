@@ -195,17 +195,32 @@ async def messages_ws_endpoint(
     cookie 는 websocket.cookies 에서 추출 — Spring JwtHandshakeInterceptor 의 SecurityContext 와 동일 효과.
     """
     cookie_token = websocket.cookies.get(settings.cookie_access_name)
+    _trace_id = f"ws-{id(websocket)}"
+    ws_broker_module = None  # late import 차단용
+    try:
+        from app.messages.sse import broker as _br
+        ws_broker_module = _br
+        _br.publish("ws.trace", {"stage": "enter", "traceId": _trace_id, "hasCookie": bool(cookie_token), "hasAgentId": bool(agentId), "hasToken": bool(token)})
+    except Exception:  # noqa: BLE001
+        log.exception("[ws-trace] publish enter failed")
 
     db = SessionLocal()
     try:
         auth = _authenticate(db, cookie_token, agentId, token)
+        if ws_broker_module:
+            ws_broker_module.publish("ws.trace", {"stage": "authenticated", "traceId": _trace_id, "ok": auth is not None})
         if auth is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         account_sn, ws_agent_id = auth
 
         await websocket.accept()
+        if ws_broker_module:
+            ws_broker_module.publish("ws.trace", {"stage": "accepted", "traceId": _trace_id, "agentId": ws_agent_id})
+
         await ws_broker.register(account_sn, ws_agent_id, websocket)
+        if ws_broker_module:
+            ws_broker_module.publish("ws.trace", {"stage": "registered", "traceId": _trace_id, "agentId": ws_agent_id})
 
         # connect → agent status='idle' (Spring 동등)
         if ws_agent_id:
