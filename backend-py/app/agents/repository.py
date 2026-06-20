@@ -1,10 +1,14 @@
 """agents DB 접근 — Spring AgentMapper 와 1:1."""
+import logging
+import traceback
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.agents.models import AiAgent
+
+log = logging.getLogger(__name__)
 
 
 class AgentRepository:
@@ -79,7 +83,23 @@ class AgentRepository:
         return result.rowcount
 
     def update_status_from_watcher(self, agent_id: str, status: str) -> int:
-        """desktop reporter / scheduler 가 status 갱신. updated_at 도 갱신."""
+        """desktop reporter / scheduler 가 status 갱신. updated_at 도 갱신.
+
+        rc23 — 외부 AI 의 status='offline' 마킹 시 stack trace log (진짜 caller 추적).
+        prod 의 미발견 path 진단 용도. 안정화 후 제거.
+        """
+        # 외부 AI agent_id list — 모니터 대상
+        _trace_agents = {
+            "d30ed790-4f93-42c4-b181-7650e4c86a7f",  # 아이리스2-new
+            "56b0c1ac-0cec-4a85-a80b-7e5eba9fe461",  # 아이리스3-new
+            "95e820a0-5f6b-4449-89bc-c87aa99f76f3",  # 아이리스4
+        }
+        if agent_id in _trace_agents and status == "offline":
+            stack = "".join(traceback.format_stack()[:-1])  # 자기 frame 제외
+            log.warning(
+                "[trace] update_status_from_watcher → 'offline' for external agent_id=%s\n%s",
+                agent_id, stack,
+            )
         result = self.db.execute(
             update(AiAgent)
             .where(AiAgent.agent_id == agent_id, AiAgent.deleted_at.is_(None))
