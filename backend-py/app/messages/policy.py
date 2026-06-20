@@ -92,8 +92,12 @@ def check_send(
     1000자 limit 은 schemas.MessageCreateRq.content max_length 에서 차단.
     self-message 는 caller 가 별도로 처리.
     """
-    # context guard
-    if receiver.context_pct is not None and receiver.context_pct >= settings.message_context_limit_pct:
+    # context guard — 휴먼 sender 는 예외 (사용자 의도 차단 안 됨). AI ↔ AI 만 적용.
+    if (
+        sender.model != "human"
+        and receiver.context_pct is not None
+        and receiver.context_pct >= settings.message_context_limit_pct
+    ):
         return PolicyResult.reject(f"수신 AI 컨텍스트 {settings.message_context_limit_pct}% 초과")
 
     # hop limit
