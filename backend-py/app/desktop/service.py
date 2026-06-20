@@ -27,8 +27,16 @@ class DesktopService:
             return rs
 
         # 모든 user 의 agent — helper-user binding 후속 작업 전까지 매칭만.
+        # 외부 AI (agent_type='external') 는 by_ws 에서 제외 — workspace_dir 가 placeholder
+        # '(external)' 라 매칭 가능성 X 지만 *명시적 safeguard*. helper reporter 의 어떤
+        # path 라도 외부 AI 강등 시도 안 함 (rc22 fix). [[fastapi-watcher-external-skip]]
+        # 패턴 정합.
         all_agents = self.repo.list_all_active()
-        by_ws = {a.workspace_dir: a for a in all_agents if a.workspace_dir}
+        by_ws = {
+            a.workspace_dir: a
+            for a in all_agents
+            if a.workspace_dir and a.agent_type != "external"
+        }
 
         # 보고된 tmux session 이름 set — agent.tmux_session 이 여기 없으면 offline 강제
         reported_tmux = {t.name for t in req.tmux_sessions if t.name}
