@@ -186,7 +186,20 @@ async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
 
 
 async def _consume_once(backend_url: str) -> None:
-    url = f"{backend_url.rstrip('/')}/api/desktop/events"
+    # rc20 — SSE recipient 별 filter. backend 가 현재 mac 의 tmux session 매칭 event 만 push.
+    # outer loop 의 reconnect (2분 마다 ReadTimeout) 시 *현재 tmux 다시 scan* 으로 filter 자동 갱신.
+    from urllib.parse import quote
+    from ..tmux import scan_sessions
+    try:
+        sessions = scan_sessions()
+        tmux_names = sorted({s.name for s in sessions if s.name})
+    except Exception:  # noqa: BLE001 — scan 실패 시 빈 filter (broadcast 모드 fallback)
+        tmux_names = []
+    base = f"{backend_url.rstrip('/')}/api/desktop/events"
+    if tmux_names:
+        url = base + "?filter=" + quote(",".join(tmux_names), safe="")
+    else:
+        url = base
     # VPN / 사외 LAN 환경에서 라우터가 idle TCP 를 silent 끊어도 read=None 이면
     # zombie connection 으로 영원히 wait — deliver event 누락. read timeout 으로
     # N초 event 없으면 ReadTimeout 발생 → 바깥의 consumer_loop 가 자동 reconnect.

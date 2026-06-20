@@ -102,8 +102,9 @@ def _hash_bearer(raw: str) -> str:
 
 
 def _looks_like_bearer(raw: str | None) -> bool:
-    # FastAPI 의 token 발급이 prefix 없는 regression — 임시 prefix 체크 제거. 매칭 자체가 brute-force 방지.
-    return bool(raw)
+    # Spring BearerTokenUtil 정합 — rc17 부터 새 token = 'aidesk_ext_' prefix.
+    # 옛 prefix 없는 token (rc16 이전 발급) 은 rotate 필요.
+    return bool(raw) and raw.startswith("aidesk_ext_")
 
 
 def _authenticate(db: Session, cookie_token: str | None, agent_id: str | None, bearer_token: str | None) -> tuple[int, str | None] | None:

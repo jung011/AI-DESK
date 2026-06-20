@@ -34,16 +34,21 @@ async def upload_local_info(
 
 
 @router.get("/events")
-async def events() -> StreamingResponse:
+async def events(filter: str = "") -> StreamingResponse:
     """SSE channel — helper / dashboard 가 subscribe. messages 의 broker 재사용 (단일 채널).
+
+    Query:
+    - `filter` (선택): comma-separated tmux session name (예: `aidesk-abc,aidesk-self-liki`).
+      매칭 event 만 받음. 빈 값 = 모든 event (옛 broadcast 호환).
 
     이벤트 타입:
     - `event: connected` — 초기
-    - `event: message.created` — 새 메시지
+    - `event: message.deliver` — 새 메시지 (recipient 의 tmux 매칭 만)
     - `: keepalive` (15초)
     """
+    tmux_filter = frozenset(s for s in filter.split(",") if s.strip()) if filter else None
     return StreamingResponse(
-        broker.event_stream(),
+        broker.event_stream(tmux_filter),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
