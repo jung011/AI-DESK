@@ -31,7 +31,7 @@ backend:
     policyContextLimitPct: "90"
     retryRecipientOfflineSec: "180"
   jwt:
-    accessExpirationSeconds: "3600"
+    accessExpirationSeconds: "60"
     refreshExpirationSeconds: "2592000"
   cookieDomain: ".kaflix.internal"
   metaverseUrl: "http://metaverse.kaflix.internal/"
