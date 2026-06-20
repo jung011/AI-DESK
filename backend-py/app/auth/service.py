@@ -7,7 +7,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from jose import JWTError, jwt
+from jose import ExpiredSignatureError, JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.agents.models import AiAgent
@@ -188,8 +188,15 @@ class AuthService:
 
     @staticmethod
     def decode_access_token(token: str) -> AuthenticatedUser | None:
+        """access JWT decode. 만료 시 ExpiredSignatureError propagate (deps 가 TokenExpired 로 변환).
+
+        signature/format invalid 시 None 반환 (= NotAuthenticated). expired 와 invalid 구분 필수 —
+        frontend 의 refresh path 가 ET 코드 일 때만 작동.
+        """
         try:
             claims = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        except ExpiredSignatureError:
+            raise  # deps.current_user 가 TokenExpired 로 변환
         except JWTError:
             return None
         login_id = claims.get("sub")

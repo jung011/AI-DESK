@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from jose import JWTError
+from jose import ExpiredSignatureError, JWTError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.common.response import fail
@@ -33,6 +33,16 @@ class NotAuthenticated(ApiException):
         super().__init__(code=401, message=message, http_status=401)
 
 
+class TokenExpired(ApiException):
+    """`{code: "ET"}` — access token 만료. frontend interceptor 가 자동 refresh trigger.
+
+    NotAuthenticated 와 구분 필수 — 옛 패턴 (둘 다 NA) 시 frontend 가 refresh 안 시도 → 즉시 logout.
+    """
+
+    def __init__(self, message: str = "Token expired") -> None:
+        super().__init__(code=401, message=message, http_status=401)
+
+
 class Forbidden(ApiException):
     def __init__(self, message: str = "Forbidden") -> None:
         super().__init__(code=403, message=message, http_status=403)
@@ -49,11 +59,30 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={"code": "NA", "message": exc.message},
         )
 
+    @app.exception_handler(TokenExpired)
+    async def _token_expired(_: Request, exc: TokenExpired) -> JSONResponse:
+        # frontend 가 {code: "ET"} 시그널로 /api/auth/refresh 자동 호출 + 원 요청 재시도
+        return JSONResponse(
+            status_code=exc.http_status,
+            content={"code": "ET", "message": exc.message},
+        )
+
     @app.exception_handler(ApiException)
     async def _api_exception(_: Request, exc: ApiException) -> JSONResponse:
         return JSONResponse(
             status_code=exc.http_status,
             content=fail(exc.code, exc.message).model_dump(),
+        )
+
+    @app.exception_handler(ExpiredSignatureError)
+    async def _expired_signature(_: Request, exc: ExpiredSignatureError) -> JSONResponse:
+        # ExpiredSignatureError 는 JWTError 의 subclass — 더 구체적인 handler 가 먼저 매칭됨.
+        # 직접 raise 안 했을 때 (예: decode 안 catch 한 path) 의 안전망. 정상 path 는 deps 의
+        # TokenExpired 가 먼저 처리.
+        log.info("JWT expired (fallback handler): %s", exc)
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"code": "ET", "message": "Token expired"},
         )
 
     @app.exception_handler(JWTError)
