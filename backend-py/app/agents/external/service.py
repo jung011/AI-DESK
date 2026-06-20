@@ -15,6 +15,7 @@ from app.agents.external.schemas import ExternalAgentCreateRq, ExternalAgentToke
 from app.agents.models import AiAgent
 from app.agents.repository import AgentRepository
 from app.core.exceptions import ApiException
+from app.messages.sse import broker
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ class ExternalAgentService:
         self.repo.insert(agent)
         self.db.commit()
         log.info("external-agent created agentId=%s name=%s owner=%s", agent_id, body.agent_name, owner_account_sn)
+        broker.publish("agent.changed", {"event": "external.created", "agentId": agent_id})
         return ExternalAgentTokenRs(agent_id=agent_id, agent_name=agent.agent_name, token=raw)
 
     def rotate_token(self, agent_id: str, owner_account_sn: int) -> ExternalAgentTokenRs:
@@ -67,6 +69,7 @@ class ExternalAgentService:
         agent.bearer_token_created_at = datetime.now(tz=timezone.utc)
         self.db.commit()
         log.info("external-agent token rotated agentId=%s", agent_id)
+        broker.publish("agent.changed", {"event": "external.rotated", "agentId": agent_id})
         return ExternalAgentTokenRs(agent_id=agent_id, agent_name=agent.agent_name, token=raw)
 
     def revoke_token(self, agent_id: str, owner_account_sn: int) -> None:
@@ -77,6 +80,7 @@ class ExternalAgentService:
         # 별도 ws layer 가 없을 시점 (PoC) 이라 row 의 hash 만 무효화.
         self.db.commit()
         log.info("external-agent token revoked agentId=%s", agent_id)
+        broker.publish("agent.changed", {"event": "external.revoked", "agentId": agent_id})
 
     def _find_owned_external(self, agent_id: str, owner_account_sn: int) -> AiAgent:
         agent = self.repo.find_by_agent_id(agent_id)

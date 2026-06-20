@@ -10,6 +10,7 @@ from app.agents.repository import AgentRepository
 from app.agents.schemas import AgentCreateRq, AgentItem, AgentListRs, AgentRealtimeItem
 from app.messages.policy import can_communicate
 from app.messages.repository import MessageRepository
+from app.messages.sse import broker
 
 log = logging.getLogger(__name__)
 
@@ -119,13 +120,17 @@ class AgentService:
         self.repo.insert(agent)
         self.db.commit()
         self.db.refresh(agent)
+        broker.publish("agent.changed", {"event": "internal.created", "agentId": agent.agent_id})
         return _to_item(agent)
 
     def delete(self, agent_id: str) -> bool:
         """soft delete. helper 의 tmux/.claude history 정리는 frontend 가 별도 호출."""
         n = self.repo.soft_delete(agent_id)
         self.db.commit()
-        return n > 0
+        ok = n > 0
+        if ok:
+            broker.publish("agent.changed", {"event": "deleted", "agentId": agent_id})
+        return ok
 
     # ---- status ----
 
