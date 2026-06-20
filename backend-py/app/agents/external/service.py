@@ -23,8 +23,12 @@ EXTERNAL_WORKSPACE_PLACEHOLDER = "(external)"
 
 
 def _generate_raw_token() -> str:
-    """URL-safe Bearer token — Spring BearerTokenUtil.generateRawToken 과 동등 entropy."""
-    return secrets.token_urlsafe(32)
+    """URL-safe Bearer token — Spring BearerTokenUtil.generateRawToken 과 동등 entropy.
+
+    Spring 정합 — `aidesk_ext_` prefix 박음 (옛 마이그 시 누락된 regression fix, rc17).
+    ws.py 의 prefix check 는 rc11 부터 제거됨 (backward compat — 옛 prefix 없는 token 도 허용).
+    """
+    return "aidesk_ext_" + secrets.token_urlsafe(32)
 
 
 def _hash_token(raw: str) -> str:
