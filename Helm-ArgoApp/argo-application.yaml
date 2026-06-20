@@ -43,21 +43,7 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ApplyOutOfSyncOnly=true
-          # ServerSideApply: ArgoCD 가 kubernetes server-side apply 사용 → managed-fields
-          # 기준으로 *변경된 필드만* patch. ignoreDifferences 의 jwt-secret-key 가 *진짜*
-          # apply 단계에서도 무시되도록 함. client-side apply 면 full object replace 라
-          # ignoreDifferences 가 *비교* 만 무시 + *apply 자체* 가 새 값 덮어쓰는 한계.
           - ServerSideApply=true
-      # 매 sync 마다 helm template 가 secret.yaml 의 randAlphaNum 을 새로 평가해서
-      # jwt-secret-key 가 rotate → 사용자 로그아웃 발생. ArgoCD 가 *secret 의 jwt-secret-key
-      # 변경 자체를 비교 대상에서 제외* 해서 sync 가 그 키 안 건드림. db-password 등
-      # 다른 키는 그대로 비교/sync.
-      ignoreDifferences:
-        - group: ""
-          kind: Secret
-          # helm fullname = release '{{ .Release.Name }}' + chart name → 'aidesk-ai-desk'.
-          # 옛 'aidesk' 만 적었던 게 매칭 실패의 원인 — sync 마다 jwt rotate.
-          name: aidesk-ai-desk
-          jsonPointers:
-            - /data/jwt-secret-key
-            - /stringData/jwt-secret-key
+      # jwt-secret-key 는 helm chart 에서 분리 — aidesk-ai-desk-jwt secret 별도 manual
+      # kubectl 운영. helm 가 jwt 자체 안 만짐 → sync 마다 rotate 가능성 0. 옛 ignoreDifferences
+      # fix 의 SSA apply 한계 (비교 skip 은 OK 그러나 apply 자체 덮어쓰기) 회피.

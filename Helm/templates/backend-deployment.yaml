@@ -48,9 +48,12 @@ spec:
                   name: {{ include "ai-desk.fullname" . }}
                   key: db-password
             - name: JWT_SECRET_KEY
+              # jwt-secret-key 는 별도 secret (manual kubectl) 로 분리 — helm 가 jwt 자체
+              # 안 만짐 → ArgoCD sync 마다 rotate 위험 0. 옛 fix (ignoreDifferences) 의 SSA
+              # apply 한계 회피.
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "ai-desk.fullname" . }}
+                  name: {{ include "ai-desk.fullname" . }}-jwt
                   key: jwt-secret-key
             {{- if .Values.backend.tz }}
             - name: TZ
