@@ -431,9 +431,10 @@ def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
                 ["tmux", "send-keys", "-l", "-t", tmux_session, prompt],
                 check=True, capture_output=True,
             )
-            time.sleep(0.2)
+            # 최근 claude code update 후 Enter 흡수 → 500ms + raw C-m (sse_consumer 와 동일 패턴).
+            time.sleep(0.5)
             subprocess.run(
-                ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                ["tmux", "send-keys", "-t", tmux_session, "C-m"],
                 check=True, capture_output=True,
             )
             log.info("bootstrap: prompt injected session=%s chars=%d", tmux_session, len(prompt))

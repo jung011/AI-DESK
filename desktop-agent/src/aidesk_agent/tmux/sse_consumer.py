@@ -21,8 +21,10 @@ _HEADER_TEMPLATE = (
     "[aidesk · FROM:{from_name} | MSG:{msg_id}] {content}"
     "  ↳ 응답: adesk reply {msg_id} '<답변>'"
 )
-# Claude TUI 가 bracketed-paste 로 Enter 를 흡수하지 않도록 분리 송신 사이 짧은 지연.
-_ENTER_DELAY_SEC = 0.2
+# Claude TUI 가 bracketed-paste 로 Enter 를 흡수하지 않도록 분리 송신 사이 지연.
+# 최근 claude code update 후 옛 200ms + "Enter" 패턴에서 Enter 흡수 → 500ms + raw "C-m"
+# (carriage return) 으로 fix. C-m = terminal mode 무관 raw \r byte → paste mode 우회.
+_ENTER_DELAY_SEC = 0.5
 
 # 같은 tmux 세션으로 가는 메시지를 직렬 처리하기 위한 큐.
 # 여러 발신자가 동시에 같은 수신자로 보낼 때 tmux send-keys 가 race 해서
@@ -90,7 +92,7 @@ async def _tmux_send(session: str, text: str) -> bool:
             return False
         await asyncio.sleep(_ENTER_DELAY_SEC)
         p2 = await asyncio.create_subprocess_exec(
-            "tmux", "send-keys", "-t", session, "Enter",
+            "tmux", "send-keys", "-t", session, "C-m",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
