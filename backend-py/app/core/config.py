@@ -16,6 +16,18 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # 환경 flag — Spring 의 spring.profiles.active 등가. 'dev' / 'stg' / 'prod' (default prod).
+    # 환경별 분기 필요한 곳에 settings.environment 또는 helper property 사용.
+    environment: str = Field(default="prod", alias="AIDESK_ENV")
+
+    @property
+    def is_dev(self) -> bool:
+        return self.environment == "dev"
+
+    @property
+    def is_prod(self) -> bool:
+        return self.environment == "prod"
+
     # DB — 두 가지 입력 패턴:
     # 1) DB_URL 직접 (SQLAlchemy URL — dev / sqlite test 용)
     # 2) Spring 의 SPRING_DATASOURCE_URL/_USERNAME/_PASSWORD (prod helm ConfigMap+Secret)
