@@ -8,4 +8,5 @@ dist/
 # pkg 빌드 산출물
 build-pkg/build/
 build-pkg/dist/
-desktop-agent/bin/zellij
+# 동봉 zellij binary (github releases 다운, build 스크립트가 자동 fetch)
+bin/zellij
