@@ -90,7 +90,22 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     if agent_id and cwd_q:
         try:
             from ..claude.bootstrap import _register_local_mcp  # noqa: PLC0415
-            _register_local_mcp(cwd_q, agent_id, api_url=api_url_q or None)
+            # dev helper (port 30084) 인지 추론 — 기본 30083 이면 None (prod). 30083 외엔
+            # mcp 가 *이 helper* 조회하도록 AIDESK_HELPER_URL 명시.
+            try:
+                helper_port_self = request.transport.get_extra_info("sockname")[1]
+            except Exception:  # noqa: BLE001
+                helper_port_self = None
+            helper_url_override = (
+                f"http://127.0.0.1:{helper_port_self}"
+                if helper_port_self and helper_port_self != 30083
+                else None
+            )
+            _register_local_mcp(
+                cwd_q, agent_id,
+                api_url=api_url_q or None,
+                helper_url=helper_url_override,
+            )
         except Exception as e:  # noqa: BLE001
             log.warning("ws-terminal: mcp re-register failed cwd=%s agent=%s err=%s", cwd_q, agent_id, e)
 

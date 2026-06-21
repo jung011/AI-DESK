@@ -133,12 +133,20 @@ _LOCAL_MCP_NAME = "aidesk-channel"
 _LOCAL_MCP_BIN = "/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
 
 
-def _register_local_mcp(workspace_dir: str, agent_id: str, api_url: str | None = None) -> bool:
+def _register_local_mcp(
+    workspace_dir: str,
+    agent_id: str,
+    api_url: str | None = None,
+    helper_url: str | None = None,
+) -> bool:
     """`~/.claude.json` 의 `projects[ws].mcpServers["aidesk-channel"]` 에 local mcp 등록.
 
     - AIDESK_AGENT_ID env 명시 → mcp ensureAgentId 가 cwd fallback 없이 caller 식별
     - 글로벌 mcpServers["aidesk-channel"] 이 있으면 자동 제거 (마이그레이션)
-    - api_url 인자 = workspace-별 *backend override* (dev 전용). None 면 _resolve_backend_url() = helper plist 의 AIDESK_HUB_URL (prod 향).
+    - api_url 인자 = workspace-별 *backend override* (dev 전용). None 면 _resolve_backend_url().
+    - helper_url 인자 = mcp 가 local-info 조회할 helper URL (dev 전용 — 30084 등).
+      None 면 mcp default (localhost:30083 prod helper). mcp 가 helper 의 currentBackendUrl
+      로 *override* 하기 때문에 dev 에서는 dev helper URL 명시 필수.
 
     Phase 6 의 글로벌 → workspace local 패턴. multi-user 격리 + caller 명확화.
     """
@@ -176,14 +184,18 @@ def _register_local_mcp(workspace_dir: str, agent_id: str, api_url: str | None =
 
     # rc20 — aidesk-channel mcp 가 bun compile standalone binary.
     # 옛 'node' + script 패턴 → binary 직접 실행. node 의존 X + 외부 AI mcp 와 통일.
+    env = {
+        "AIDESK_AGENT_ID": agent_id,
+        "AIDESK_API_URL": (api_url or _resolve_backend_url()),
+    }
+    if helper_url:
+        # dev 전용 — mcp 가 prod helper (30083) 대신 dev helper (30084) 조회.
+        env["AIDESK_HELPER_URL"] = helper_url
     servers[_LOCAL_MCP_NAME] = {
         "type": "stdio",
         "command": _LOCAL_MCP_BIN,
         "args": [],
-        "env": {
-            "AIDESK_AGENT_ID": agent_id,
-            "AIDESK_API_URL": (api_url or _resolve_backend_url()),
-        },
+        "env": env,
     }
     try:
         _CLAUDE_JSON_PATH.write_text(
