@@ -140,7 +140,14 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             ]
             try:
                 subprocess.run(new_cmd, check=False)
-                log.info("ws-terminal: tmux new-session %s @ cwd=%s", tmux_session, cwd)
+                # mouse off — xterm.js 가 native scroll 받게. tmux mouse on 이면 scroll
+                # 이벤트가 tmux 의 copy mode 로 흡수됨.
+                subprocess.run(
+                    ["tmux", "set-option", "-t", tmux_session, "mouse", "off"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off)", tmux_session, cwd)
             except OSError as e:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback
