@@ -160,6 +160,14 @@ async function ensureXterm(): Promise<void> {
     term.open(termHost.value);
     requestAnimationFrame(() => doFit());
   }
+  // claude TUI 가 application mouse mode (CSI ?1000h 등) 박으면 xterm 의 wheel handler
+  // 가 escape sequence 로 application 에 전달 → claude 입력창에 paste 사고.
+  // attachCustomWheelEventHandler 의 return false = xterm 의 wheel 처리 *완전 차단*
+  // → browser default (page scroll) 만 작동. scrollback 도 같이 차단되지만 claude TUI
+  // alt screen 에서는 scrollback 무의미 → 사용자 가치 큼.
+  if (typeof term.attachCustomWheelEventHandler === 'function') {
+    term.attachCustomWheelEventHandler(() => false);
+  }
   term.onData((data: string) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       // binary frame — utf-8 encode 후 ArrayBuffer 로 전송.
