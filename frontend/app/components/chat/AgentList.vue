@@ -11,9 +11,9 @@
         v-for="a in agents"
         :key="a.agentId"
         class="al-item"
-        :class="{ active: a.agentId === activeId }"
+        :class="{ active: a.agentId === activeId, 'al-item-shell': a.model === 'shell' }"
         @click="$emit('select', a.agentId)">
-        <span class="al-avatar" :class="statusClass(a.status)">{{ avatar(a.status) }}</span>
+        <span class="al-avatar" :class="statusClass(a.status)">{{ avatar(a.status, a.model) }}</span>
         <span class="al-info">
           <span class="al-name">{{ a.agentName }}</span>
           <span class="al-meta">
@@ -21,6 +21,11 @@
             <span class="al-model">· {{ shortModel(a.model) }}</span>
           </span>
         </span>
+        <button
+          v-if="a.model === 'shell'"
+          class="al-del"
+          title="터미널 삭제"
+          @click.stop="$emit('delete', a.agentId)">×</button>
       </li>
     </ul>
   </aside>
@@ -34,7 +39,10 @@ defineProps<{
   activeId: string;
   loading: boolean;
 }>();
-defineEmits<{ (e: 'select', agentId: string): void }>();
+defineEmits<{
+  (e: 'select', agentId: string): void;
+  (e: 'delete', agentId: string): void;
+}>();
 
 function statusClass(s: AgentStatus): string {
   return s;
@@ -42,11 +50,13 @@ function statusClass(s: AgentStatus): string {
 function statusLabel(s: AgentStatus): string {
   return { active: '작업중', waiting: '응답 대기', idle: '대기중', offline: '오프라인', compacting: '압축 중', error: '오류' }[s] ?? s;
 }
-function avatar(s: AgentStatus): string {
+function avatar(s: AgentStatus, model?: string | null): string {
+  if (model === 'shell') return '💻';
   return { active: '🤖', waiting: '🙋', idle: '📝', error: '⚠️' }[s] ?? '📝';
 }
 function shortModel(m: string | null | undefined): string {
   if (!m) return '';
+  if (m === 'shell') return 'zsh';
   return m.toLowerCase().startsWith('claude') ? 'claude' : m;
 }
 </script>
@@ -116,6 +126,23 @@ function shortModel(m: string | null | undefined): string {
 .al-status.idle    { color: #F59E0B; }
 .al-status.error   { color: #F87171; font-weight: 600; }
 .al-model { color: #6B7785; }
+
+/* shell 항목 — hover 시 delete 버튼 표시 */
+.al-item-shell { position: relative; }
+.al-del {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 0;
+  color: #6B7785;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 6px;
+  visibility: hidden;
+  flex-shrink: 0;
+}
+.al-item-shell:hover .al-del { visibility: visible; }
+.al-del:hover { color: #F87171; background: rgba(248, 113, 113, 0.08); }
 
 /* scrollbar */
 .al-list::-webkit-scrollbar { width: 8px; }

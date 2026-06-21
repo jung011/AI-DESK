@@ -9,7 +9,7 @@
           <span class="tv-status-dot" :class="partner.status"></span>
           <span>{{ statusLabel(partner.status) }}</span>
           <span class="tv-meta-sep">·</span>
-          <code class="tv-cwd">{{ partner.workspaceDir || '/' }}</code>
+          <code class="tv-cwd">{{ partner.workspaceDir || '~' }}</code>
         </div>
       </div>
       <div class="tv-head-actions">
@@ -507,7 +507,7 @@ function resetAndConnect(): void {
   if (!term) return;
   term.clear();
   const name = props.partner?.agentName ?? '(선택 없음)';
-  const cwd = props.partner?.workspaceDir ?? '/';
+  const cwd = props.partner?.workspaceDir || '~';
   term.writeln('\x1b[1;38;2;107;182;255mAI Desk\x1b[0m 웹 터미널 — \x1b[38;2;184;154;255m' + name + '\x1b[0m');
   term.writeln('cwd: \x1b[38;2;107;182;255m' + cwd + '\x1b[0m');
   term.writeln('\x1b[38;2;107;117;133mhelper 에 연결 중…\x1b[0m');

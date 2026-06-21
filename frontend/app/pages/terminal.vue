@@ -2,7 +2,7 @@
   <div class="term-page">
     <header class="term-header">
       <h1>터미널</h1>
-      <span class="term-subtitle">{{ activePartner ? `${activePartner.agentName} · ${activePartner.workspaceDir || '/'}` : '왼쪽에서 에이전트를 선택하세요' }}</span>
+      <span class="term-subtitle">{{ activePartner ? `${activePartner.agentName} · ${activePartner.workspaceDir || '~'}` : '왼쪽에서 에이전트를 선택하세요' }}</span>
     </header>
 
     <div class="term-layout" :class="{ 'show-term-mobile': showTermMobile, 'list-collapsed': listCollapsed }">
@@ -11,6 +11,7 @@
           :title="listCollapsed ? '대화 상대 펼치기' : '대화 상대 접기'">
           {{ listCollapsed ? '▶' : '◀' }}
         </button>
+        <button v-show="!listCollapsed" class="term-list-add" @click="openAddModal" title="새 터미널 추가">+</button>
         <!-- 채팅과 동일한 AgentList 재사용. 휴먼 제외. -->
         <AgentList
           v-show="!listCollapsed"
@@ -18,6 +19,7 @@
           :active-id="partnerId"
           :loading="loadingAgents"
           @select="onSelectPartner"
+          @delete="onDeleteLocal"
         />
       </div>
       <div class="term-pane term-pane-conv">
@@ -26,6 +28,27 @@
           :show-back="true"
           @back="showTermMobile = false"
         />
+      </div>
+    </div>
+
+    <!-- 새 터미널 추가 모달 -->
+    <div v-if="showAddModal" class="add-modal-backdrop" @click.self="closeAddModal">
+      <div class="add-modal">
+        <h2>새 터미널</h2>
+        <div class="add-modal-sub">대화 상대 패널에 표시할 이름을 입력하세요.</div>
+        <input
+          ref="addInputRef"
+          v-model="addName"
+          type="text"
+          maxlength="32"
+          autocomplete="off"
+          placeholder="예: prod-ssh, scratch, log-tail"
+          @keydown.enter="commitAdd"
+          @keydown.escape="closeAddModal" />
+        <div class="add-modal-buttons">
+          <button class="amb-btn" @click="closeAddModal">취소</button>
+          <button class="amb-btn amb-primary" :disabled="!addName.trim()" @click="commitAdd">추가</button>
+        </div>
       </div>
     </div>
   </div>
@@ -43,12 +66,72 @@ const loadingAgents = ref(false);
 const showTermMobile = ref(false);
 const listCollapsed = ref(false);
 
-const partners = computed(() =>
-  agents.value.filter((a) => a.agentId !== currentUser.value?.agentId)
-);
+// 로컬 터미널 (localStorage) — claude 없이 zsh 만 띄우는 임시 워크스페이스.
+type LocalTerminal = { id: string; name: string; createdAt: string };
+const LOCAL_TERMINAL_KEY = 'aidesk-terminal-bookmarks';
+const localTerminals = ref<LocalTerminal[]>([]);
+function loadLocalTerminals(): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_TERMINAL_KEY);
+    localTerminals.value = raw ? JSON.parse(raw) : [];
+  } catch {
+    localTerminals.value = [];
+  }
+}
+function saveLocalTerminals(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(LOCAL_TERMINAL_KEY, JSON.stringify(localTerminals.value));
+}
+function toShellAgent(t: LocalTerminal): AgentItem {
+  return {
+    agentId: t.id,
+    agentName: t.name,
+    workspaceDir: '',                       // helper 가 $HOME 사용
+    tmuxSession: `aidesk-shell-${t.id}`,    // ai agent 의 aidesk-{agentId} 와 분리
+    status: 'idle',
+    taskDesc: null,
+    model: 'shell',
+    contextPct: null,
+    startedAt: t.createdAt,
+    updatedAt: null,
+  };
+}
+
+const partners = computed(() => {
+  const ai = agents.value.filter((a) => a.agentId !== currentUser.value?.agentId);
+  const local = localTerminals.value.map(toShellAgent);
+  return [...ai, ...local];
+});
 const activePartner = computed(() =>
   partners.value.find((a) => a.agentId === partnerId.value) ?? null
 );
+
+// 추가 모달
+const showAddModal = ref(false);
+const addName = ref('');
+const addInputRef = ref<HTMLInputElement | null>(null);
+function openAddModal(): void {
+  addName.value = '';
+  showAddModal.value = true;
+  nextTick(() => addInputRef.value?.focus());
+}
+function closeAddModal(): void {
+  showAddModal.value = false;
+}
+function commitAdd(): void {
+  const name = addName.value.trim();
+  if (!name) return;
+  const id = 'shell-' + Math.random().toString(36).slice(2, 10);
+  localTerminals.value.push({ id, name, createdAt: new Date().toISOString() });
+  saveLocalTerminals();
+  closeAddModal();
+}
+function onDeleteLocal(agentId: string): void {
+  localTerminals.value = localTerminals.value.filter((t) => t.id !== agentId);
+  saveLocalTerminals();
+  if (partnerId.value === agentId) partnerId.value = '';
+}
 
 async function fetchAgents(): Promise<void> {
   loadingAgents.value = true;
@@ -70,6 +153,7 @@ async function onSelectPartner(agentId: string): Promise<void> {
 }
 
 onMounted(async () => {
+  loadLocalTerminals();
   await fetchAgents();
 });
 
@@ -157,6 +241,90 @@ onBeforeUnmount(() => {
 .term-layout.list-collapsed .term-list-toggle {
   /* 접힌 상태에서는 right 보다 가운데 정렬이 자연 */
   right: 7px; left: 7px;
+}
+
+/* + 아이콘 — 토글 button 좌측 */
+.term-list-add {
+  position: absolute; top: 14px; right: 36px;
+  z-index: 5;
+  width: 22px; height: 22px;
+  background: rgba(79, 127, 255, 0.12);
+  border: 1px solid #2A3447;
+  border-radius: 6px;
+  color: #6BB6FF;
+  font-size: 16px; line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.term-list-add:hover {
+  background: rgba(79, 127, 255, 0.25);
+  border-color: #4F7FFF;
+  color: #fff;
+}
+
+/* 추가 모달 */
+.add-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.add-modal {
+  background: linear-gradient(180deg, #14172A 0%, #0F1729 100%);
+  border: 1px solid #2A3447;
+  border-radius: 12px;
+  padding: 24px;
+  width: 360px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+.add-modal h2 {
+  margin: 0 0 6px;
+  font-size: 16px; font-weight: 700;
+  color: #E5E9EE;
+}
+.add-modal-sub {
+  font-size: 12px; color: #6B7785;
+  margin-bottom: 16px;
+}
+.add-modal input {
+  width: 100%;
+  background: rgba(20, 28, 48, 0.7);
+  border: 1px solid #2A3447;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #E5E9EE;
+  font-size: 14px;
+  outline: none;
+  transition: border-color .12s;
+}
+.add-modal input:focus { border-color: #4F7FFF; }
+.add-modal-buttons {
+  margin-top: 18px;
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.amb-btn {
+  padding: 8px 16px;
+  border: 1px solid #2A3447;
+  background: transparent;
+  color: #8B95A5;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .12s;
+}
+.amb-btn:hover { background: rgba(255, 255, 255, 0.04); color: #E5E9EE; }
+.amb-primary {
+  background: #4F7FFF;
+  border-color: #4F7FFF;
+  color: #fff;
+}
+.amb-primary:hover { background: #3D6BEE; border-color: #3D6BEE; }
+.amb-primary:disabled {
+  background: #2A3447; border-color: #2A3447;
+  color: #6B7785;
+  cursor: not-allowed;
 }
 
 /* 모바일 — list 와 terminal 토글 */
