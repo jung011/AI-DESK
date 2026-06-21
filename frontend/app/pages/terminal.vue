@@ -126,6 +126,9 @@ function commitAdd(): void {
   localTerminals.value.push({ id, name, createdAt: new Date().toISOString() });
   saveLocalTerminals();
   closeAddModal();
+  // 자동 진입 — 추가하자마자 그 터미널로 포커스 이동
+  partnerId.value = id;
+  showTermMobile.value = true;
 }
 function onDeleteLocal(agentId: string): void {
   localTerminals.value = localTerminals.value.filter((t) => t.id !== agentId);

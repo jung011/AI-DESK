@@ -536,6 +536,7 @@ function resetAndConnect(): void {
   term.writeln('cwd: \x1b[38;2;107;182;255m' + cwd + '\x1b[0m');
   term.writeln('\x1b[38;2;107;117;133mhelper 에 연결 중…\x1b[0m');
   connectWs();
+  nextTick(() => inputRef.value?.focus());
 }
 
 // 폰트 사이즈
