@@ -38,6 +38,17 @@ _session_workers: dict[str, asyncio.Task] = {}
 # 어댑터 spawn 실패 / 미동작 시엔 set 에 안 들어가 sse_consumer 가 그대로 fallback.
 _bot_adapter_sessions: set[str] = set()
 
+# fire-and-forget task 의 강한 reference — Python event loop 의 weak ref 정책상 GC 위험.
+# done callback discard 로 무한 누적 방지.
+_pending_dispatch_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_dispatch(coro) -> None:
+    """asyncio.create_task + strong ref + done callback discard."""
+    task = asyncio.create_task(coro)
+    _pending_dispatch_tasks.add(task)
+    task.add_done_callback(_pending_dispatch_tasks.discard)
+
 
 def register_bot_adapter_session(session: str) -> None:
     """봇 어댑터가 담당하기 시작한 tmux session 을 등록 — sse_consumer 가 그 session 제외."""
@@ -236,11 +247,11 @@ async def _consume_once(backend_url: str) -> None:
                 # 빈 session 이면 _handle_message_deliver 가 알아서 drop 하니까 그쪽으로 직접 넘김.
                 target_session = (payload.get("toTmuxSession") or "").strip()
                 if target_session:
-                    asyncio.create_task(
+                    _spawn_dispatch(
                         _enqueue_for_session(target_session, payload, backend_url)
                     )
                 else:
-                    asyncio.create_task(_handle_message_deliver(payload, backend_url))
+                    _spawn_dispatch(_handle_message_deliver(payload, backend_url))
 
 
 async def consumer_loop(backend_url: str) -> None:

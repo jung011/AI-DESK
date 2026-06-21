@@ -69,8 +69,14 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        watcher_task.cancel()
-        helper_task.cancel()
+        # cancel + await — cancel 만 호출하면 task 가 중간 자원 들고 있을 수 있어
+        # await 로 정리 완료 확인 (CancelledError 흡수).
+        for task in (watcher_task, helper_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
         log.info("aidesk-backend stopping")
 
 

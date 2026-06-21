@@ -42,6 +42,19 @@ from app.messages.ws import ws_broker
 log = logging.getLogger(__name__)
 
 
+# Python event loop 의 weak reference 정책상 create_task 만 호출하면 GC 위험 — 강한 reference
+# 안 잡으면 task 가 *중간에 cancel* 될 수 있음 (RuntimeWarning + 외부 AI 메시지 누락).
+# done callback 으로 자동 discard — 무한 누적 방지.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro) -> None:
+    """asyncio.create_task + strong reference + done callback discard."""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 def _truncate(s: str | None, n: int) -> str:
     if not s:
         return ""
@@ -113,7 +126,7 @@ class MessageService:
         # WS payload — mcp aidesk-channel 의 ws client 가 evt.type === 'message.deliver' +
         # evt.toAgentId === AGENT_ID 매칭. type 필드 없으면 skip → 외부 AI 가 메시지 못 받음.
         ws_payload = {"type": "message.deliver", **payload}
-        asyncio.create_task(ws_broker.publish_to_account(receiver.owner_account_sn, ws_payload))
+        _fire_and_forget(ws_broker.publish_to_account(receiver.owner_account_sn, ws_payload))
 
         # ws-aware delivered (rc12) — Spring countSessionsForAgent + markDelivered 동등.
         # receiver 가 ws connected 면 즉시 delivered 마킹 (helper ack 없이도). 외부 AI 처럼
