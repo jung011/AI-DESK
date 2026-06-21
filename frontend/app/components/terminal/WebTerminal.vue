@@ -135,10 +135,12 @@ function renderBufferToOutput(): void {
   }
   // trailing empty lines 제거 (claude TUI 가 비운 줄들).
   while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  // 사용자 요청 — 거꾸로 뒤집기. 최근 = 상단.
+  lines.reverse();
   outputText.value = lines.join('\n');
-  // 채팅 페이지처럼 최근 = 하단. auto-scroll bottom.
+  // 최근 = 상단 이므로 scroll 도 top.
   nextTick(() => {
-    if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
+    if (outputRef.value) outputRef.value.scrollTop = 0;
   });
 }
 
