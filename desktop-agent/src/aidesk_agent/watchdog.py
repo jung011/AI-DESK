@@ -54,7 +54,14 @@ async def watchdog_loop() -> None:
     환경 이슈로 SSE 연결 자체가 안 되는 mac 에서는 watchdog 가 *조용히 대기* — process 는
     alive 유지되지만 동작 안 함. 사용자가 외부 진단/fix 가능. 무한 self-kill 로 인한 binary
     손상 방지.
+
+    AIDESK_HELPER_NO_WATCHDOG=1 — dev 인스턴스 처럼 LaunchAgent 없이 직접 실행 시
+    self-kill 하면 영구 종료. 이 env 박으면 watchdog loop 비활성 (return).
     """
+    import os
+    if os.environ.get("AIDESK_HELPER_NO_WATCHDOG", "").strip() in ("1", "true", "yes"):
+        log.info("watchdog: disabled by AIDESK_HELPER_NO_WATCHDOG env — skip loop")
+        return
     log.info("watchdog: starting (threshold=%.0fs, interval=%.0fs)",
              DEAD_SSE_THRESHOLD_SEC, WATCHDOG_INTERVAL_SEC)
     while True:
