@@ -169,13 +169,18 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     history_dump: bytes | None = None
     if tmux_session:
         try:
+            # -e 제거 — escape cursor-move 가 옛 cols 좌표 기반이라 새 cols 의 xterm 에서
+            # 계단식 정렬 사고. plain text 만 dump (과거 색상 손실, 정렬은 OK).
             res = subprocess.run(
-                ["tmux", "capture-pane", "-p", "-e", "-S", "-3000", "-t", tmux_session],
+                ["tmux", "capture-pane", "-p", "-S", "-3000", "-t", tmux_session],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 timeout=2.0,
             )
             if res.returncode == 0 and res.stdout:
-                history_dump = res.stdout
+                # capture-pane 의 plain output 은 \n (LF) 만 — xterm 은 LF 만 받으면
+                # cursor col 유지 → 각 line 의 다음 줄 시작이 옛 col (계단식 정렬). CR
+                # 추가해 \r\n 으로 정상 줄바꿈.
+                history_dump = res.stdout.replace(b"\n", b"\r\n")
                 log.info("ws-terminal: history dump %d bytes session=%s", len(history_dump), tmux_session)
         except (subprocess.TimeoutExpired, OSError) as e:
             log.warning("ws-terminal: capture-pane failed err=%s", e)
