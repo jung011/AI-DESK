@@ -160,6 +160,18 @@ async function ensureXterm(): Promise<void> {
     term.open(termHost.value);
     requestAnimationFrame(() => doFit());
   }
+  // wheel event 가 application (claude TUI) 으로 escape sequence 로 전달되면 입력창에
+  // 옛 텍스트 처럼 paste 됨. xterm.js 가 자체 scrollback 만 처리하도록 차단.
+  // alt screen 안에서는 xterm.js scrollback 비활성 — 그 경우 사용자가 PgUp 같은 키 사용.
+  termHost.value?.addEventListener('wheel', (e: WheelEvent) => {
+    if (!term) return;
+    const viewport = termHost.value?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (viewport) {
+      viewport.scrollTop += e.deltaY;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+  }, { passive: false, capture: true });
   term.onData((data: string) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       // binary frame — utf-8 encode 후 ArrayBuffer 로 전송.
