@@ -603,7 +603,6 @@ function avatar(s: AgentStatus): string {
 
 .tv-body {
   flex: 1; min-height: 0;
-  padding: 24px 28px;
   display: flex; flex-direction: column;
 }
 
@@ -653,8 +652,6 @@ function avatar(s: AgentStatus): string {
 .tv-chat {
   flex: 1; min-height: 0;
   background: #0E1424;
-  border: 1px solid #1F2738;
-  border-radius: 14px;
   display: flex; flex-direction: column;
   overflow: hidden;
 }
