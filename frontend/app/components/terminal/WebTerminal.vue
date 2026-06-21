@@ -162,12 +162,21 @@ async function ensureXterm(): Promise<void> {
   }
   // claude TUI 가 application mouse mode (CSI ?1000h 등) 박으면 xterm 의 wheel handler
   // 가 escape sequence 로 application 에 전달 → claude 입력창에 paste 사고.
-  // attachCustomWheelEventHandler 의 return false = xterm 의 wheel 처리 *완전 차단*
-  // → browser default (page scroll) 만 작동. scrollback 도 같이 차단되지만 claude TUI
-  // alt screen 에서는 scrollback 무의미 → 사용자 가치 큼.
+  // attachCustomWheelEventHandler 의 return false = xterm 의 wheel 처리 *완전 차단*.
   if (typeof term.attachCustomWheelEventHandler === 'function') {
     term.attachCustomWheelEventHandler(() => false);
   }
+  // wheel = xterm scrollback 있으면 그쪽, 없으면 *page scroll 으로 위임*. xterm 영역
+  // 위에서 wheel 이 nothing 되는 게 사용자 의도와 다름.
+  termHost.value?.addEventListener('wheel', (e: WheelEvent) => {
+    const vp = termHost.value?.querySelector('.xterm-viewport') as HTMLElement | null;
+    if (vp && vp.scrollHeight > vp.clientHeight + 1) {
+      return; // xterm 자체 scrollback 작동 (normal screen)
+    }
+    // alt screen — page scroll 으로 위임
+    e.preventDefault();
+    window.scrollBy({ top: e.deltaY, behavior: 'auto' });
+  }, { passive: false });
   term.onData((data: string) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       // binary frame — utf-8 encode 후 ArrayBuffer 로 전송.
