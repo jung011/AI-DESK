@@ -19,6 +19,7 @@ import pty
 import shutil
 import signal
 import struct
+import subprocess
 import termios
 
 from aiohttp import web
@@ -79,10 +80,14 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # api_url override — dev 전용. frontend 가 명시하면 *이 workspace 의 mcp env* 의
     # AIDESK_API_URL 을 이 값으로. 명시 안 하면 helper plist 의 AIDESK_HUB_URL (prod).
     api_url_q = request.query.get("apiUrl", "").strip()
+    # tmuxSession — 있으면 tmux attach 패턴 (ws 끊겨도 session + claude 살아있음).
+    # 없으면 옛 zsh 직접 spawn (backward compatible).
+    tmux_session = request.query.get("tmuxSession", "").strip()
 
     log.info(
-        "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s",
+        "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s tmux=%s",
         request.remote, cwd, cols, rows, shell, agent_id or "-", api_url_q or "-",
+        tmux_session or "-",
     )
 
     # spawn 전 ~/.claude.json 의 mcp 등록 갱신 — 옛 'node + script' patterns 가 남아있으면
@@ -109,25 +114,58 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
         except Exception as e:  # noqa: BLE001
             log.warning("ws-terminal: mcp re-register failed cwd=%s agent=%s err=%s", cwd_q, agent_id, e)
 
+    # tmux session 존재 검사 + 없으면 detached 모드로 새로 띄움. cwd / env 같이.
+    if tmux_session:
+        try:
+            rc = subprocess.run(
+                ["tmux", "has-session", "-t", tmux_session],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False,
+            ).returncode
+        except FileNotFoundError:
+            log.warning("ws-terminal: tmux not found — fallback to direct zsh")
+            tmux_session = ""
+            rc = 1
+        if tmux_session and rc != 0:
+            # 새 session 생성 — env-prefix 패턴 ([[feedback-helper-tmux-child-env-injection]]).
+            new_env = ["env", f"LANG=ko_KR.UTF-8", f"LC_ALL=ko_KR.UTF-8", f"TERM=xterm-256color", "COLORTERM=truecolor"]
+            if agent_id:
+                new_env.append(f"AIDESK_AGENT_ID={agent_id}")
+            new_cmd = [
+                "tmux", "new-session", "-d",
+                "-s", tmux_session,
+                "-x", str(cols), "-y", str(rows),
+                "-c", cwd,
+                " ".join(new_env) + " " + shell + " -il",
+            ]
+            try:
+                subprocess.run(new_cmd, check=False)
+                log.info("ws-terminal: tmux new-session %s @ cwd=%s", tmux_session, cwd)
+            except OSError as e:
+                log.warning("ws-terminal: tmux new-session failed err=%s", e)
+                tmux_session = ""  # fallback
+
     pid, fd = pty.fork()
     if pid == 0:
-        # child process — exec shell. 이 분기는 절대 return 안 함.
+        # child process — exec shell or tmux attach. 이 분기는 절대 return 안 함.
         env = os.environ.copy()
         env["LANG"] = "ko_KR.UTF-8"
         env["LC_ALL"] = "ko_KR.UTF-8"
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
         if agent_id:
-            # claude code 가 spawn 한 mcp server 들에 propagate 되어
-            # aidesk-channel mcp 가 어떤 agent 로 메시지 보낼지 결정.
             env["AIDESK_AGENT_ID"] = agent_id
-        # 사용자 셸 prompt 가 cwd 잡도록 디렉토리 이동.
         try:
             os.chdir(cwd)
         except OSError:
             pass
         try:
-            os.execvpe(shell, [shell, "-il"], env)
+            if tmux_session:
+                # tmux attach — ws 끊김 = detach (session + claude 살아있음).
+                os.execvpe("tmux", ["tmux", "attach-session", "-t", tmux_session], env)
+            else:
+                # 옛 동작 (tmux 없거나 미지정) — 직접 shell. ws 끊김 시 종료.
+                os.execvpe(shell, [shell, "-il"], env)
         except OSError as e:
             print(f"[aidesk-web-pty] exec failed: {e}", flush=True)
             os._exit(127)
