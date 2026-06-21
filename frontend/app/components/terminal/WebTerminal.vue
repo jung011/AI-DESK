@@ -37,6 +37,7 @@
         <div class="tv-chat-input-row">
           <textarea
             v-model="inputDraft"
+            ref="inputRef"
             class="tv-chat-input"
             rows="2"
             placeholder="claude 에게 명령 입력 후 Enter…"
@@ -144,6 +145,8 @@ function renderBufferToOutput(): void {
   });
 }
 
+const inputRef = ref<HTMLTextAreaElement | null>(null);
+
 function onInputSend(): void {
   const text = inputDraft.value;
   if (!text.trim()) return;
@@ -152,6 +155,8 @@ function onInputSend(): void {
   const payload = new TextEncoder().encode(text + '\r');
   ws.send(payload);
   inputDraft.value = '';
+  // Enter 후 textarea focus 복원 — DOM 갱신 후에도 cursor 가 input 에 머물게.
+  nextTick(() => inputRef.value?.focus());
 }
 
 function onInputEnter(e: KeyboardEvent): void {
