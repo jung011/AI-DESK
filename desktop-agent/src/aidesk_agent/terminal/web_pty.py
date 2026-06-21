@@ -76,10 +76,13 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # AIDESK_AGENT_ID env 가 helper-spawned shell 에 있어야 mcp 가 정상 작동
     # (memory: workspace-local mcp 패턴, AIDESK_AGENT_ID env 명시).
     agent_id = request.query.get("agentId", "").strip()
+    # api_url override — dev 전용. frontend 가 명시하면 *이 workspace 의 mcp env* 의
+    # AIDESK_API_URL 을 이 값으로. 명시 안 하면 helper plist 의 AIDESK_HUB_URL (prod).
+    api_url_q = request.query.get("apiUrl", "").strip()
 
     log.info(
-        "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s",
-        request.remote, cwd, cols, rows, shell, agent_id or "-",
+        "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s",
+        request.remote, cwd, cols, rows, shell, agent_id or "-", api_url_q or "-",
     )
 
     # spawn 전 ~/.claude.json 의 mcp 등록 갱신 — 옛 'node + script' patterns 가 남아있으면
@@ -87,7 +90,7 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     if agent_id and cwd_q:
         try:
             from ..claude.bootstrap import _register_local_mcp  # noqa: PLC0415
-            _register_local_mcp(cwd_q, agent_id)
+            _register_local_mcp(cwd_q, agent_id, api_url=api_url_q or None)
         except Exception as e:  # noqa: BLE001
             log.warning("ws-terminal: mcp re-register failed cwd=%s agent=%s err=%s", cwd_q, agent_id, e)
 

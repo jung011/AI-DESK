@@ -186,7 +186,14 @@ function connectWs(): void {
   const agentId = props.partner?.agentId || '';
   const cols = term.cols || 80;
   const rows = term.rows || 24;
-  const url = `${HELPER_WS_URL}?cwd=${encodeURIComponent(cwd)}&agentId=${encodeURIComponent(agentId)}&cols=${cols}&rows=${rows}`;
+  // dev 전용 — claude 의 aidesk-channel mcp 가 *현재 페이지의 backend* 와 통신하도록
+  // helper 가 workspace mcp env 의 AIDESK_API_URL override. prod build 에서는
+  // import.meta.dev=false → query 비어있고 helper plist 의 AIDESK_HUB_URL 사용.
+  const apiUrl = import.meta.dev
+    ? `${window.location.protocol}//${window.location.hostname}:30081`
+    : '';
+  let url = `${HELPER_WS_URL}?cwd=${encodeURIComponent(cwd)}&agentId=${encodeURIComponent(agentId)}&cols=${cols}&rows=${rows}`;
+  if (apiUrl) url += `&apiUrl=${encodeURIComponent(apiUrl)}`;
   connClass.value = 'pending';
 
   let s: WebSocket;

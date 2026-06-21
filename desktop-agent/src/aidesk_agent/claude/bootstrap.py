@@ -133,11 +133,12 @@ _LOCAL_MCP_NAME = "aidesk-channel"
 _LOCAL_MCP_BIN = "/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
 
 
-def _register_local_mcp(workspace_dir: str, agent_id: str) -> bool:
+def _register_local_mcp(workspace_dir: str, agent_id: str, api_url: str | None = None) -> bool:
     """`~/.claude.json` 의 `projects[ws].mcpServers["aidesk-channel"]` 에 local mcp 등록.
 
     - AIDESK_AGENT_ID env 명시 → mcp ensureAgentId 가 cwd fallback 없이 caller 식별
     - 글로벌 mcpServers["aidesk-channel"] 이 있으면 자동 제거 (마이그레이션)
+    - api_url 인자 = workspace-별 *backend override* (dev 전용). None 면 _resolve_backend_url() = helper plist 의 AIDESK_HUB_URL (prod 향).
 
     Phase 6 의 글로벌 → workspace local 패턴. multi-user 격리 + caller 명확화.
     """
@@ -181,7 +182,7 @@ def _register_local_mcp(workspace_dir: str, agent_id: str) -> bool:
         "args": [],
         "env": {
             "AIDESK_AGENT_ID": agent_id,
-            "AIDESK_API_URL": _resolve_backend_url(),
+            "AIDESK_API_URL": (api_url or _resolve_backend_url()),
         },
     }
     try:
