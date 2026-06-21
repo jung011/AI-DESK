@@ -7,8 +7,13 @@
 
     <div class="term-layout" :class="{ 'show-term-mobile': showTermMobile, 'list-collapsed': listCollapsed }">
       <div class="term-pane term-pane-list">
+        <button class="term-list-toggle" @click="listCollapsed = !listCollapsed"
+          :title="listCollapsed ? '대화 상대 펼치기' : '대화 상대 접기'">
+          {{ listCollapsed ? '▶' : '◀' }}
+        </button>
         <!-- 채팅과 동일한 AgentList 재사용. 휴먼 제외. -->
         <AgentList
+          v-show="!listCollapsed"
           :agents="partners"
           :active-id="partnerId"
           :loading="loadingAgents"
@@ -16,10 +21,6 @@
         />
       </div>
       <div class="term-pane term-pane-conv">
-        <button class="term-collapse-btn" @click="listCollapsed = !listCollapsed"
-          :title="listCollapsed ? '대화 상대 펼치기' : '대화 상대 접기'">
-          {{ listCollapsed ? '▶' : '◀' }}
-        </button>
         <WebTerminal
           :partner="activePartner"
           :show-back="true"
@@ -129,15 +130,14 @@ onBeforeUnmount(() => {
   transition: grid-template-columns .2s;
 }
 .term-layout.list-collapsed {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 36px 1fr;
 }
 .term-pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-.term-layout.list-collapsed .term-pane-list { visibility: hidden; }
 
-/* 접기 버튼 — terminal 패널 좌측 상단 */
-.term-pane-conv { position: relative; }
-.term-collapse-btn {
-  position: absolute; left: 6px; top: 18px;
+/* 접기 버튼 — 대화상대 박스 좌측 상단 (펼친 / 접힌 상태 둘 다 visible) */
+.term-pane-list { position: relative; }
+.term-list-toggle {
+  position: absolute; top: 14px; right: 8px;
   z-index: 5;
   width: 22px; height: 22px;
   background: rgba(20, 28, 48, 0.7);
@@ -149,10 +149,14 @@ onBeforeUnmount(() => {
   display: flex; align-items: center; justify-content: center;
   transition: background .12s, color .12s, border-color .12s;
 }
-.term-collapse-btn:hover {
+.term-list-toggle:hover {
   background: rgba(79, 127, 255, 0.15);
   border-color: #4F7FFF;
   color: #fff;
+}
+.term-layout.list-collapsed .term-list-toggle {
+  /* 접힌 상태에서는 right 보다 가운데 정렬이 자연 */
+  right: 7px; left: 7px;
 }
 
 /* 모바일 — list 와 terminal 토글 */
