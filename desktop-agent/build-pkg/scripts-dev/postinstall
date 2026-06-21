@@ -1,0 +1,100 @@
+#!/bin/bash
+# AI Desk Helper *DEV* .pkg postinstall.
+#
+# prod (com.aidesk.agent + port 30083 + /usr/local/share/aidesk/) 와 *완전 분리*:
+#   - Label: com.aidesk.agent.dev
+#   - plist: ~/Library/LaunchAgents/com.aidesk.agent.dev.plist
+#   - binary symlink: /usr/local/bin/aidesk-helper-dev
+#   - port: 30084 (AIDESK_HELPER_PORT env)
+#   - hub: http://localhost:30081 (dev backend)
+#   - log: ~/Library/Logs/aidesk-agent-dev.{err,log}
+#
+# prod helper LaunchAgent 는 *완전히 건드리지 않음* (보호).
+
+set -e
+
+CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" || "$CONSOLE_USER" == "_mbsetupuser" ]]; then
+    echo "⚠ 콘솔 사용자를 식별할 수 없습니다."
+    exit 0
+fi
+
+USER_UID=$(id -u "$CONSOLE_USER")
+USER_HOME=$(eval echo "~$CONSOLE_USER")
+LA_DIR="$USER_HOME/Library/LaunchAgents"
+LOG_DIR="$USER_HOME/Library/Logs"
+PLIST="$LA_DIR/com.aidesk.agent.dev.plist"
+
+USER_LANG=$(sudo -u "$CONSOLE_USER" -i zsh -ic 'echo "${LANG}"' 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+if [[ -z "$USER_LANG" || "$USER_LANG" == "C" || "$USER_LANG" == "C.UTF-8" || "$USER_LANG" == "POSIX" ]]; then
+    APPLE_LOCALE=$(sudo -u "$CONSOLE_USER" defaults read -g AppleLocale 2>/dev/null | tr -d '[:space:]' || true)
+    [[ -n "$APPLE_LOCALE" ]] && USER_LANG="${APPLE_LOCALE}.UTF-8"
+fi
+[[ -z "$USER_LANG" ]] && USER_LANG="en_US.UTF-8"
+
+sudo -u "$CONSOLE_USER" mkdir -p "$LA_DIR" "$LOG_DIR" "$USER_HOME/.aidesk-dev"
+
+# dev 전용 plist 작성 — prod plist 와 완전 별개.
+# port 30084 + hub localhost:30081 + watchdog 비활성 (NO_WATCHDOG)
+# AIDESK_ENV=dev 로 helper 코드의 is_dev 분기 활성.
+sudo -u "$CONSOLE_USER" python3 - "$PLIST" "$LOG_DIR" "$USER_HOME" "$USER_LANG" <<'PYEOF'
+import sys, plistlib
+plist_path, log_dir, user_home, user_lang = sys.argv[1:]
+try:
+    with open(plist_path, 'rb') as f:
+        existing = plistlib.load(f)
+    existing_env = existing.get('EnvironmentVariables', {}) or {}
+except (OSError, plistlib.InvalidFileException):
+    existing_env = {}
+existing_env['PATH'] = f"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{user_home}/.local/bin"
+existing_env['HOME'] = user_home
+existing_env['LANG'] = user_lang
+existing_env['LC_CTYPE'] = 'UTF-8'
+existing_env['AIDESK_ENV'] = 'dev'
+existing_env['AIDESK_HELPER_PORT'] = '30084'
+existing_env['AIDESK_HUB_URL'] = 'http://localhost:30081'
+# dev 는 watchdog 비활성 — source 실행 시점과 동일.
+existing_env['AIDESK_HELPER_NO_WATCHDOG'] = '1'
+plist = {
+    'Label': 'com.aidesk.agent.dev',
+    'ProgramArguments': [
+        '/usr/local/bin/aidesk-helper-dev',
+        '--port', '30084',
+        '--hub-url', 'http://localhost:30081',
+    ],
+    'RunAtLoad': True,
+    'KeepAlive': True,
+    'ThrottleInterval': 10,
+    'ProcessType': 'Background',
+    'StandardOutPath': f'{log_dir}/aidesk-agent-dev.log',
+    'StandardErrorPath': f'{log_dir}/aidesk-agent-dev.err',
+    'EnvironmentVariables': existing_env,
+}
+with open(plist_path, 'wb') as f:
+    plistlib.dump(plist, f)
+PYEOF
+
+chown "$CONSOLE_USER" "$PLIST"
+
+# dev LaunchAgent reload (prod 건드리지 않음)
+launchctl bootout "gui/$USER_UID/com.aidesk.agent.dev" 2>/dev/null || true
+launchctl bootstrap "gui/$USER_UID" "$PLIST"
+
+# aidesk-channel mcp binary codesign (Gatekeeper 우회)
+if [[ -x "/usr/local/share/aidesk-dev/aidesk-channel/bin/aidesk-channel" ]]; then
+    codesign --force --sign - /usr/local/share/aidesk-dev/aidesk-channel/bin/aidesk-channel 2>/dev/null || true
+fi
+
+# zellij binary codesign (.pkg datas 통해 박힌 binary 도 Gatekeeper 대응)
+for ZELLIJ in /usr/local/share/aidesk-dev/helper-app/_internal/bin/zellij; do
+    [[ -x "$ZELLIJ" ]] && codesign --force --sign - "$ZELLIJ" 2>/dev/null || true
+done
+
+echo "✓ AI Desk Helper *DEV* 설치 완료"
+echo "  - 바이너리: /usr/local/bin/aidesk-helper-dev"
+echo "  - LaunchAgent: $PLIST (com.aidesk.agent.dev)"
+echo "  - port: 30084"
+echo "  - 로그: $LOG_DIR/aidesk-agent-dev.err"
+echo "  - prod helper (port 30083) 는 그대로 유지됨."
+
+exit 0
