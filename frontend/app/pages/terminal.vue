@@ -5,7 +5,7 @@
       <span class="term-subtitle">{{ activePartner ? `${activePartner.agentName} · ${activePartner.workspaceDir || '/'}` : '왼쪽에서 에이전트를 선택하세요' }}</span>
     </header>
 
-    <div class="term-layout" :class="{ 'show-term-mobile': showTermMobile }">
+    <div class="term-layout" :class="{ 'show-term-mobile': showTermMobile, 'list-collapsed': listCollapsed }">
       <div class="term-pane term-pane-list">
         <!-- 채팅과 동일한 AgentList 재사용. 휴먼 제외. -->
         <AgentList
@@ -16,6 +16,10 @@
         />
       </div>
       <div class="term-pane term-pane-conv">
+        <button class="term-collapse-btn" @click="listCollapsed = !listCollapsed"
+          :title="listCollapsed ? '대화 상대 펼치기' : '대화 상대 접기'">
+          {{ listCollapsed ? '▶' : '◀' }}
+        </button>
         <WebTerminal
           :partner="activePartner"
           :show-back="true"
@@ -36,6 +40,7 @@ const currentUser = ref<AgentItem | null>(null);
 const partnerId = ref<string>('');
 const loadingAgents = ref(false);
 const showTermMobile = ref(false);
+const listCollapsed = ref(false);
 
 const partners = computed(() =>
   agents.value.filter((a) => a.agentId !== currentUser.value?.agentId)
@@ -121,8 +126,34 @@ onBeforeUnmount(() => {
   flex: 1; display: grid;
   grid-template-columns: 300px 1fr;
   min-height: 0;
+  transition: grid-template-columns .2s;
+}
+.term-layout.list-collapsed {
+  grid-template-columns: 0 1fr;
 }
 .term-pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.term-layout.list-collapsed .term-pane-list { visibility: hidden; }
+
+/* 접기 버튼 — terminal 패널 좌측 상단 */
+.term-pane-conv { position: relative; }
+.term-collapse-btn {
+  position: absolute; left: 6px; top: 18px;
+  z-index: 5;
+  width: 22px; height: 22px;
+  background: rgba(20, 28, 48, 0.7);
+  border: 1px solid #2A3447;
+  border-radius: 6px;
+  color: #8B95A5;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.term-collapse-btn:hover {
+  background: rgba(79, 127, 255, 0.15);
+  border-color: #4F7FFF;
+  color: #fff;
+}
 
 /* 모바일 — list 와 terminal 토글 */
 @media (max-width: 768px) {
