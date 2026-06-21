@@ -99,6 +99,7 @@ let fitAddon: any = null;
 let webLinks: any = null;
 let resizeObserver: ResizeObserver | null = null;
 let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 // helper WS URL — 사용자 mac 의 127.0.0.1:30083 으로 직접 연결.
 const HELPER_WS_URL = 'ws://127.0.0.1:30083/ws/terminal';
@@ -218,13 +219,26 @@ function connectWs(): void {
   s.onclose = (ev) => {
     connClass.value = 'down';
     if (term) {
-      term.writeln(`\r\n\x1b[38;2;248;113;113m[연결 종료]\x1b[0m code=${ev.code} reason=${ev.reason || ''}`);
-      term.writeln('helper 가 닫혔거나 shell 이 exit 된 상태. 다른 에이전트 클릭 시 재연결.');
+      term.writeln(`\r\n\x1b[38;2;245;158;11m[연결 끊김]\x1b[0m code=${ev.code} — 3초 후 자동 재연결 시도…`);
+    }
+    // 같은 partner 면 3s 후 자동 reconnect. 사용자가 agent 바꾸면 watch 가 disconnect 후 새로 연결.
+    if (ws === s && props.partner?.agentId) {
+      const sameAgentId = props.partner.agentId;
+      reconnectTimer = setTimeout(() => {
+        if (props.partner?.agentId === sameAgentId && term) {
+          term.writeln('\x1b[38;2;107;117;133m[재연결 시도]\x1b[0m');
+          connectWs();
+        }
+      }, 3000);
     }
   };
 }
 
 function disconnectWs(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (ws) {
     try { ws.close(); } catch { /* ignore */ }
     ws = null;

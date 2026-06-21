@@ -54,7 +54,10 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     - 출력 = pty read → ws.send_bytes (binary frame).
     - resize = TEXT frame JSON {type:'resize', cols, rows} → TIOCSWINSZ.
     """
-    ws = web.WebSocketResponse(heartbeat=30, max_msg_size=4 * 1024 * 1024)
+    # heartbeat=30 시 browser tab background 의 setTimeout throttle 로 pong 지연 → aiohttp abort
+    # → code 1006 끊김. claude code TUI 같이 사용자 focus 잃기 쉬운 환경에서 빈번. None = aiohttp
+    # 가 application-level ping 안 보냄 → browser 가 keepalive 책임. pty 출력 자체가 traffic.
+    ws = web.WebSocketResponse(heartbeat=None, max_msg_size=4 * 1024 * 1024)
     await ws.prepare(request)
 
     cwd_q = request.query.get("cwd", "").strip()

@@ -3,7 +3,8 @@
     <header class="al-head">
       <h3>대화 상대</h3>
     </header>
-    <div v-if="loading" class="al-empty">로딩 중…</div>
+    <!-- 로딩 표시는 *초기 fetch* 만. polling refresh 시 list 유지 (깜빡 방지). -->
+    <div v-if="loading && agents.length === 0" class="al-empty">로딩 중…</div>
     <div v-else-if="agents.length === 0" class="al-empty">에이전트 없음</div>
     <ul v-else class="al-list">
       <li
