@@ -152,6 +152,18 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback
 
+    # tmux session 의 cols/rows 를 client xterm size 와 동일하게 resize. mismatch 시
+    # capture-pane / attach 출력의 grid 가 xterm parser 의 viewport 와 안 맞아 정렬 깨짐.
+    if tmux_session:
+        try:
+            subprocess.run(
+                ["tmux", "resize-window", "-t", tmux_session, "-x", str(cols), "-y", str(rows)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=1.0,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
     # tmux attach 직전 — history 한 번 dump 해서 ws 로 직접 보냄. attach 가 *현재
     # 화면만* 전송 (옛 출력 X). capture-pane -S -3000 으로 scrollback 3000 라인 보냄.
     history_dump: bytes | None = None

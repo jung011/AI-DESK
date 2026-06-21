@@ -388,12 +388,11 @@ function disconnectWs(): void {
 }
 
 function doFit(): void {
-  if (!term || !fitAddon) return;
-  try {
-    fitAddon.fit();
-    cols.value = term.cols;
-    rows.value = term.rows;
-  } catch { /* ignore */ }
+  if (!term) return;
+  // D 옵션 — hidden xterm 의 DOM size 가 작아 fit-addon 호출 시 cols 가 ~95 로 축소.
+  // 우리는 *고정 cols=200/rows=50* 유지 → fit-addon 호출 안 함. cols/rows ref 만 sync.
+  cols.value = term.cols;
+  rows.value = term.rows;
 }
 
 function resetAndConnect(): void {
