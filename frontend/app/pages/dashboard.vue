@@ -293,9 +293,10 @@ async function onDeleteConfirm(payload: { extraOption: boolean }): Promise<void>
 
 onMounted(async () => {
   // 우선 helper 가 가리키는 중앙서버가 현재 페이지와 일치하는지 확인 — 다르면 setup 모달
-  // 이 최우선 노출. (me) 워크스페이스 모달은 setup 마친 다음 단계.
+  // 이 노출. but mismatch 여도 *데이터 fetch 는 진행* — dashboard 가 빈 화면이 되면
+  // 사용자가 dialog "나중에" 닫아도 list 가 0 인 채로 60s polling 까지 기다려야 함.
   await checkHelperSetup();
-  if (helperSetupOpen.value) return;
+  // dialog open 여부와 무관하게 fetch / workspace / polling 진행.
   await fetchAgents();
   await loadMeWorkspace();
   // SSE (agent.changed) 가 주 — polling 은 SSE 끊긴 동안 60s fallback.

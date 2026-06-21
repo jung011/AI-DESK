@@ -54,7 +54,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // helper 미설치면 /helper-install 로 — 인증된 사용자가 helper 의존 페이지 진입 시.
   // 설치돼있으면 store 에 running/latest 동기화만 두고 진입 허용. 업데이트가 필요하면
   // default layout 의 배너가 사용자에게 알린다 (강제 X — B-2 정책).
-  if (auth.isAuthenticated && !HELPER_OPTIONAL_PATHS.has(to.path)) {
+  // dev 환경 (localhost frontend + prod-향 helper) 에서는 mismatch 로 false missing
+  // 판정될 수 있어 helper check skip — dashboard 직접 진입 가능. prod build 영향 X.
+  if (auth.isAuthenticated && !HELPER_OPTIONAL_PATHS.has(to.path) && !import.meta.dev) {
     const helperVersion = useHelperVersionStore();
     await helperVersion.refresh();
     if (helperVersion.missing) {
