@@ -1,0 +1,4 @@
+// 단일 pane, tab-bar / status-bar 없음. 웹 터미널에 깔끔하게 attach.
+layout {
+    pane
+}

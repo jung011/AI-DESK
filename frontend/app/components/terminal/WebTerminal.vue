@@ -203,7 +203,8 @@ function renderBufferToOutput(): void {
   type Row = { html: string; plain: string; empty: boolean };
   const makeRow = (line: any): Row => {
     const plain = line?.translateToString(true) ?? '';
-    return { html: renderLineHtml(line, nullCell), plain, empty: plain.length === 0 };
+    // plain.trim() — NBSP / unicode whitespace 도 처리 (zellij 의 padding 등).
+    return { html: renderLineHtml(line, nullCell), plain, empty: plain.trim().length === 0 };
   };
   const normalRows: Row[] = [];
   for (let y = 0; y < normalBuf.length; y++) normalRows.push(makeRow(normalBuf.getLine(y)));

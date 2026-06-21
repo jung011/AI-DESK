@@ -1,0 +1,11 @@
+// AI Desk helper 전용 zellij config — 웹 터미널의 깔끔한 single-pane UX 목적.
+// tab-bar / status-bar plugin 비활성 + pane border 제거 + 자동 첫 실행 메시지 dismiss.
+
+default_layout "aidesk-shell"
+pane_frames false
+simplified_ui true
+mouse_mode false
+show_startup_tips false
+show_release_notes false
+copy_on_select true
+scroll_buffer_size 5000
