@@ -200,16 +200,38 @@ function renderBufferToOutput(): void {
     outputHtml.value = lines.map(escapeHtml).join('\n');
     return;
   }
-  type Row = { html: string; empty: boolean };
-  const rows: Row[] = [];
-  const pushRow = (line: any) => {
+  type Row = { html: string; plain: string; empty: boolean };
+  const makeRow = (line: any): Row => {
     const plain = line?.translateToString(true) ?? '';
-    rows.push({ html: renderLineHtml(line, nullCell), empty: plain.length === 0 });
+    return { html: renderLineHtml(line, nullCell), plain, empty: plain.length === 0 };
   };
-  for (let y = 0; y < normalBuf.length; y++) pushRow(normalBuf.getLine(y));
+  const normalRows: Row[] = [];
+  for (let y = 0; y < normalBuf.length; y++) normalRows.push(makeRow(normalBuf.getLine(y)));
+
+  let rows: Row[];
   if (activeBuf !== normalBuf) {
-    rows.push({ html: '<span style="color:#4B5563">────────────────────────────────────────</span>', empty: false });
-    for (let y = 0; y < activeBuf.length; y++) pushRow(activeBuf.getLine(y));
+    const altRows: Row[] = [];
+    for (let y = 0; y < activeBuf.length; y++) altRows.push(makeRow(activeBuf.getLine(y)));
+    // alt 의 첫 비-empty (현재 화면의 prompt) 가 normal 의 마지막 비-empty 와 동일하면
+    // capture-pane history 가 *현재 alt 화면의 직전 상태* 까지 dump 한 경우 — 그 last prompt
+    // 는 alt 에 다시 그려질 거라 normal 에서 빼서 dup 방지.
+    const altFirstIdx = altRows.findIndex((r) => !r.empty);
+    let normalLastIdx = -1;
+    for (let i = normalRows.length - 1; i >= 0; i--) {
+      if (!normalRows[i]!.empty) { normalLastIdx = i; break; }
+    }
+    const isDup = altFirstIdx >= 0 && normalLastIdx >= 0
+      && normalRows[normalLastIdx]!.plain.trim() === altRows[altFirstIdx]!.plain.trim();
+    if (isDup) {
+      // normal 의 마지막 prompt 행 + 그 뒤 trailing empty 모두 제거 → alt 그대로 추가
+      rows = [...normalRows.slice(0, normalLastIdx), ...altRows];
+    } else {
+      rows = [...normalRows];
+      rows.push({ html: '<span style="color:#4B5563">────────────────────────────────────────</span>', plain: '──', empty: false });
+      rows.push(...altRows);
+    }
+  } else {
+    rows = normalRows;
   }
   // trailing 빈 행 trim + 연속 empty 압축 — claude TUI alt screen 의 statusbar 직전
   // 비어있는 row 30+ 줄 이 화면 공백으로 보이는 사고 방지.
@@ -505,7 +527,9 @@ function doFit(): void {
 
 function resetAndConnect(): void {
   if (!term) return;
-  term.clear();
+  // reset = clear + scrollback 비움. partner 전환 시 옛 buffer 잔재 방지.
+  term.reset();
+  outputHtml.value = '';
   const name = props.partner?.agentName ?? '(선택 없음)';
   const cwd = props.partner?.workspaceDir || '~';
   term.writeln('\x1b[1;38;2;107;182;255mAI Desk\x1b[0m 웹 터미널 — \x1b[38;2;184;154;255m' + name + '\x1b[0m');
