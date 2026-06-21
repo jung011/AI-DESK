@@ -40,15 +40,14 @@
             ref="inputRef"
             class="tv-chat-input"
             rows="2"
-            placeholder="claude 에게 명령 입력 후 Enter…"
+            placeholder="claude 에게 명령 입력 — Enter 로 전송…"
+            @input="onInputUpdate"
             @keydown.enter.exact="onInputEnter"
+            @keydown.tab.prevent="onInputTab"
+            @keydown.escape.prevent="onInputEsc"
+            @keydown.arrow-up.prevent="onArrowUp"
+            @keydown.arrow-down.prevent="onArrowDown"
           />
-          <button
-            class="tv-chat-send"
-            :disabled="!inputDraft.trim()"
-            @click="onInputSend">
-            전송
-          </button>
         </div>
       </div>
       <!-- xterm DOM 자체는 mount 유지 (buffer parser 작동 위해), 화면에서만 숨김. -->
@@ -149,24 +148,46 @@ function renderBufferToOutput(): void {
 }
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+// 마지막으로 ws 에 전송한 input 의 *전체 string*. diff 계산용.
+let lastSentInput = '';
 
-function onInputSend(): void {
-  const text = inputDraft.value;
-  if (!text.trim()) return;
+function wsSendBytes(data: string): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  // 사용자 입력 + \r → claude TUI 의 입력창에 들어감 + Enter 효과.
-  const payload = new TextEncoder().encode(text + '\r');
-  ws.send(payload);
-  inputDraft.value = '';
-  // Enter 후 textarea focus 복원 — DOM 갱신 후에도 cursor 가 input 에 머물게.
-  nextTick(() => inputRef.value?.focus());
+  ws.send(new TextEncoder().encode(data));
+}
+
+// 사용자 input 갱신 마다 — diff 계산 + ws.send.
+function onInputUpdate(): void {
+  const curr = inputDraft.value;
+  if (curr === lastSentInput) return;
+  if (curr.startsWith(lastSentInput)) {
+    // append — 추가된 char 전송.
+    wsSendBytes(curr.slice(lastSentInput.length));
+  } else if (lastSentInput.startsWith(curr)) {
+    // backspace — 삭제된 만큼 \x7f.
+    const n = lastSentInput.length - curr.length;
+    wsSendBytes('\x7f'.repeat(n));
+  } else {
+    // 복잡한 변경 (paste / cursor 중간 수정 등) — Ctrl+U 라인 clear + 새 전체.
+    wsSendBytes('\x15' + curr);
+  }
+  lastSentInput = curr;
 }
 
 function onInputEnter(e: KeyboardEvent): void {
   if (e.isComposing) return;   // 한글 조합 중 Enter 는 무시
   e.preventDefault();
-  onInputSend();
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  wsSendBytes('\r');
+  inputDraft.value = '';
+  lastSentInput = '';
+  nextTick(() => inputRef.value?.focus());
 }
+
+function onInputTab(): void { wsSendBytes('\t'); }
+function onInputEsc(): void { wsSendBytes('\x1b'); }
+function onArrowUp(): void { wsSendBytes('\x1b[A'); }
+function onArrowDown(): void { wsSendBytes('\x1b[B'); }
 const connClass = ref<'pending' | 'mock' | 'live' | 'down'>('mock');
 const connText = computed(() => {
   return { pending: '준비 중', mock: 'mockup', live: '연결됨', down: '끊김' }[connClass.value];
@@ -579,7 +600,7 @@ function avatar(s: AgentStatus): string {
 .tv-chat-empty { color: #6B7785; font-size: 12px; text-align: center; margin-top: 30px; }
 
 .tv-chat-input-row {
-  display: flex; gap: 8px; align-items: flex-end;
+  display: flex; gap: 8px;
   padding: 12px 16px;
   background: rgba(20, 28, 48, 0.5);
   border-top: 1px solid #1E2738;
