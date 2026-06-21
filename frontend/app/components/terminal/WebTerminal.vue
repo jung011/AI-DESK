@@ -199,17 +199,32 @@ function renderBufferToOutput(): void {
     outputHtml.value = lines.map(escapeHtml).join('\n');
     return;
   }
-  const htmlLines: string[] = [];
-  for (let y = 0; y < normalBuf.length; y++) {
-    htmlLines.push(renderLineHtml(normalBuf.getLine(y), nullCell));
-  }
+  type Row = { html: string; empty: boolean };
+  const rows: Row[] = [];
+  const pushRow = (line: any) => {
+    const plain = line?.translateToString(true) ?? '';
+    rows.push({ html: renderLineHtml(line, nullCell), empty: plain.length === 0 });
+  };
+  for (let y = 0; y < normalBuf.length; y++) pushRow(normalBuf.getLine(y));
   if (activeBuf !== normalBuf) {
-    htmlLines.push('<span style="color:#4B5563">────────────────────────────────────────</span>');
-    for (let y = 0; y < activeBuf.length; y++) {
-      htmlLines.push(renderLineHtml(activeBuf.getLine(y), nullCell));
-    }
+    rows.push({ html: '<span style="color:#4B5563">────────────────────────────────────────</span>', empty: false });
+    for (let y = 0; y < activeBuf.length; y++) pushRow(activeBuf.getLine(y));
   }
-  outputHtml.value = htmlLines.join('\n');
+  // trailing 빈 행 trim + 연속 empty 압축 — claude TUI alt screen 의 statusbar 직전
+  // 비어있는 row 30+ 줄 이 화면 공백으로 보이는 사고 방지.
+  while (rows.length > 0 && rows[rows.length - 1]!.empty) rows.pop();
+  const compressed: Row[] = [];
+  let prevEmpty = false;
+  for (const r of rows) {
+    if (r.empty) {
+      if (prevEmpty) continue;
+      prevEmpty = true;
+    } else {
+      prevEmpty = false;
+    }
+    compressed.push(r);
+  }
+  outputHtml.value = compressed.map((r) => r.html).join('\n');
   nextTick(() => {
     if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
   });
