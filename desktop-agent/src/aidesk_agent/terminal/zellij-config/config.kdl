@@ -9,3 +9,8 @@ show_startup_tips false
 show_release_notes false
 copy_on_select true
 scroll_buffer_size 5000
+
+// 모든 default 단축키 비활성 — 사용자의 Ctrl-* 입력이 zellij 가로채기 없이 zsh 도달.
+// 웹 터미널은 단일 pane / 단일 세션 use case 라 zellij 의 pane/tab/mode 단축키 불필요.
+keybinds clear-defaults=true {
+}
