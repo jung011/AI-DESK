@@ -129,14 +129,16 @@ function renderBufferToOutput(): void {
   const normalBuf = term.buffer.normal;
   const activeBuf = term.buffer.active;
   const lines: string[] = [];
-  // 1) normal buffer 의 옛 scrollback
+  // 1) normal buffer 의 옛 scrollback — translateToString(false) = trailing whitespace
+  // 보존 = 원본 grid 정렬 유지 (한글 wide char 등 깨짐 방지).
   for (let y = 0; y < normalBuf.length; y++) {
-    lines.push(normalBuf.getLine(y)?.translateToString(true) ?? '');
+    lines.push(normalBuf.getLine(y)?.translateToString(false) ?? '');
   }
-  // 2) alt screen 일 때만 active buffer (현재 claude 화면) 추가
+  // 2) alt screen 일 때 normal ↔ alt 사이 시각적 separator + active buffer 추가
   if (activeBuf !== normalBuf) {
+    lines.push('────────────────────────────────────────');
     for (let y = 0; y < activeBuf.length; y++) {
-      lines.push(activeBuf.getLine(y)?.translateToString(true) ?? '');
+      lines.push(activeBuf.getLine(y)?.translateToString(false) ?? '');
     }
   }
   // trailing empty lines 제거.
@@ -591,11 +593,14 @@ function avatar(s: AgentStatus): string {
 .tv-chat-output {
   flex: 1; min-height: 0;
   overflow-y: auto;
+  overflow-x: auto;
   padding: 16px 18px;
   color: #C5CDD8;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px; line-height: 1.55;
-  white-space: pre-wrap;
+  /* 원본 grid 보존 — wrap 안 함, 긴 라인은 horizontal scroll. 한글 wide char 정렬 유지. */
+  white-space: pre;
+  tab-size: 8;
 }
 .tv-chat-empty { color: #6B7785; font-size: 12px; text-align: center; margin-top: 30px; }
 
