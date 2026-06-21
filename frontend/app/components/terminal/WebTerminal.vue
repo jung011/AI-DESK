@@ -125,19 +125,24 @@ function scheduleBufferRender(): void {
 
 function renderBufferToOutput(): void {
   if (!term) return;
-  const buf = term.buffer.active;
-  // buffer 전체 — scrollback 포함. normal screen 일 때 옛 출력도 누적되어 보임.
-  // alt screen (claude TUI 등) 일 때는 buf.length == term.rows (현재 화면만).
-  const total = buf.length;
+  // claude TUI alt screen 일 때 buffer.active = alt buffer (현재 화면만).
+  // 옛 scrollback 은 normal buffer 에 있음. 둘 다 표시.
+  const normalBuf = term.buffer.normal;
+  const activeBuf = term.buffer.active;
   const lines: string[] = [];
-  for (let y = 0; y < total; y++) {
-    const line = buf.getLine(y);
-    lines.push(line?.translateToString(true) ?? '');
+  // 1) normal buffer 의 옛 scrollback
+  for (let y = 0; y < normalBuf.length; y++) {
+    lines.push(normalBuf.getLine(y)?.translateToString(true) ?? '');
+  }
+  // 2) alt screen 일 때만 active buffer (현재 claude 화면) 추가
+  if (activeBuf !== normalBuf) {
+    for (let y = 0; y < activeBuf.length; y++) {
+      lines.push(activeBuf.getLine(y)?.translateToString(true) ?? '');
+    }
   }
   // trailing empty lines 제거.
   while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
   outputText.value = lines.join('\n');
-  // 채팅 페이지 패턴 — auto-scroll bottom.
   nextTick(() => {
     if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
   });
