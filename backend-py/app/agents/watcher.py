@@ -49,6 +49,12 @@ async def _check_once() -> int:
         if updated > 0:
             log.info("watcher: tick complete — %d agent(s) demoted active->idle", updated)
         return updated
+    except Exception:
+        # rollback 누락 시 transaction 이 abort 상태로 pool 에 반환되어 idle in transaction
+        # 누적 → pool 고갈 (rc24 사고 fix).
+        db.rollback()
+        log.exception("watcher: rolled back transaction")
+        raise
     finally:
         db.close()
 
@@ -75,6 +81,12 @@ async def _touch_ws_active_once() -> int:
         if touched > 0:
             log.info("ws-touch: touched=%d agents (online window 유지)", touched)
         return touched
+    except Exception:
+        # rollback 누락 시 transaction 이 abort 상태로 pool 에 반환되어 idle in transaction
+        # 누적 → pool 고갈 (rc24 사고 fix).
+        db.rollback()
+        log.exception("ws-touch: rolled back transaction")
+        raise
     finally:
         db.close()
 
