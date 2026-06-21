@@ -34,6 +34,8 @@
       <!-- 채팅 UI — D 옵션. output area = xterm buffer text 실시간 추출. -->
       <div class="tv-chat">
         <pre class="tv-chat-output" ref="outputRef">{{ outputText || '📡 터미널 백단 작동 중. 입력 → claude 에 전송.' }}</pre>
+        <!-- mirror — claude 입력창 (cursor 주변 라인). slash menu / ghost / history 자동 표시. -->
+        <pre v-if="mirrorText" class="tv-chat-mirror">{{ mirrorText }}</pre>
         <div class="tv-chat-input-row">
           <textarea
             v-model="inputDraft"
@@ -111,6 +113,7 @@ const cols = ref(80);
 const rows = ref(24);
 const inputDraft = ref('');
 const outputText = ref('');
+const mirrorText = ref('');
 const outputRef = ref<HTMLElement | null>(null);
 let renderRafScheduled = false;
 
@@ -141,6 +144,21 @@ function renderBufferToOutput(): void {
   nextTick(() => {
     if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
   });
+
+  // mirror — cursor 주변 라인 (claude 의 입력창 + slash menu + ghost). cursor 위 5줄
+  // 부터 cursor 까지. tmux status bar (마지막 줄) 제외.
+  const cursorAbsY = (buf.viewportY ?? 0) + (buf.cursorY ?? 0);
+  const mirrorStart = Math.max(0, cursorAbsY - 5);
+  const mirrorLines: string[] = [];
+  for (let y = mirrorStart; y <= cursorAbsY; y++) {
+    const line = buf.getLine(y);
+    const text = line?.translateToString(true) ?? '';
+    mirrorLines.push(text);
+  }
+  // trailing empty 제거.
+  while (mirrorLines.length > 1 && mirrorLines[mirrorLines.length - 1] === '') mirrorLines.pop();
+  // 의미 있는 content 만 (전체 빈 라인이면 mirror 자체 숨김).
+  mirrorText.value = mirrorLines.some(l => l.trim()) ? mirrorLines.join('\n') : '';
 }
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
@@ -568,6 +586,20 @@ function avatar(s: AgentStatus): string {
   white-space: pre-wrap;
 }
 .tv-chat-empty { color: #6B7785; font-size: 12px; text-align: center; margin-top: 30px; }
+
+/* mirror — claude 의 cursor 주변 라인 (입력창 + slash menu + ghost). */
+.tv-chat-mirror {
+  background: rgba(184, 154, 255, 0.06);
+  border-top: 1px solid rgba(184, 154, 255, 0.18);
+  padding: 8px 16px;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.45;
+  color: #C5CDD8;
+  white-space: pre-wrap;
+  max-height: 120px; overflow-y: auto;
+  flex-shrink: 0;
+}
 
 .tv-chat-input-row {
   display: flex; gap: 8px; align-items: flex-end;
