@@ -21,16 +21,6 @@
     </header>
 
     <div v-if="partner" class="tv-body">
-      <div class="tv-statusbar">
-        <span class="tv-dots">
-          <span class="d-red"></span><span class="d-yel"></span><span class="d-grn"></span>
-        </span>
-        <span class="tv-name-small">{{ partner.agentName }}</span>
-        <span class="tv-meta-small">{{ partner.workspaceDir || '/' }} · {{ cols }}×{{ rows }}</span>
-        <div class="tv-right">
-          <span class="tv-conn" :class="connClass">{{ connText }}</span>
-        </div>
-      </div>
       <!-- 채팅 UI — D 옵션. output area = xterm buffer text 실시간 추출. -->
       <div class="tv-chat">
         <pre class="tv-chat-output" ref="outputRef" v-html="outputHtml || emptyHtml"></pre>
@@ -664,8 +654,7 @@ function avatar(s: AgentStatus): string {
   flex: 1; min-height: 0;
   background: #0E1424;
   border: 1px solid #1F2738;
-  border-top: none;
-  border-radius: 0 0 14px 14px;
+  border-radius: 14px;
   display: flex; flex-direction: column;
   overflow: hidden;
 }
