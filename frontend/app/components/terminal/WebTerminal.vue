@@ -37,6 +37,7 @@
             @keydown.escape.prevent="onInputEsc"
             @keydown.arrow-up.prevent="onArrowUp"
             @keydown.arrow-down.prevent="onArrowDown"
+            @keydown="onInputKeyDown"
           />
         </div>
       </div>
@@ -271,6 +272,28 @@ function onInputTab(): void { wsSendBytes('\t'); }
 function onInputEsc(): void { wsSendBytes('\x1b'); }
 function onArrowUp(): void { wsSendBytes('\x1b[A'); }
 function onArrowDown(): void { wsSendBytes('\x1b[B'); }
+
+// Ctrl + 알파벳 → raw control byte. Cmd/Alt 와 동시 X (mac native 단축키 보존).
+// Ctrl-V 는 default (paste → input event), Ctrl-C 는 textarea selection 있으면 default (copy).
+// Ctrl-C/D/L/U/W/Z 는 PTY 가 현재 라인 buffer 를 reset 하므로 textarea 도 clear + lastSentInput reset.
+function onInputKeyDown(e: KeyboardEvent): void {
+  const isCtrlOnly = e.ctrlKey && !e.metaKey && !e.altKey;
+  if (!isCtrlOnly || e.key.length !== 1) return;
+  const ch = e.key.toLowerCase();
+  if (!/^[a-z]$/.test(ch)) return;
+  if (ch === 'v') return; // paste — default
+  if (ch === 'c') {
+    const ta = e.target as HTMLTextAreaElement;
+    if (ta && ta.selectionStart !== ta.selectionEnd) return; // selection → default copy
+  }
+  e.preventDefault();
+  const code = ch.charCodeAt(0) - 0x60; // a=1 ... z=26
+  wsSendBytes(String.fromCharCode(code));
+  if ('cdluwz'.includes(ch)) {
+    inputDraft.value = '';
+    lastSentInput = '';
+  }
+}
 const connClass = ref<'pending' | 'mock' | 'live' | 'down'>('mock');
 const connText = computed(() => {
   return { pending: '준비 중', mock: 'mockup', live: '연결됨', down: '끊김' }[connClass.value];
