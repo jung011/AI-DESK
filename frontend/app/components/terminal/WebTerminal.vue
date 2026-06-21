@@ -101,8 +101,13 @@ let resizeObserver: ResizeObserver | null = null;
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-// helper WS URL — 사용자 mac 의 127.0.0.1:30083 으로 직접 연결.
-const HELPER_WS_URL = 'ws://127.0.0.1:30083/ws/terminal';
+// helper WS URL — 사용자 mac 의 helper 직접 연결.
+// dev 분리 인스턴스 = 30084 (별도 process, AIDESK_HUB_URL=localhost:30081).
+// prod = 30083 (LaunchAgent, AIDESK_HUB_URL=aidesk.kaflix.internal).
+// Vite tree-shake 으로 prod build 에는 30083 만 남음.
+const HELPER_WS_URL = import.meta.dev
+  ? 'ws://127.0.0.1:30084/ws/terminal'
+  : 'ws://127.0.0.1:30083/ws/terminal';
 
 async function ensureXterm(): Promise<void> {
   if (import.meta.server) return;
