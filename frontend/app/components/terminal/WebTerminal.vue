@@ -31,11 +31,9 @@
           <span class="tv-conn" :class="connClass">{{ connText }}</span>
         </div>
       </div>
-      <!-- 채팅 UI — D 옵션 단계 2. output area (위) + input (하단). -->
+      <!-- 채팅 UI — D 옵션. output area = xterm buffer text 실시간 추출. -->
       <div class="tv-chat">
-        <div class="tv-chat-output">
-          <p class="tv-chat-empty">📡 터미널 백단 작동 중. 입력 → claude 에 전송.</p>
-        </div>
+        <pre class="tv-chat-output" ref="outputRef">{{ outputText || '📡 터미널 백단 작동 중. 입력 → claude 에 전송.' }}</pre>
         <div class="tv-chat-input-row">
           <textarea
             v-model="inputDraft"
@@ -111,6 +109,38 @@ const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
 const cols = ref(80);
 const rows = ref(24);
 const inputDraft = ref('');
+const outputText = ref('');
+const outputRef = ref<HTMLElement | null>(null);
+let renderRafScheduled = false;
+
+function scheduleBufferRender(): void {
+  if (renderRafScheduled) return;
+  renderRafScheduled = true;
+  requestAnimationFrame(() => {
+    renderRafScheduled = false;
+    renderBufferToOutput();
+  });
+}
+
+function renderBufferToOutput(): void {
+  if (!term) return;
+  const buf = term.buffer.active;
+  // alt screen: buffer.length == term.rows (현재 화면만).
+  // normal screen: scrollback 포함. viewport 부분만 보여줘 (현재 보이는 영역).
+  const viewportY = buf.viewportY ?? 0;
+  const lines: string[] = [];
+  for (let y = 0; y < term.rows; y++) {
+    const line = buf.getLine(viewportY + y);
+    lines.push(line?.translateToString(true) ?? '');
+  }
+  // trailing empty lines 제거 (claude TUI 가 비운 줄들).
+  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  outputText.value = lines.join('\n');
+  // auto-scroll to bottom — 새 출력 따라가게.
+  nextTick(() => {
+    if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
+  });
+}
 
 function onInputSend(): void {
   const text = inputDraft.value;
@@ -204,6 +234,10 @@ async function ensureXterm(): Promise<void> {
   // attachCustomWheelEventHandler 의 return false = xterm 의 wheel 처리 *완전 차단*.
   if (typeof term.attachCustomWheelEventHandler === 'function') {
     term.attachCustomWheelEventHandler(() => false);
+  }
+  // D 단계 3 — xterm buffer text 추출. write 마다 RAF throttle 로 output area 갱신.
+  if (typeof term.onWriteParsed === 'function') {
+    term.onWriteParsed(() => scheduleBufferRender());
   }
   // wheel = xterm scrollback 있으면 그쪽, 없으면 *page scroll 으로 위임*. xterm 영역
   // 위에서 wheel 이 nothing 되는 게 사용자 의도와 다름.
