@@ -76,27 +76,35 @@ def _render_message(payload: dict) -> str:
     )
 
 
-async def _tmux_has_session(session: str) -> bool:
+async def _zellij_has_session(session: str) -> bool:
+    """zellij list-sessions 의 plain output 에 session 명 있는지."""
+    from ..terminal.web_pty import ZELLIJ
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux",
-            "has-session",
-            "-t",
-            session,
-            stdout=asyncio.subprocess.DEVNULL,
+            ZELLIJ, "list-sessions", "-n", "-s",
+            stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        rc = await proc.wait()
-        return rc == 0
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return False
+        names = (stdout or b"").decode("utf-8", "ignore").splitlines()
+        return any(n.strip() == session for n in names)
     except OSError:
         return False
 
 
-async def _tmux_send(session: str, text: str) -> bool:
-    """`tmux send-keys -l` 로 텍스트 + 짧은 지연 + 별도 Enter — 백엔드와 동일 패턴."""
+async def _zellij_send(session: str, text: str) -> bool:
+    """zellij action write-chars 로 텍스트 + write 13 (CR) Enter — tmux send-keys 와 동등.
+
+    tmux 의 `send-keys -l -t session text` + `send-keys -t session C-m` 패턴을
+    zellij 의 `--session NAME action write-chars text` + `action write 13` 으로 매핑.
+    cross-platform — macOS / Linux / Windows 모두 동일 명령.
+    """
+    from ..terminal.web_pty import ZELLIJ
     try:
         p1 = await asyncio.create_subprocess_exec(
-            "tmux", "send-keys", "-l", "-t", session, text,
+            ZELLIJ, "--session", session, "action", "write-chars", text,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -104,16 +112,22 @@ async def _tmux_send(session: str, text: str) -> bool:
         if rc1 != 0:
             return False
         await asyncio.sleep(_ENTER_DELAY_SEC)
+        # write 13 = CR (raw \r byte) — terminal mode 무관, bracketed-paste 도 우회.
         p2 = await asyncio.create_subprocess_exec(
-            "tmux", "send-keys", "-t", session, "C-m",
+            ZELLIJ, "--session", session, "action", "write", "13",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
         rc2 = await p2.wait()
         return rc2 == 0
     except OSError as e:
-        log.warning("tmux send-keys failed: %s", e)
+        log.warning("zellij action write failed: %s", e)
         return False
+
+
+# tmux → zellij 마이그 — 옛 이름 alias 로 유지 (handler 가 호출).
+_tmux_has_session = _zellij_has_session
+_tmux_send = _zellij_send
 
 
 async def _send_ack(backend_url: str, message_id: str) -> None:
