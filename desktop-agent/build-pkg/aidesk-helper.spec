@@ -12,11 +12,17 @@ block_cipher = None
 
 hidden = collect_submodules('aidesk_agent')
 
+# 동봉 데이터:
+#   bin/zellij                                    — multiplexer binary (build.sh 가 다운로드)
+#   aidesk_agent/terminal/zellij-config/         — config + layouts (single-pane UI)
 a = Analysis(
     ['entry.py'],
     pathex=['../src'],
     binaries=[],
-    datas=[],
+    datas=[
+        ('../bin/zellij', 'bin'),
+        ('../src/aidesk_agent/terminal/zellij-config', 'aidesk_agent/terminal/zellij-config'),
+    ],
     hiddenimports=hidden,
     hookspath=[],
     runtime_hooks=[],
