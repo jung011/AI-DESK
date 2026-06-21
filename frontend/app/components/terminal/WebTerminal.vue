@@ -34,8 +34,6 @@
       <!-- 채팅 UI — D 옵션. output area = xterm buffer text 실시간 추출. -->
       <div class="tv-chat">
         <pre class="tv-chat-output" ref="outputRef">{{ outputText || '📡 터미널 백단 작동 중. 입력 → claude 에 전송.' }}</pre>
-        <!-- mirror — claude 입력창 (cursor 주변 라인). slash menu / ghost / history 자동 표시. -->
-        <pre v-if="mirrorText" class="tv-chat-mirror">{{ mirrorText }}</pre>
         <div class="tv-chat-input-row">
           <textarea
             v-model="inputDraft"
@@ -113,7 +111,6 @@ const cols = ref(80);
 const rows = ref(24);
 const inputDraft = ref('');
 const outputText = ref('');
-const mirrorText = ref('');
 const outputRef = ref<HTMLElement | null>(null);
 let renderRafScheduled = false;
 
@@ -129,36 +126,21 @@ function scheduleBufferRender(): void {
 function renderBufferToOutput(): void {
   if (!term) return;
   const buf = term.buffer.active;
-  // alt screen: buffer.length == term.rows (현재 화면만).
-  // normal screen: scrollback 포함. viewport 부분만 보여줘 (현재 보이는 영역).
-  const viewportY = buf.viewportY ?? 0;
+  // buffer 전체 — scrollback 포함. normal screen 일 때 옛 출력도 누적되어 보임.
+  // alt screen (claude TUI 등) 일 때는 buf.length == term.rows (현재 화면만).
+  const total = buf.length;
   const lines: string[] = [];
-  for (let y = 0; y < term.rows; y++) {
-    const line = buf.getLine(viewportY + y);
+  for (let y = 0; y < total; y++) {
+    const line = buf.getLine(y);
     lines.push(line?.translateToString(true) ?? '');
   }
-  // trailing empty lines 제거 (claude TUI 가 비운 줄들).
+  // trailing empty lines 제거.
   while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-  // 채팅 페이지 ConversationView 와 동일 패턴 — 옛=위 / 최근=하단 / scroll=하단 고정.
   outputText.value = lines.join('\n');
+  // 채팅 페이지 패턴 — auto-scroll bottom.
   nextTick(() => {
     if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
   });
-
-  // mirror — cursor 주변 라인 (claude 의 입력창 + slash menu + ghost). cursor 위 5줄
-  // 부터 cursor 까지. tmux status bar (마지막 줄) 제외.
-  const cursorAbsY = (buf.viewportY ?? 0) + (buf.cursorY ?? 0);
-  const mirrorStart = Math.max(0, cursorAbsY - 5);
-  const mirrorLines: string[] = [];
-  for (let y = mirrorStart; y <= cursorAbsY; y++) {
-    const line = buf.getLine(y);
-    const text = line?.translateToString(true) ?? '';
-    mirrorLines.push(text);
-  }
-  // trailing empty 제거.
-  while (mirrorLines.length > 1 && mirrorLines[mirrorLines.length - 1] === '') mirrorLines.pop();
-  // 의미 있는 content 만 (전체 빈 라인이면 mirror 자체 숨김).
-  mirrorText.value = mirrorLines.some(l => l.trim()) ? mirrorLines.join('\n') : '';
 }
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
@@ -218,6 +200,10 @@ async function ensureXterm(): Promise<void> {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, 'Apple SD Gothic Neo', monospace",
     fontSize: fontSizePx.value,
     lineHeight: 1.2,
+    // hidden xterm 의 viewport 가 너무 작으면 (예: 24 rows) 각 명령 결과가 grid 안에서
+    // 짧게 끊겨 *output 의미 단위* 가 작음. 큰 size 로 spawn 해 *터미널 내용 누적 가능*.
+    cols: 200,
+    rows: 50,
     scrollback: 5000,
     allowProposedApi: true,
     theme: {
@@ -586,20 +572,6 @@ function avatar(s: AgentStatus): string {
   white-space: pre-wrap;
 }
 .tv-chat-empty { color: #6B7785; font-size: 12px; text-align: center; margin-top: 30px; }
-
-/* mirror — claude 의 cursor 주변 라인 (입력창 + slash menu + ghost). */
-.tv-chat-mirror {
-  background: rgba(184, 154, 255, 0.06);
-  border-top: 1px solid rgba(184, 154, 255, 0.18);
-  padding: 8px 16px;
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px; line-height: 1.45;
-  color: #C5CDD8;
-  white-space: pre-wrap;
-  max-height: 120px; overflow-y: auto;
-  flex-shrink: 0;
-}
 
 .tv-chat-input-row {
   display: flex; gap: 8px; align-items: flex-end;
