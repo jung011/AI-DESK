@@ -33,7 +33,7 @@
       </div>
       <!-- 채팅 UI — D 옵션. output area = xterm buffer text 실시간 추출. -->
       <div class="tv-chat">
-        <pre class="tv-chat-output" ref="outputRef">{{ outputText || '📡 터미널 백단 작동 중. 입력 → claude 에 전송.' }}</pre>
+        <pre class="tv-chat-output" ref="outputRef" v-html="outputHtml || emptyHtml"></pre>
         <div class="tv-chat-input-row">
           <textarea
             v-model="inputDraft"
@@ -109,9 +109,83 @@ const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
 const cols = ref(80);
 const rows = ref(24);
 const inputDraft = ref('');
-const outputText = ref('');
+const outputHtml = ref('');
+const emptyHtml = '<span style="color:#6B7785">📡 터미널 백단 작동 중. 입력 → claude 에 전송.</span>';
 const outputRef = ref<HTMLElement | null>(null);
 let renderRafScheduled = false;
+
+// xterm theme 의 ansi 16 색 매핑 — IBufferCell.getFgColor() palette index 0-15 용.
+const ANSI16 = [
+  '#0E1424', '#F87171', '#10B981', '#F59E0B', '#4F7FFF', '#B89AFF', '#6BB6FF', '#C5CDD8',
+  '#4B5563', '#FCA5A5', '#34D399', '#FBBF24', '#6BB6FF', '#D8B4FE', '#7DD3FC', '#FFFFFF',
+];
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function paletteToCss(val: number): string {
+  if (val >= 0 && val < 16) return ANSI16[val];
+  if (val < 232) {
+    const i = val - 16;
+    const r = Math.floor(i / 36), g = Math.floor((i % 36) / 6), b = i % 6;
+    const scale = (n: number) => (n === 0 ? 0 : 55 + n * 40);
+    return `rgb(${scale(r)},${scale(g)},${scale(b)})`;
+  }
+  const gray = 8 + (val - 232) * 10;
+  return `rgb(${gray},${gray},${gray})`;
+}
+
+function rgbToCss(val: number): string {
+  return `#${val.toString(16).padStart(6, '0')}`;
+}
+
+function cellStyle(cell: any): string {
+  const styles: string[] = [];
+  // xterm.js v6 — getFgColorMode 의 raw number 직접 비교 X, isFgRGB/isFgPalette/isFgDefault helper.
+  if (cell.isFgRGB?.()) {
+    styles.push(`color:${rgbToCss(cell.getFgColor())}`);
+  } else if (cell.isFgPalette?.()) {
+    styles.push(`color:${paletteToCss(cell.getFgColor())}`);
+  }
+  if (cell.isBgRGB?.()) {
+    styles.push(`background:${rgbToCss(cell.getBgColor())}`);
+  } else if (cell.isBgPalette?.()) {
+    styles.push(`background:${paletteToCss(cell.getBgColor())}`);
+  }
+  if (cell.isBold?.()) styles.push('font-weight:bold');
+  if (cell.isItalic?.()) styles.push('font-style:italic');
+  if (cell.isUnderline?.()) styles.push('text-decoration:underline');
+  if (cell.isDim?.()) styles.push('opacity:0.6');
+  return styles.join(';');
+}
+
+function renderLineHtml(line: any, nullCell: any): string {
+  if (!line) return '&nbsp;';
+  const len = line.length;
+  const parts: string[] = [];
+  let pendingStyle = '';
+  let pendingChars = '';
+  const flush = () => {
+    if (!pendingChars) return;
+    if (pendingStyle) parts.push(`<span style="${pendingStyle}">${escapeHtml(pendingChars)}</span>`);
+    else parts.push(escapeHtml(pendingChars));
+    pendingChars = '';
+  };
+  for (let x = 0; x < len; x++) {
+    const cell = line.getCell(x, nullCell) ?? nullCell;
+    const ch = cell.getChars?.() || ' ';
+    const style = cellStyle(cell);
+    if (style !== pendingStyle) {
+      flush();
+      pendingStyle = style;
+    }
+    pendingChars += ch;
+  }
+  flush();
+  return parts.join('') || '&nbsp;';
+}
 
 function scheduleBufferRender(): void {
   if (renderRafScheduled) return;
@@ -124,26 +198,28 @@ function scheduleBufferRender(): void {
 
 function renderBufferToOutput(): void {
   if (!term) return;
-  // claude TUI alt screen 일 때 buffer.active = alt buffer (현재 화면만).
-  // 옛 scrollback 은 normal buffer 에 있음. 둘 다 표시.
   const normalBuf = term.buffer.normal;
   const activeBuf = term.buffer.active;
-  const lines: string[] = [];
-  // 1) normal buffer 의 옛 scrollback — translateToString(false) = trailing whitespace
-  // 보존 = 원본 grid 정렬 유지 (한글 wide char 등 깨짐 방지).
-  for (let y = 0; y < normalBuf.length; y++) {
-    lines.push(normalBuf.getLine(y)?.translateToString(false) ?? '');
+  // 재사용 cell instance — getNullCell 으로 한 번 만들어 getCell(x, cell) 에 전달.
+  const nullCell = activeBuf.getNullCell ? activeBuf.getNullCell() : null;
+  if (!nullCell) {
+    // fallback — plain text 만
+    const lines: string[] = [];
+    for (let y = 0; y < normalBuf.length; y++) lines.push(normalBuf.getLine(y)?.translateToString(false) ?? '');
+    outputHtml.value = lines.map(escapeHtml).join('\n');
+    return;
   }
-  // 2) alt screen 일 때 normal ↔ alt 사이 시각적 separator + active buffer 추가
+  const htmlLines: string[] = [];
+  for (let y = 0; y < normalBuf.length; y++) {
+    htmlLines.push(renderLineHtml(normalBuf.getLine(y), nullCell));
+  }
   if (activeBuf !== normalBuf) {
-    lines.push('────────────────────────────────────────');
+    htmlLines.push('<span style="color:#4B5563">────────────────────────────────────────</span>');
     for (let y = 0; y < activeBuf.length; y++) {
-      lines.push(activeBuf.getLine(y)?.translateToString(false) ?? '');
+      htmlLines.push(renderLineHtml(activeBuf.getLine(y), nullCell));
     }
   }
-  // trailing empty lines 제거.
-  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-  outputText.value = lines.join('\n');
+  outputHtml.value = htmlLines.join('\n');
   nextTick(() => {
     if (outputRef.value) outputRef.value.scrollTop = outputRef.value.scrollHeight;
   });
@@ -265,6 +341,10 @@ async function ensureXterm(): Promise<void> {
   if (termHost.value) {
     term.open(termHost.value);
     requestAnimationFrame(() => doFit());
+  }
+  // dev debug — brower console 에서 term 직접 검사
+  if (typeof window !== 'undefined' && import.meta.dev) {
+    (window as any).__term__ = term;
   }
   // claude TUI 가 application mouse mode (CSI ?1000h 등) 박으면 xterm 의 wheel handler
   // 가 escape sequence 로 application 에 전달 → claude 입력창에 paste 사고.
