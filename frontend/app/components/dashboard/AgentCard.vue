@@ -35,10 +35,14 @@
             VSCode 열기
           </button>
           -->
+          <!-- 외부 터미널 열기: 2026-06-21 비활성 (웹 터미널로 대체). 부활 시 이 button + 아래
+               TerminalModeDialog + script 의 callOpenTerminal/onOpenTerminal/onModeConfirm/
+               onModeCancel/modeDialogOpen/modeDialogBusy + TerminalModeDialog import 모두 해제.
           <button type="button" class="card-menu-item" @click="onOpenTerminal">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10z"/></svg>
             외부 터미널 열기
           </button>
+          -->
           <!--
           <button type="button" class="card-menu-item" @click="onPlaceholder('브라우저 검증')">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93z"/></svg>
@@ -53,25 +57,28 @@
         </div>
       </div>
     </div>
+    <!-- 외부 터미널 모드 선택 dialog — 외부 터미널 열기 비활성과 같이 주석.
     <TerminalModeDialog
       :open="modeDialogOpen"
       :busy="modeDialogBusy"
       @confirm="onModeConfirm"
       @cancel="onModeCancel"
     />
+    -->
   </div>
 </template>
 
 <script setup lang="ts">
 import type { AgentItem } from '~/vo/agents/AgentVo';
-import TerminalModeDialog from '~/components/dashboard/TerminalModeDialog.vue';
+// 외부 터미널 열기 비활성 (2026-06-21) — 부활 시 import + 아래 type / function 모두 해제.
+// import TerminalModeDialog from '~/components/dashboard/TerminalModeDialog.vue';
 
-type OpenTerminalEnv = {
-  rc: number;
-  message?: string;
-  needsModeSelection?: boolean;
-};
-type WorkroleEnv = { result: number; data?: { path: string } | null };
+// type OpenTerminalEnv = {
+//   rc: number;
+//   message?: string;
+//   needsModeSelection?: boolean;
+// };
+// type WorkroleEnv = { result: number; data?: { path: string } | null };
 
 const props = defineProps<{ agent: AgentItem }>();
 const emit = defineEmits<{
@@ -133,14 +140,16 @@ async function onOpenVscode(): Promise<void> {
 }
 */
 
-/**
- * 외부 터미널 열기 호출.
- * - mode 미지정 (첫 시도): 살아있으면 attach + 포커스 (200), 죽었으면 helper 가 412 (needsModeSelection)
- * - mode 지정 (모달 confirm 후): helper 가 그 모드로 tmux+claude 시작 + attach
- *
- * helper 가 새로 띄울 때 첫 부팅이면 identity/workrole 자동 주입 — 그래서 mode 지정 호출 시에만
- * agentName / workroleFile 도 같이 전달한다.
- */
+/*
+// 외부 터미널 열기 — 2026-06-21 비활성 (웹 터미널로 대체). 부활 시 전체 block + template +
+// import + types 모두 주석 해제.
+//
+// 외부 터미널 열기 호출.
+// - mode 미지정 (첫 시도): 살아있으면 attach + 포커스 (200), 죽었으면 helper 가 412 (needsModeSelection)
+// - mode 지정 (모달 confirm 후): helper 가 그 모드로 tmux+claude 시작 + attach
+//
+// helper 가 새로 띄울 때 첫 부팅이면 identity/workrole 자동 주입 — 그래서 mode 지정 호출 시에만
+// agentName / workroleFile 도 같이 전달한다.
 async function callOpenTerminal(
   mode = '',
   customOpts = '',
@@ -162,7 +171,7 @@ async function callOpenTerminal(
       const wrEnv = await $api<WorkroleEnv>('/api/settings/workrole-file');
       if (wrEnv.result === 0 && wrEnv.data) body.workroleFile = wrEnv.data.path || '';
     } catch {
-      /* workrole 조회 실패 무시 */
+      // workrole 조회 실패 무시
     }
   }
   try {
@@ -189,11 +198,9 @@ async function onOpenTerminal(): Promise<void> {
     if (env.needsModeSelection) {
       modeDialogOpen.value = true;
     } else if (env.rc !== 0) {
-      // eslint-disable-next-line no-alert
       alert(env.message || '터미널 열기에 실패했습니다.');
     }
   } catch (e) {
-    // eslint-disable-next-line no-alert
     alert(`터미널 열기 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
   }
 }
@@ -205,11 +212,9 @@ async function onModeConfirm(payload: { mode: string; customOpts: string }): Pro
     if (env.rc === 0) {
       modeDialogOpen.value = false;
     } else {
-      // eslint-disable-next-line no-alert
       alert(env.message || '터미널 시작에 실패했습니다.');
     }
   } catch (e) {
-    // eslint-disable-next-line no-alert
     alert(`터미널 시작 실패: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
     modeDialogBusy.value = false;
@@ -219,6 +224,7 @@ async function onModeConfirm(payload: { mode: string; customOpts: string }): Pro
 function onModeCancel(): void {
   modeDialogOpen.value = false;
 }
+*/
 
 function onDelete(): void {
   menuOpen.value = false;
