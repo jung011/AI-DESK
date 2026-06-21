@@ -31,7 +31,13 @@
           <span class="tv-conn" :class="connClass">{{ connText }}</span>
         </div>
       </div>
-      <div ref="termHost" class="tv-term" :style="{ '--tv-font-size': `${fontSizePx}px` }"></div>
+      <!-- 채팅 UI 자리 (다음 단계 추가). -->
+      <div class="tv-chat-placeholder">
+        <p>📡 터미널이 *백단* 에서 작동 중 — xterm 숨김 상태.</p>
+        <p class="tv-chat-sub">다음 단계에서 채팅 UI 로 output 표시 + 입력창 추가.</p>
+      </div>
+      <!-- xterm DOM 자체는 mount 유지 (buffer parser 작동 위해), 화면에서만 숨김. -->
+      <div ref="termHost" class="tv-term tv-term-hidden" :style="{ '--tv-font-size': `${fontSizePx}px` }"></div>
     </div>
 
     <!-- 폰트 사이즈 모달 (채팅 cv-settings-modal 와 동일 스타일) -->
@@ -459,6 +465,31 @@ function avatar(s: AgentStatus): string {
   border-radius: 0 0 14px 14px;
   padding: 12px 14px;
 }
+/* D 옵션 단계 1 — xterm DOM 은 mount 유지 (parser/buffer 작동), 화면에서만 숨김.
+   position absolute + visibility hidden + pointer-events none — 사용자 mouse/wheel
+   event 도달 X. 그래도 term.open() 이 *DOM 안* 에 mount 되어야 buffer 가 정상 작동. */
+.tv-term-hidden {
+  position: absolute !important;
+  left: -9999px;
+  top: 0;
+  width: 800px;
+  height: 480px;
+  visibility: hidden;
+  pointer-events: none;
+}
+.tv-chat-placeholder {
+  flex: 1; min-height: 0;
+  background: #0E1424;
+  border: 1px solid #1F2738;
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  padding: 28px;
+  color: #8B95A5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+}
+.tv-chat-placeholder p { margin: 0; font-size: 14px; }
+.tv-chat-placeholder .tv-chat-sub { color: #6B7785; font-size: 12px; }
 :deep(.xterm) { height: 100%; }
 :deep(.xterm-viewport)::-webkit-scrollbar { width: 10px; }
 :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
