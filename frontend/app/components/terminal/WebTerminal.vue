@@ -31,10 +31,26 @@
           <span class="tv-conn" :class="connClass">{{ connText }}</span>
         </div>
       </div>
-      <!-- 채팅 UI 자리 (다음 단계 추가). -->
-      <div class="tv-chat-placeholder">
-        <p>📡 터미널이 *백단* 에서 작동 중 — xterm 숨김 상태.</p>
-        <p class="tv-chat-sub">다음 단계에서 채팅 UI 로 output 표시 + 입력창 추가.</p>
+      <!-- 채팅 UI — D 옵션 단계 2. output area (위) + input (하단). -->
+      <div class="tv-chat">
+        <div class="tv-chat-output">
+          <p class="tv-chat-empty">📡 터미널 백단 작동 중. 입력 → claude 에 전송.</p>
+        </div>
+        <div class="tv-chat-input-row">
+          <textarea
+            v-model="inputDraft"
+            class="tv-chat-input"
+            rows="2"
+            placeholder="claude 에게 명령 입력 후 Enter…"
+            @keydown.enter.exact="onInputEnter"
+          />
+          <button
+            class="tv-chat-send"
+            :disabled="!inputDraft.trim()"
+            @click="onInputSend">
+            전송
+          </button>
+        </div>
       </div>
       <!-- xterm DOM 자체는 mount 유지 (buffer parser 작동 위해), 화면에서만 숨김. -->
       <div ref="termHost" class="tv-term tv-term-hidden" :style="{ '--tv-font-size': `${fontSizePx}px` }"></div>
@@ -94,6 +110,23 @@ const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
 
 const cols = ref(80);
 const rows = ref(24);
+const inputDraft = ref('');
+
+function onInputSend(): void {
+  const text = inputDraft.value;
+  if (!text.trim()) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  // 사용자 입력 + \r → claude TUI 의 입력창에 들어감 + Enter 효과.
+  const payload = new TextEncoder().encode(text + '\r');
+  ws.send(payload);
+  inputDraft.value = '';
+}
+
+function onInputEnter(e: KeyboardEvent): void {
+  if (e.isComposing) return;   // 한글 조합 중 Enter 는 무시
+  e.preventDefault();
+  onInputSend();
+}
 const connClass = ref<'pending' | 'mock' | 'live' | 'down'>('mock');
 const connText = computed(() => {
   return { pending: '준비 중', mock: 'mockup', live: '연결됨', down: '끊김' }[connClass.value];
@@ -477,19 +510,62 @@ function avatar(s: AgentStatus): string {
   visibility: hidden;
   pointer-events: none;
 }
-.tv-chat-placeholder {
+.tv-chat {
   flex: 1; min-height: 0;
   background: #0E1424;
   border: 1px solid #1F2738;
   border-top: none;
   border-radius: 0 0 14px 14px;
-  padding: 28px;
-  color: #8B95A5;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 8px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
 }
-.tv-chat-placeholder p { margin: 0; font-size: 14px; }
-.tv-chat-placeholder .tv-chat-sub { color: #6B7785; font-size: 12px; }
+.tv-chat-output {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+  color: #C5CDD8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px; line-height: 1.55;
+  white-space: pre-wrap;
+}
+.tv-chat-empty { color: #6B7785; font-size: 12px; text-align: center; margin-top: 30px; }
+
+.tv-chat-input-row {
+  display: flex; gap: 8px; align-items: flex-end;
+  padding: 12px 16px;
+  background: rgba(20, 28, 48, 0.5);
+  border-top: 1px solid #1E2738;
+  flex-shrink: 0;
+}
+.tv-chat-input {
+  flex: 1; resize: none; padding: 8px 12px;
+  font-size: 13px; line-height: 1.55; font-family: inherit;
+  background: #1A2030; border: 1px solid #2A3447; border-radius: 10px;
+  color: #E5E9EE;
+  transition: border-color .15s, box-shadow .15s;
+}
+.tv-chat-input::placeholder { color: #4B5563; }
+.tv-chat-input:focus {
+  outline: none; border-color: #4F7FFF;
+  box-shadow: 0 0 0 3px rgba(79, 127, 255, 0.15);
+}
+.tv-chat-send {
+  padding: 8px 16px; font-size: 13px; font-weight: 600;
+  background: linear-gradient(135deg, #4F7FFF, #7C5CFF);
+  color: #fff; border: none; border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(79, 127, 255, 0.3);
+  transition: transform .1s, box-shadow .15s;
+}
+.tv-chat-send:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(79, 127, 255, 0.5);
+  transform: translateY(-1px);
+}
+.tv-chat-send:active:not(:disabled) { transform: translateY(0); }
+.tv-chat-send:disabled {
+  background: #2A3447; color: #6B7785;
+  cursor: not-allowed; box-shadow: none;
+}
 :deep(.xterm) { height: 100%; }
 :deep(.xterm-viewport)::-webkit-scrollbar { width: 10px; }
 :deep(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
