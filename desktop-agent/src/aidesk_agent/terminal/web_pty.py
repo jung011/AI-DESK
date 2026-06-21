@@ -152,6 +152,22 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback
 
+    # tmux attach 직전 — history 한 번 dump 해서 ws 로 직접 보냄. attach 가 *현재
+    # 화면만* 전송 (옛 출력 X). capture-pane -S -3000 으로 scrollback 3000 라인 보냄.
+    history_dump: bytes | None = None
+    if tmux_session:
+        try:
+            res = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-e", "-S", "-3000", "-t", tmux_session],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+            if res.returncode == 0 and res.stdout:
+                history_dump = res.stdout
+                log.info("ws-terminal: history dump %d bytes session=%s", len(history_dump), tmux_session)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            log.warning("ws-terminal: capture-pane failed err=%s", e)
+
     pid, fd = pty.fork()
     if pid == 0:
         # child process — exec shell or tmux attach. 이 분기는 절대 return 안 함.
@@ -179,6 +195,12 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     # parent
     _set_winsize(fd, rows, cols)
+    # history dump 전송 (attach 출력 전). client xterm 의 buffer 가 옛 history 갖게.
+    if history_dump:
+        try:
+            await ws.send_bytes(history_dump + b"\r\n")
+        except Exception as e:  # noqa: BLE001
+            log.warning("ws-terminal: history send failed err=%s", e)
 
     loop = asyncio.get_event_loop()
     closed = asyncio.Event()
