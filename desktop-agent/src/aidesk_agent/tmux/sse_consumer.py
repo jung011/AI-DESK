@@ -95,33 +95,24 @@ async def _zellij_has_session(session: str) -> bool:
 
 
 async def _zellij_send(session: str, text: str) -> bool:
-    """zellij action write-chars 로 텍스트 + write 13 (CR) Enter — tmux send-keys 와 동등.
+    """zellij action write-chars 로 텍스트 + 끝에 \\n 인라인 — claude TUI submit 동작.
 
-    tmux 의 `send-keys -l -t session text` + `send-keys -t session C-m` 패턴을
-    zellij 의 `--session NAME action write-chars text` + `action write 13` 으로 매핑.
+    tmux 의 `send-keys -l + send-keys C-m` 패턴을 zellij 의 `write-chars text\\n` 한 번에.
+    별도 `action write 13` 은 bracketed-paste 모드 안에서 literal 로 박혀 submit 안 됨.
+    write-chars 의 string 끝에 \\n 박으면 claude TUI 가 정상 submit (검증됨).
     cross-platform — macOS / Linux / Windows 모두 동일 명령.
     """
     from ..terminal.web_pty import ZELLIJ
     try:
-        p1 = await asyncio.create_subprocess_exec(
-            ZELLIJ, "--session", session, "action", "write-chars", text,
+        proc = await asyncio.create_subprocess_exec(
+            ZELLIJ, "--session", session, "action", "write-chars", text + "\n",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        rc1 = await p1.wait()
-        if rc1 != 0:
-            return False
-        await asyncio.sleep(_ENTER_DELAY_SEC)
-        # write 13 = CR (raw \r byte) — terminal mode 무관, bracketed-paste 도 우회.
-        p2 = await asyncio.create_subprocess_exec(
-            ZELLIJ, "--session", session, "action", "write", "13",
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        rc2 = await p2.wait()
-        return rc2 == 0
+        rc = await proc.wait()
+        return rc == 0
     except OSError as e:
-        log.warning("zellij action write failed: %s", e)
+        log.warning("zellij action write-chars failed: %s", e)
         return False
 
 
