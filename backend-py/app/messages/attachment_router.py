@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.agents.repository import AgentRepository
 from app.common.response import ApiEnvelope, fail, ok
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
 from app.messages.attachment_models import MessageAttachment
 from app.messages.attachment_repository import AttachmentRepository
 from app.messages.schemas import AttachmentUploadRs
@@ -77,29 +77,41 @@ async def upload(
 
 
 @router.get("/{attachment_id}")
-async def download(
-    attachment_id: str,
-    db: Session = Depends(get_db),
-) -> StreamingResponse:
-    repo = AttachmentRepository(db)
-    att = repo.find_by_id(attachment_id)
-    if att is None:
-        # StreamingResponse 가 default. 404 는 plain JSON envelope 으로 대신.
-        from fastapi.responses import JSONResponse
-        return JSONResponse(  # type: ignore[return-value]
-            status_code=404,
-            content={"code": "NA", "message": "attachment not found"},
-        )
+async def download(attachment_id: str) -> StreamingResponse:
+    """rc47 fix — Depends(get_db) 대신 명시 `with SessionLocal()`.
 
-    # filename 은 latin-1 safe 인코딩 — RFC 5987 filename* 사용으로 utf-8 한글 파일명 보존.
+    옛: db: Session = Depends(get_db) + StreamingResponse 반환 — FastAPI 의 dependency
+    cleanup 은 *response body 완전 전송 후* 실행. slow client / 큰 파일 + 트래픽 누적 시
+    response lifetime 동안 session 점유 + transaction commit 안 됨 → idle in transaction
+    누적 → DB pool 고갈. rc46 audit 가 못 잡은 leak path.
+
+    fix: with-block 으로 *attachment 데이터 메모리 load 후 session close* → StreamingResponse
+    body 전송 동안 DB pool 안전 (io.BytesIO 는 메모리 stream).
+    """
+    with SessionLocal() as db:
+        repo = AttachmentRepository(db)
+        att = repo.find_by_id(attachment_id)
+        if att is None:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(  # type: ignore[return-value]
+                status_code=404,
+                content={"code": "NA", "message": "attachment not found"},
+            )
+        # 메모리 load — session close 후에도 사용 가능한 plain bytes/str.
+        data = bytes(att.data)
+        filename = att.original_filename
+        content_type = att.content_type
+        size_bytes = att.size_bytes
+
+    # session 이미 close — StreamingResponse body 전송하는 동안 DB pool 부담 0.
     from urllib.parse import quote
-    encoded = quote(att.original_filename)
+    encoded = quote(filename)
     headers = {
         "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
-        "Content-Length": str(att.size_bytes),
+        "Content-Length": str(size_bytes),
     }
     return StreamingResponse(
-        io.BytesIO(att.data),
-        media_type=att.content_type or "application/octet-stream",
+        io.BytesIO(data),
+        media_type=content_type or "application/octet-stream",
         headers=headers,
     )
