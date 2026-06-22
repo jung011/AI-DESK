@@ -30,15 +30,26 @@ router = APIRouter()
 async def upload(
     file: Annotated[UploadFile, File(...)],
     ownerAgentId: Annotated[str, Form(...)],  # noqa: N803
-    db: Session = Depends(get_db),
 ) -> ApiEnvelope[AttachmentUploadRs]:
+    """rc49 fix — Depends(get_db) 제거, IO 분리.
+
+    옛 (rc48 까지): db = Depends(get_db) → find_by_agent_id (SELECT $1, transaction
+    시작) → await file.read() (slow client IO) → insert → commit. *await IO 동안
+    session 점유 + idle in transaction*. 트래픽 + slow client 시 leak 누적.
+
+    fix: find 와 insert 각각 별도 `with SessionLocal()` 블록으로 분리.
+    그 사이 `await file.read()` 동안 session 미점유 → IO 시간 무관.
+    """
     settings = get_settings()
 
-    agent_repo = AgentRepository(db)
-    owner = agent_repo.find_by_agent_id_any_owner(ownerAgentId)
-    if owner is None:
-        return fail(404, "owner agent not found")  # type: ignore[return-value]
+    # phase 1 — owner 검증 (short session: find → close).
+    with SessionLocal() as db:
+        agent_repo = AgentRepository(db)
+        owner = agent_repo.find_by_agent_id_any_owner(ownerAgentId)
+        if owner is None:
+            return fail(404, "owner agent not found")  # type: ignore[return-value]
 
+    # phase 2 — file IO (session 미점유).
     blob = await file.read()
     size = len(blob)
     if size == 0:
@@ -49,29 +60,33 @@ async def upload(
             f"파일 크기 한도 초과 ({size} > {settings.message_attachment_max_bytes} bytes)",
         )
 
-    att = MessageAttachment(
-        attachment_id=str(uuid.uuid4()),
-        message_id=None,
-        owner_agent_id=ownerAgentId,
-        original_filename=(file.filename or "unnamed"),
-        content_type=(file.content_type or "application/octet-stream"),
-        size_bytes=size,
-        data=blob,
-    )
-    repo = AttachmentRepository(db)
-    repo.insert(att)
-    db.commit()
-    db.refresh(att)
+    # phase 3 — insert (별도 short session: insert → commit → close).
+    att_id = str(uuid.uuid4())
+    filename = file.filename or "unnamed"
+    content_type = file.content_type or "application/octet-stream"
+    with SessionLocal() as db:
+        att = MessageAttachment(
+            attachment_id=att_id,
+            message_id=None,
+            owner_agent_id=ownerAgentId,
+            original_filename=filename,
+            content_type=content_type,
+            size_bytes=size,
+            data=blob,
+        )
+        repo = AttachmentRepository(db)
+        repo.insert(att)
+        db.commit()
     log.info(
         "attachment uploaded: id=%s owner=%s name=%s size=%d",
-        att.attachment_id, ownerAgentId, att.original_filename, size,
+        att_id, ownerAgentId, filename, size,
     )
     return ok(
         AttachmentUploadRs(
-            attachment_id=att.attachment_id,
-            original_filename=att.original_filename,
-            content_type=att.content_type,
-            size_bytes=att.size_bytes,
+            attachment_id=att_id,
+            original_filename=filename,
+            content_type=content_type,
+            size_bytes=size,
         )
     )
 
