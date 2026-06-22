@@ -10,5 +10,5 @@ build-pkg/build/
 build-pkg/build-dev/
 build-pkg/dist/
 
-# 동봉 zellij binary (build.sh 가 github releases 에서 자동 fetch — commit 대상 아님)
-bin/zellij
+# 동봉 zellij binary cache (build.sh 가 github releases 에서 자동 fetch — commit 대상 아님)
+bin/
