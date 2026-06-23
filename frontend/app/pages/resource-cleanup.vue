@@ -50,6 +50,9 @@
         </details>
       </section>
 
+      <!-- 시간 추이 차트 — 최근 24h uptime% / daemon% line chart -->
+      <ResourceHistoryChart />
+
       <!-- 정리 액션 카드 -->
       <section class="card">
         <div class="card-head">
@@ -113,6 +116,7 @@
 </template>
 
 <script setup lang="ts">
+import ResourceHistoryChart from '~/components/dashboard/ResourceHistoryChart.vue';
 interface SystemStatus {
   uptimeSeconds: number | null;
   uptimeDays: number | null;
