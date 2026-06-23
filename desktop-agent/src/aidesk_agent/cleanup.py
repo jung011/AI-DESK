@@ -103,20 +103,33 @@ def kill_stale_daemons(dry_run: bool = False) -> dict:
 
 
 def _get_uptime_seconds() -> float | None:
-    """macOS: sysctl kern.boottime 으로 uptime. 다른 OS 면 None."""
-    try:
-        out = subprocess.check_output(
-            ["sysctl", "-n", "kern.boottime"], text=True, timeout=2.0
-        )
-        # 출력 예: "{ sec = 1718000000, usec = 0 } Mon Jun 10 09:13:20 2026"
-        # sec = 다음 숫자 추출
+    """macOS uptime — sysctl kern.boottime. PyInstaller bundle 환경에선 PATH 가 제한적이라
+    절대경로 fallback 시도. 출력 형식도 macOS 버전마다 달라 정규식 2-단계.
+
+    출력 가능 형식:
+      - `{ sec = 1718000000, usec = 0 } Mon Jun 10 09:13:20 2026`  (BSD 전통)
+      - `{1718000000, 0} Mon Jun 10 09:13:20 2026`  (최근 macOS)
+      - `1718000000` (raw sec only)
+    """
+    for sysctl_bin in ("/usr/sbin/sysctl", "/sbin/sysctl", "sysctl"):
+        try:
+            out = subprocess.check_output(
+                [sysctl_bin, "-n", "kern.boottime"],
+                text=True, timeout=2.0, stderr=subprocess.PIPE,
+            )
+        except (FileNotFoundError, subprocess.SubprocessError, OSError):
+            continue
+        # 1차 — `sec = <digits>` 패턴
         m = re.search(r"sec\s*=\s*(\d+)", out)
-        if not m:
-            return None
-        boottime = int(m.group(1))
-        return max(0.0, time.time() - boottime)
-    except (subprocess.SubprocessError, OSError):
+        if m:
+            return max(0.0, time.time() - int(m.group(1)))
+        # 2차 — `{<digits>, <digits>}` 또는 raw `<digits>` 패턴
+        m = re.search(r"\{?\s*(\d{9,})\s*[,}]?", out)
+        if m:
+            return max(0.0, time.time() - int(m.group(1)))
+        log.warning("cleanup: kern.boottime 출력 파싱 실패: %r", out[:200])
         return None
+    return None
 
 
 def get_system_status() -> dict:
