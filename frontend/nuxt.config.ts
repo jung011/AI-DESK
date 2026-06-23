@@ -62,5 +62,17 @@ export default defineNuxtConfig({
       // 미설정 (빈 문자열) 시 헤더의 🌐 METAVERSE 버튼이 hide 됨.
       metaverseUrl: ''
     }
-  }
+  },
+
+  // dev only — NUXT_DEV_BACKEND_PROXY 환경변수가 있으면 nitro dev server 가 /api 와 /ws 를
+  // 그 대상에 server-side proxy. dev frontend (localhost:30080) ↔ prod backend
+  // (aidesk.kaflix.internal) 검증 시 CORS 우회용. prod build 영향 X.
+  nitro: process.env.NUXT_DEV_BACKEND_PROXY
+    ? {
+        devProxy: {
+          '/api': { target: `${process.env.NUXT_DEV_BACKEND_PROXY}/api`, changeOrigin: true },
+          '/ws': { target: (process.env.NUXT_DEV_BACKEND_PROXY).replace(/^http/, 'ws') + '/ws', changeOrigin: true, ws: true }
+        }
+      }
+    : undefined
 })
