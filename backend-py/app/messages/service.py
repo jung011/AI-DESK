@@ -199,20 +199,24 @@ class MessageService:
     # ---- unread count ----
 
     def get_unread_count(self, agent_id: str | None) -> UnreadCountRs:
+        """rc50 — N+1 → batch IN, response 직전 commit (idle in transaction 차단)."""
         if not agent_id:
             return UnreadCountRs(total_unread=0, by_agent=[])
         total = self.repo.count_unread_for_to(agent_id)
         by_from = self.repo.list_unread_by_from(agent_id)
-        result = []
-        for from_id, n in by_from:
-            sender = self.agent_repo.find_by_agent_id_any_owner(from_id)
-            result.append(
-                AgentUnread(
-                    agent_id=from_id,
-                    agent_name=sender.agent_name if sender else from_id,
-                    unread=n,
-                )
+        # batch fetch — N SELECT → 1 SELECT WHERE IN
+        from_ids = [from_id for from_id, _ in by_from]
+        senders_by_id = {a.agent_id: a for a in self.agent_repo.list_by_ids_any_owner(from_ids)}
+        result = [
+            AgentUnread(
+                agent_id=from_id,
+                agent_name=(senders_by_id.get(from_id).agent_name if senders_by_id.get(from_id) else from_id),
+                unread=n,
             )
+            for from_id, n in by_from
+        ]
+        # read-only response — transaction state 즉시 clear (rc50 사고 path).
+        self.db.commit()
         return UnreadCountRs(total_unread=total, by_agent=result)
 
     # ---- mark read / ack ----
@@ -283,11 +287,18 @@ class MessageService:
     # ---- conversations ----
 
     def get_conversations(self, agent_id: str) -> list[ConversationItem]:
-        """대화 partner 별 최근 활동 — Spring MessageService.getConversations."""
+        """대화 partner 별 최근 활동 — Spring MessageService.getConversations.
+
+        rc50 — N+1 SELECT (매 partner_id 별 find_by_agent_id) → batch IN.
+        15 agent 의 dashboard polling 시점 idle in transaction 15 burst 사고 fix.
+        """
         partner_rows = self.repo.list_conversations_for(agent_id)
+        # batch fetch — N SELECT → 1 SELECT WHERE IN
+        partner_ids = [r[0] for r in partner_rows]
+        partners_by_id = {a.agent_id: a for a in self.agent_repo.list_by_ids_any_owner(partner_ids)}
         result: list[ConversationItem] = []
         for partner_id, last_msg_id, last_at, direction, content in partner_rows:
-            partner = self.agent_repo.find_by_agent_id_any_owner(partner_id)
+            partner = partners_by_id.get(partner_id)
             unread = self.repo.count_unread_with_partner(agent_id, partner_id)
             result.append(
                 ConversationItem(
@@ -302,6 +313,8 @@ class MessageService:
                     unread_count=unread,
                 )
             )
+        # read-only — transaction state 즉시 clear.
+        self.db.commit()
         return result
 
     # ---- audit ----
