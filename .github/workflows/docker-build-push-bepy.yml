@@ -68,23 +68,32 @@ jobs:
 
       # rc48 추가 — helm values.yaml 의 backend image tag 자동 bump + master push.
       # ArgoCD auto sync 가 master 변경 감지 → prod swap. 수동 step 제거.
-      - name: Helm values.yaml — backend tag bump
+      # rc53 (2026-06-23) — fe / bepy workflow 동시 trigger 시 master push race
+      # ("cannot lock ref") 사고로 helm bump 누락. retry-on-conflict 5회.
+      - name: Helm values.yaml — backend tag bump (with retry)
         run: |
           set -e
-          # backend image tag 만 매치 (frontend tag 형식 = 1.30.7-rc21 와 다름)
-          # 옛값: tag: "0.1.0-rcXX" → 새값: tag: "0.1.0-rcNEW"
-          # Helm/ (대문자) — git case-sensitive, macOS 의 helm/ 와 다름
-          sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "${{ env.IMAGE_TAG }}"|' Helm/values.yaml
-          if git diff --quiet Helm/values.yaml; then
-            echo "values.yaml unchanged — already on $IMAGE_TAG (skip)"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin master
-          git checkout master
-          # tag 자체는 detached HEAD 가능 — checkout master 후 적용
-          sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "${{ env.IMAGE_TAG }}"|' Helm/values.yaml
-          git add Helm/values.yaml
-          git commit -m "deploy(be): helm bump ${{ env.IMAGE_TAG }} (auto from GHA)"
-          git push origin master
+          for attempt in 1 2 3 4 5; do
+            git fetch origin master
+            git reset --hard origin/master
+            # backend image tag 만 매치 (frontend tag 형식 = 1.30.7-rc21 와 다름)
+            # Helm/ (대문자) — git case-sensitive, macOS 의 helm/ 와 다름
+            sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "${{ env.IMAGE_TAG }}"|' Helm/values.yaml
+            if git diff --quiet Helm/values.yaml; then
+              echo "values.yaml unchanged — already on $IMAGE_TAG (skip)"
+              exit 0
+            fi
+            git add Helm/values.yaml
+            git commit -m "deploy(be): helm bump ${{ env.IMAGE_TAG }} (auto from GHA)"
+            if git push origin master 2>&1; then
+              echo "✓ helm bump push success on attempt $attempt"
+              exit 0
+            fi
+            echo "× push race detected on attempt $attempt — fetch + retry in $((attempt * 3))s"
+            git reset --hard origin/master 2>/dev/null || true
+            sleep $((attempt * 3))
+          done
+          echo "✗ helm bump push failed after 5 attempts — manual fix needed"
+          exit 1
