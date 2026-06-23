@@ -32,6 +32,7 @@ from .workspace import browse_file, browse_workspace, cleanup_agent, scope_works
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .tmux import consumer_loop, scan_sessions
 from .watchdog import watchdog_loop
+from . import cleanup as cleanup_mod
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
 from .claude.compact_hook import auto_install_on_startup as compact_hook_auto_install
 from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
@@ -480,6 +481,46 @@ async def code_server_status_handler(request: web.Request) -> web.Response:
     )
 
 
+async def system_status_handler(_: web.Request) -> web.Response:
+    """리소스 정리 페이지 + 대시보드 banner — uptime / 옛 daemon 갯수 / restart 권고.
+
+    [[feedback-mcp-bun-external-connect-block]] 의 *kernel state 누적* 사고 예방용
+    모니터링 데이터. agent 호스팅 mac 의 누적 임계 사전 감지.
+    """
+    return web.json_response(cleanup_mod.get_system_status())
+
+
+async def cleanup_handler(request: web.Request) -> web.Response:
+    """리소스 정리 — 옛 mcp daemon kill + (옵션) DNS cache flush.
+
+    body 예: {"flushDns": false}
+
+    *주의* — 사용자가 현재 작업 중인 claude code 의 자식 mcp daemon 도 같이 종료될 수
+    있다. 정상 path 에선 claude code 가 다시 spawn 해서 복구. UI 가 confirm modal 로
+    사전 안내.
+    """
+    try:
+        body = await request.json()
+    except (ValueError, json.JSONDecodeError):
+        body = {}
+
+    dry_run = bool(body.get("dryRun"))
+    kill_result = cleanup_mod.kill_stale_daemons(dry_run=dry_run)
+
+    dns_result = None
+    if body.get("flushDns") is True and not dry_run:
+        dns_result = cleanup_mod.flush_dns_cache()
+
+    status_after = cleanup_mod.get_system_status()
+    return web.json_response(
+        {
+            "kill": kill_result,
+            "dns": dns_result,
+            "status": status_after,
+        }
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Lifecycle
 # ──────────────────────────────────────────────────────────────────────────────
@@ -567,6 +608,8 @@ def build_app() -> web.Application:
     app.router.add_post("/api/check-tmux", check_tmux_handler)
     app.router.add_post("/api/setup", setup_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
+    app.router.add_get("/api/system/status", system_status_handler)
+    app.router.add_post("/api/cleanup", cleanup_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
     # 웹 터미널 WS endpoint — xterm.js ↔ pty(zsh) bridge. 2026-06-21 부활.

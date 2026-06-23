@@ -82,7 +82,14 @@ async def watchdog_loop() -> None:
     둘 다 *initial-bootstrap guard* — 첫 정상 신호 수신 전에는 self-kill 안 함.
     환경 이슈로 helper 자체 미동작 mac 에서 무한 self-kill 반복으로 PyInstaller 의 _MEI
     임시 폴더 손상 방지.
+
+    AIDESK_WATCHDOG_DISABLED=1 — dev / 검증 환경 우회용. LaunchAgent 가 없는 환경에선
+    self-kill 후 자동 재기동이 없어 dev helper 죽음. 운영 .pkg 에선 절대 사용 X.
     """
+    if os.environ.get("AIDESK_WATCHDOG_DISABLED") == "1":
+        log.warning("watchdog: DISABLED via AIDESK_WATCHDOG_DISABLED=1 (dev mode)")
+        return
+
     global _self_ping_fail_count, _seen_self_ping_ok
     log.info(
         "watchdog: starting (sse_threshold=%.0fs, self_ping_fails=%d, interval=%.0fs)",
