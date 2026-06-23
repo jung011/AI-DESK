@@ -33,6 +33,7 @@ from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter
 from .tmux import consumer_loop, scan_sessions
 from .watchdog import watchdog_loop
 from . import cleanup as cleanup_mod
+from . import status_history
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
 from .claude.compact_hook import auto_install_on_startup as compact_hook_auto_install
 from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
@@ -490,6 +491,14 @@ async def system_status_handler(_: web.Request) -> web.Response:
     return web.json_response(cleanup_mod.get_system_status())
 
 
+async def system_status_history_handler(_: web.Request) -> web.Response:
+    """resource-cleanup 페이지의 시간 추이 그래프 데이터.
+
+    1분 sampling × 24h ring buffer. helper restart 시 초기화.
+    """
+    return web.json_response({"samples": status_history.get_history()})
+
+
 async def cleanup_handler(request: web.Request) -> web.Response:
     """리소스 정리 — 옛 mcp daemon kill + (옵션) DNS cache flush.
 
@@ -554,6 +563,9 @@ async def _start_background_tasks(app: web.Application) -> None:
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
     app["watchdog_task"] = asyncio.create_task(watchdog_loop())
+    # 리소스 상태 sampler — 60s 마다 uptime + daemon 갯수 in-memory 적재 (24h ring buffer).
+    # resource-cleanup 페이지의 시계열 차트 data source.
+    app["status_history_task"] = asyncio.create_task(status_history.sampler_loop())
     # 봇 어댑터 자가치유 — 30s 주기로 살아있는지 점검. 죽었으면 skip set 에서 빼서
     # sse_consumer 가 fallback 으로 last-mile 인수. 다음 ensure_bot_adapter 호출 시 재spawn.
     app["bot_adapter_monitor_task"] = asyncio.create_task(_bot_adapter_monitor_loop())
@@ -565,7 +577,7 @@ async def _start_background_tasks(app: web.Application) -> None:
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
-    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task"):
+    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task", "status_history_task"):
         task = app.get(key)
         if task is None:
             continue
@@ -609,6 +621,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/setup", setup_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/system/status", system_status_handler)
+    app.router.add_get("/api/system/status-history", system_status_history_handler)
     app.router.add_post("/api/cleanup", cleanup_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
