@@ -15,18 +15,11 @@
       </div>
     </div>
 
-    <!-- mac restart 권고 banner — uptime > 14일 + 옛 daemon 누적 시. [[feedback-mcp-bun-external-connect-block]] -->
-    <div v-if="systemStatus?.restartRecommended" class="restart-banner">
-      <div class="banner-icon">⚠️</div>
-      <div class="banner-text">
-        <strong>mac restart 권장</strong>
-        <span>uptime {{ systemStatus.uptimeDays?.toFixed(1) }} 일 + 옛 mcp daemon {{ systemStatus.staleDaemonCount }} 개. kernel state 누적으로 통신 사고 가능.</span>
-      </div>
-      <NuxtLink to="/resource-cleanup" class="banner-action">리소스 정리 →</NuxtLink>
-    </div>
-
     <!-- 로컬 통합 Claude 사용량 -->
     <LocalUsageBar />
+
+    <!-- 로컬 mac 의 리소스 누적 (재부팅 권장 모니터) — uptime + daemon %. 클릭 → /resource-cleanup -->
+    <LocalResourceBar />
 
     <!-- 요약 카드 -->
     <SummaryCardGrid :summary="summary" />
@@ -127,6 +120,7 @@ import { useAgents } from '~/composables/useAgents';
 import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
 import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
+import LocalResourceBar from '~/components/dashboard/LocalResourceBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentWiringView from '~/components/dashboard/AgentWiringView.vue';
 
@@ -139,11 +133,6 @@ import HelperSetupDialog from '~/components/dashboard/HelperSetupDialog.vue';
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 interface A2aWorkspaceRs { path: string }
 interface HelperLocalInfoRs { currentBackendUrl?: string }
-interface SystemStatus {
-  uptimeDays: number | null;
-  staleDaemonCount: number;
-  restartRecommended: boolean;
-}
 // 임베드 터미널 + 임베드 VSCode 사이드 패널 비활성 — TerminalSidePanel + 하위
 // TerminalPane / VsCodePane 까지 함께 bundle 에서 빠지도록 import 도 같이 주석.
 // 복원하려면 이 import 와 template 안의 <TerminalSidePanel> 블록 주석 해제.
@@ -172,19 +161,6 @@ const meAgentMissing = ref(false);
 const helperSetupOpen = ref(false);
 const helperBackendUrl = ref('');
 const pageOrigin = ref('');
-
-// 리소스 누적 banner 데이터 — helper /api/system/status 의 결과. 옛 helper 면 null 유지.
-const systemStatus = ref<SystemStatus | null>(null);
-
-async function checkSystemStatus(): Promise<void> {
-  try {
-    const { $helper } = useNuxtApp();
-    systemStatus.value = await $helper<SystemStatus>('/api/system/status');
-  } catch {
-    // 옛 helper (0.8.18 이하) 면 endpoint 없음 — 조용히 무시. banner 안 뜸.
-    systemStatus.value = null;
-  }
-}
 
 /** helper 의 backend URL host 와 brower origin host 가 다르면 setup 모달.
  *  같은 host 면 port 차이는 무시 (frontend:30080 vs backend:30081).
@@ -328,16 +304,8 @@ onMounted(async () => {
   await loadMeWorkspace();
   // SSE (agent.changed) 가 주 — polling 은 SSE 끊긴 동안 60s fallback.
   startPolling(60_000);
-  // 리소스 누적 banner — 옛 helper 면 endpoint 없어 systemStatus=null. 5분 마다 한 번씩 갱신.
-  void checkSystemStatus();
 });
 onUnmounted(() => stopPolling());
-
-let systemStatusTimer: ReturnType<typeof setInterval> | null = null;
-onMounted(() => {
-  systemStatusTimer = setInterval(() => { void checkSystemStatus(); }, 5 * 60 * 1000);
-});
-onUnmounted(() => { if (systemStatusTimer) clearInterval(systemStatusTimer); });
 </script>
 
 <style scoped>
