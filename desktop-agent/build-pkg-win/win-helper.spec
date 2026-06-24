@@ -42,5 +42,5 @@ exe = EXE(
     strip=False,
     upx=False,
     runtime_tmpdir=None,
-    console=True,
+    console=False,  # 백그라운드 서비스 — 콘솔창 없이 (HKCU Run 자동시작 시 창 안 뜸). 로그는 win-helper.log
 )

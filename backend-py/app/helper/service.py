@@ -12,14 +12,14 @@ def locate_pkg(helper_pkg_dir: str, os_kind: str = "mac") -> Path | None:
     """디렉토리에서 OS 에 맞는 helper 패키지 반환 (sorted 순). 없으면 None.
 
     - mac : *.pkg  (macOS .pkg installer)
-    - win : *.zip  (Windows AIDeskHelper-win.zip — exe + node 스크립트 + install.ps1)
+    - win : *.exe  (Windows AIDeskHelper-Setup.exe — 자체추출 설치기)
 
     Spring 의 `Files.list(dir).filter(...).findFirst()` 와 동등.
     """
     p = Path(helper_pkg_dir)
     if not p.is_dir():
         return None
-    pattern = "*.zip" if os_kind == "win" else "*.pkg"
+    pattern = "*.exe" if os_kind == "win" else "*.pkg"
     candidates = sorted(p.glob(pattern))
     return candidates[0] if candidates else None
 

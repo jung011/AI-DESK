@@ -44,7 +44,18 @@ PORT = int(os.environ.get("AIDESK_HELPER_PORT", "30083"))
 INTERVAL = float(os.environ.get("AIDESK_REPORT_INTERVAL_SEC", "30"))
 RING_MAX = 256 * 1024  # 재접속 시 화면 복원용 최근 출력 버퍼(세션당)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s win-helper %(message)s")
+_LOG_FMT = "%(asctime)s %(levelname)s win-helper %(message)s"
+if getattr(sys, "frozen", False):
+    # windowed(.exe)는 콘솔/stderr 가 없어 stream 로깅이 유실/오류 → 파일로.
+    _log_path = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))) / "AIDeskHelper" / "win-helper.log"
+    try:
+        _log_path.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(level=logging.INFO, format=_LOG_FMT,
+                            handlers=[logging.FileHandler(_log_path, encoding="utf-8")])
+    except OSError:
+        logging.basicConfig(level=logging.INFO, format=_LOG_FMT, handlers=[logging.NullHandler()])
+else:
+    logging.basicConfig(level=logging.INFO, format=_LOG_FMT)
 log = logging.getLogger("win-helper")
 
 # --- aidesk-channel MCP 자동 등록 (macOS bootstrap._register_local_mcp 의 Windows 판) ---

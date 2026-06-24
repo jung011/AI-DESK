@@ -28,7 +28,7 @@
           <div class="step-body">
             <h3>{{ isUpdate ? '새 패키지 다운로드' : '패키지 다운로드' }}</h3>
             <p v-if="isWindows" class="step-desc">
-              아래 버튼으로 본인 PC 에 Windows helper(<code>.exe</code>)를 받습니다.
+              아래 버튼으로 본인 PC 에 Windows 설치 관리자(<code>AIDeskHelper-Setup.exe</code>)를 받습니다.
             </p>
             <p v-else class="step-desc">
               {{ isUpdate
@@ -43,15 +43,15 @@
         <li>
           <div class="step-num">2</div>
           <div class="step-body">
-            <h3>{{ isWindows ? '압축 해제 + 설치 실행' : '패키지 실행 + 설치' }}</h3>
+            <h3>{{ isWindows ? '설치 관리자 실행' : '패키지 실행 + 설치' }}</h3>
             <template v-if="isWindows">
               <p class="step-desc">
-                받은 <code>.zip</code> 을 압축 해제 → 폴더 안의 <code>install.ps1</code> 우클릭 →
-                <strong>"PowerShell에서 실행"</strong>. helper 가 설치되고 <strong>로그인 시 자동 시작</strong>으로 등록됩니다.
+                받은 <code>AIDeskHelper-Setup.exe</code> 를 <strong>더블클릭</strong>하면 설치됩니다.
+                helper 가 <strong>로그인 시 자동 시작</strong>으로 등록되고, "프로그램 추가/제거" 에서 제거할 수 있습니다.
               </p>
               <p class="step-desc small">
-                실행 정책 경고가 뜨면 PowerShell 에서
-                <code>powershell -ExecutionPolicy Bypass -File install.ps1</code> 로 실행하세요.
+                미서명 앱이라 <strong>Windows Defender SmartScreen</strong> 경고가 뜨면
+                <strong>"추가 정보" → "실행"</strong> 을 눌러주세요.
               </p>
             </template>
             <template v-else>
@@ -118,7 +118,7 @@ const downloadUrl = computed(() => {
 
 const downloadLabel = computed(() =>
   isWindows.value
-    ? 'AIDeskHelper (Windows .zip)'
+    ? 'AIDeskHelper Setup (Windows .exe)'
     : (helperVersion.latestFilename || 'AIDeskHelper .pkg'),
 );
 
