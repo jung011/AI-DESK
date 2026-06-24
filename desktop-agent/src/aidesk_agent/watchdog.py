@@ -102,18 +102,16 @@ async def watchdog_loop() -> None:
             log.info("watchdog: cancelled — exiting cleanly")
             raise
 
-        # === 1) outbound 좀비 (SSE idle) ===
+        # === 1) outbound 좀비 (SSE idle) — DISABLED ===
+        # helper proxy (0.8.23+) 도입 후 backend 통신은 proxy ws 가 담당. SSE 는 *event
+        # 발사 빈도* 가 사용자 mac 의 agent 활동에 따라 가변이라 idle = 정상 (사용자가
+        # 자고 있을 때, agent 모두 비활성, helper 만 reporter 돌릴 때 등).
+        # 0.8.24 의 min(sse,proxy) logic 도 *둘 다 event 없음* 케이스 false-positive
+        # self-kill 사고. inbound self-ping (아래) 만으로 helper 자체 hang 감지 충분.
+        # (자세한 회고: [[feedback-helper-watchdog-outbound-false-positive]])
         if _seen_first_event:
-            idle = time.monotonic() - _last_sse_event_at
-            if idle > DEAD_SSE_THRESHOLD_SEC:
-                log.error(
-                    "watchdog: SSE idle %.0fs (>%.0fs threshold) — process self-kill",
-                    idle, DEAD_SSE_THRESHOLD_SEC,
-                )
-                sys.exit(1)
-            log.debug("watchdog: SSE idle %.0fs (ok)", idle)
-        else:
-            log.debug("watchdog: no SSE event seen yet — outbound guard active")
+            sse_idle = time.monotonic() - _last_sse_event_at
+            log.debug("watchdog: SSE idle %.0fs (outbound check disabled)", sse_idle)
 
         # === 2) inbound 좀비 (self /api/health) ===
         ok = await _self_ping_ok()

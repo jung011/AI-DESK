@@ -17,12 +17,34 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from urllib.parse import urlparse, urlunparse
 
 import aiohttp
 from aiohttp import web
 
 log = logging.getLogger(__name__)
+
+
+# === proxy liveness 마커 — watchdog 의 outbound 좀비 감지에 활용 ===
+# proxy ws_proxy_handler 가 메시지 통과시킬 때마다 갱신. helper 가 backend 와 정상 통신 중이라는
+# 신호. SSE consumer 의 _last_sse_event_at 와 *대등한 outbound liveness* 지표.
+_last_proxy_event_at = time.monotonic()
+_seen_first_proxy_event = False
+
+
+def mark_proxy_event() -> None:
+    """ws_proxy 가 메시지 통과시킬 때마다 호출. watchdog 의 outbound idle 판정에 사용."""
+    global _last_proxy_event_at, _seen_first_proxy_event
+    _last_proxy_event_at = time.monotonic()
+    _seen_first_proxy_event = True
+
+
+def time_since_proxy_event() -> float | None:
+    """마지막 proxy ws event 후 경과 초. 한 번도 event 없었으면 None."""
+    if not _seen_first_proxy_event:
+        return None
+    return time.monotonic() - _last_proxy_event_at
 
 # proxy 가 forward 할 대상 backend URL. helper 의 _resolve_hub_url() 와 동일 출처.
 def _backend_base() -> str:
@@ -124,9 +146,12 @@ async def ws_proxy_handler(request: web.Request) -> web.WebSocketResponse:
         return ws_down
 
     log.info("proxy ws: connected — %s", target_url)
+    # ws 연결 자체가 outbound liveness 신호 — watchdog 의 SSE idle 와 OR 관계.
+    mark_proxy_event()
 
     async def pump_up_to_down() -> None:
         async for msg in ws_up:
+            mark_proxy_event()
             if msg.type == aiohttp.WSMsgType.TEXT:
                 await ws_down.send_str(msg.data)
             elif msg.type == aiohttp.WSMsgType.BINARY:
@@ -140,6 +165,7 @@ async def ws_proxy_handler(request: web.Request) -> web.WebSocketResponse:
 
     async def pump_down_to_up() -> None:
         async for msg in ws_down:
+            mark_proxy_event()
             if msg.type == aiohttp.WSMsgType.TEXT:
                 await ws_up.send_str(msg.data)
             elif msg.type == aiohttp.WSMsgType.BINARY:
