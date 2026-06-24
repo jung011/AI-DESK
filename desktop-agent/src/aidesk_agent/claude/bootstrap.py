@@ -120,13 +120,15 @@ def _write_default_permissions(workspace_dir: str) -> tuple[bool, int]:
 
 
 def _resolve_backend_url() -> str:
-    """plist 의 AIDESK_HUB_URL 을 backend URL (:30081) 로 변환. setup 안 끝났으면 default."""
-    hub = os.environ.get("AIDESK_HUB_URL", "").rstrip("/")
-    if not hub:
-        return "http://localhost:30081"
-    if hub.endswith(":30080"):
-        return hub[: -len(":30080")] + ":30081"
-    return hub
+    """mcp daemon (aidesk-channel bun) 의 AIDESK_API_URL = helper proxy 경유.
+
+    [[feedback-mcp-bun-external-connect-block]] — bun runtime 의 외부 IP socket
+    allocation 이 macOS kernel state 누적으로 차단되는 사고 영구 fix.
+    mcp daemon 은 localhost helper 에만 connect → helper(python aiohttp) 가 backend 로
+    forward. agent 다수 호스팅 mac 의 kernel state 누적 layer 무관.
+    """
+    helper_port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+    return f"http://127.0.0.1:{helper_port}/api/proxy"
 
 
 _LOCAL_MCP_NAME = "aidesk-channel"

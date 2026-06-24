@@ -34,6 +34,7 @@ from .tmux import consumer_loop, scan_sessions
 from .watchdog import watchdog_loop
 from . import cleanup as cleanup_mod
 from . import status_history
+from . import proxy as proxy_mod
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
 from .claude.compact_hook import auto_install_on_startup as compact_hook_auto_install
 from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
@@ -88,6 +89,51 @@ _OPEN_ORIGIN_PATHS = {"/api/setup", "/api/local-info", "/api/health"}
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / "com.aidesk.agent.plist"
 _CLAUDE_JSON_PATH = Path.home() / ".claude.json"
 _HUB_URL_RE = re.compile(r"^https?://[\w\.\-]+(?::\d+)?(?:/[\w\.\-/]*)?/?$")
+
+
+def _migrate_mcp_to_proxy_url() -> None:
+    """helper startup 시 ~/.claude.json 의 모든 aidesk-channel mcp env.AIDESK_API_URL 을
+    helper proxy URL 로 일괄 마이그. agent claude code 가 다음에 daemon 새로 spawn 할 때
+    proxy 경유. [[feedback-mcp-bun-external-connect-block]]
+    """
+    if not _CLAUDE_JSON_PATH.exists():
+        return
+    helper_port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+    new_url = f"http://127.0.0.1:{helper_port}/api/proxy"
+    try:
+        with open(_CLAUDE_JSON_PATH) as f:
+            cdata = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("mcp migrate: ~/.claude.json read fail err=%s", e)
+        return
+    projects = cdata.get("projects", {})
+    if not isinstance(projects, dict):
+        return
+    changed = 0
+    for proj in projects.values():
+        if not isinstance(proj, dict):
+            continue
+        servers = proj.get("mcpServers")
+        if not isinstance(servers, dict):
+            continue
+        ac = servers.get("aidesk-channel")
+        if not isinstance(ac, dict):
+            continue
+        ac_env = ac.setdefault("env", {})
+        if not isinstance(ac_env, dict):
+            continue
+        if ac_env.get("AIDESK_API_URL") != new_url:
+            ac_env["AIDESK_API_URL"] = new_url
+            changed += 1
+    if changed == 0:
+        return
+    try:
+        with open(_CLAUDE_JSON_PATH, "w") as f:
+            json.dump(cdata, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        log.info("mcp migrate: %d project(s) → proxy URL=%s", changed, new_url)
+    except OSError as e:
+        log.warning("mcp migrate: ~/.claude.json write fail err=%s", e)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -203,7 +249,10 @@ def _apply_setup(hub_url: str) -> tuple[int, str]:
                 if isinstance(ac, dict):
                     ac_env = ac.setdefault("env", {})
                     if isinstance(ac_env, dict):
-                        ac_env["AIDESK_API_URL"] = backend_url
+                        # mcp daemon 은 helper proxy 경유 — 외부 IP socket 격리.
+                        # [[feedback-mcp-bun-external-connect-block]]
+                        helper_port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+                        ac_env["AIDESK_API_URL"] = f"http://127.0.0.1:{helper_port}/api/proxy"
         with open(_CLAUDE_JSON_PATH, "w") as f:
             json.dump(cdata, f, indent=2, ensure_ascii=False)
             f.write("\n")
@@ -546,6 +595,10 @@ async def _start_background_tasks(app: web.Application) -> None:
     # 충돌 X — bootstrap._BOT_ADAPTER_HELPER_BIN_PATHS 만 매칭.
     from .claude.bootstrap import cleanup_orphan_bot_adapters
     cleanup_orphan_bot_adapters()
+    # mcp daemon URL 마이그 — 모든 agent 의 ~/.claude.json 의 AIDESK_API_URL 을
+    # helper proxy URL 로 일괄 갱신. agent claude code 가 다음에 daemon 새로 spawn 할 때
+    # 자동 적용. [[feedback-mcp-bun-external-connect-block]]
+    _migrate_mcp_to_proxy_url()
     # iTerm Dynamic Profile 'AI Desk' 자동 생성 — Title Components 만 Session Name 으로
     # override 한 derivative profile. 외부 터미널 열기 시 이 profile 사용 → AI 이름이
     # title bar 에 표시됨. iTerm 미설치 환경이면 noop.
@@ -627,6 +680,10 @@ def build_app() -> web.Application:
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
     # 웹 터미널 WS endpoint — xterm.js ↔ pty(zsh) bridge. 2026-06-21 부활.
     app.router.add_get("/ws/terminal", web_terminal_handler)
+    # Backend proxy — mcp daemon (bun) 의 외부 IP socket 격리. ws 가 먼저 (specific),
+    # http 가 catch-all (any method). [[feedback-mcp-bun-external-connect-block]]
+    app.router.add_get("/api/proxy/ws/{rest:.*}", proxy_mod.ws_proxy_handler)
+    app.router.add_route("*", "/api/proxy/{rest:.*}", proxy_mod.http_proxy_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
     app.on_startup.append(_start_background_tasks)

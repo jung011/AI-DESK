@@ -133,10 +133,16 @@ const TOOLS = [
 /**
  * 같은 mac 의 helper 에게 *현재 backend URL* 을 물어 API_URL 갱신.
  * 호출자가 await 하든 안 하든 부수효과로 모듈 내 API_URL 만 업데이트.
+ *
+ * helper proxy 모드 (AIDESK_API_URL=http://127.0.0.1:PORT/api/proxy) 에선 helper override
+ * 차단 — proxy URL 을 backend 직접 URL 로 덮어쓰면 외부 IP socket 격리가 무효화.
+ * [[feedback-mcp-bun-external-connect-block]]
  */
 async function refreshApiUrlFromHelper() {
   // Bearer token 모드 (외부 service) 는 helper 없는 환경이라 호출 무의미.
   if (BEARER_TOKEN) return;
+  // helper proxy 경유 = override 차단. mcp daemon 은 localhost 만 connect 해야 함.
+  if (API_URL.includes('/api/proxy')) return;
   try {
     const r = await fetch(`${HELPER_URL}/api/local-info`, {
       signal: AbortSignal.timeout(2000)
