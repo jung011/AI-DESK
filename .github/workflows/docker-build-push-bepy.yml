@@ -77,7 +77,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
             git fetch origin master
-            git reset --hard origin/master
+            # rc54 fix — reset --hard origin/master 만 하면 detached HEAD 라 push origin
+            # master 시 "src refspec master does not match any" 발생.
+            # switch -C 로 *local master branch* 가 origin/master 가리키게 강제.
+            git switch -C master origin/master
             # backend image tag 만 매치 (frontend tag 형식 = 1.30.7-rc21 와 다름)
             # Helm/ (대문자) — git case-sensitive, macOS 의 helm/ 와 다름
             sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "${{ env.IMAGE_TAG }}"|' Helm/values.yaml
@@ -92,7 +95,6 @@ jobs:
               exit 0
             fi
             echo "× push race detected on attempt $attempt — fetch + retry in $((attempt * 3))s"
-            git reset --hard origin/master 2>/dev/null || true
             sleep $((attempt * 3))
           done
           echo "✗ helm bump push failed after 5 attempts — manual fix needed"
