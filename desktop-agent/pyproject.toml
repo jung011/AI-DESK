@@ -7,6 +7,8 @@ dependencies = [
     "aiohttp>=3.10",
     "httpx>=0.27",
     "httpx-sse>=0.4",
+    # Windows helper(win_helper.py) — ConPTY 래퍼. mac/linux 빌드엔 미설치.
+    "pywinpty>=2.0; sys_platform == 'win32'",
 ]
 
 [project.scripts]

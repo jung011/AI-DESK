@@ -1,11 +1,11 @@
 """helper router — /api/helper/*. Spring HelperDownloadController 와 1:1.
 
-- GET /version   : image 안 baked .pkg 의 latest + filename
-- GET /download  : .pkg binary 서빙
+- GET /version   : image 안 baked .pkg(mac) / .zip(win) 의 latest + filename
+- GET /download  : helper binary 서빙 (?os=win → .zip, 그 외 → .pkg)
 """
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.auth.deps import current_user
@@ -25,10 +25,11 @@ async def health() -> dict[str, str]:
 
 @router.get("/version", response_model=ApiEnvelope[dict])
 async def version(
+    os: str = Query("mac", pattern="^(mac|win)$"),
     _user: AuthenticatedUser = Depends(current_user),
 ) -> ApiEnvelope[dict]:
     """frontend 의 helperVersionStore 가 호출 — running 과 비교해 업데이트 배너."""
-    pkg = locate_pkg(settings_env.helper_pkg_dir)
+    pkg = locate_pkg(settings_env.helper_pkg_dir, os)
     if pkg is None:
         return ok({"latest": "", "filename": ""})
     filename = pkg.name
@@ -37,12 +38,14 @@ async def version(
 
 @router.get("/download")
 async def download(
+    os: str = Query("mac", pattern="^(mac|win)$"),
     _user: AuthenticatedUser = Depends(current_user),
 ):
-    """image 안 .pkg 를 attachment 로 서빙. 한글/공백 포함 대비 RFC 5987 filename*."""
-    pkg = locate_pkg(settings_env.helper_pkg_dir)
+    """helper 패키지를 attachment 로 서빙 (?os=win → .zip, 그 외 → .pkg).
+    한글/공백 포함 대비 RFC 5987 filename*."""
+    pkg = locate_pkg(settings_env.helper_pkg_dir, os)
     if pkg is None:
-        return JSONResponse(status_code=404, content={"result": 404, "message": "no .pkg", "data": None})
+        return JSONResponse(status_code=404, content={"result": 404, "message": "no helper pkg", "data": None})
     filename = pkg.name
     encoded = quote(filename, safe="")
     return FileResponse(

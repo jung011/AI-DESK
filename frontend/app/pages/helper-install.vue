@@ -11,35 +11,61 @@
         <p v-else class="sub">본 PC 에 helper 가 설치되어 있지 않아 일부 기능이 동작하지 않습니다.</p>
       </header>
 
+      <!-- Windows 전용: Node.js 필수 안내 (크게 명시) -->
+      <div v-if="isWindows" class="node-req">
+        <div class="node-req-title">⚠️ Node.js 필수</div>
+        <p>
+          Windows용 helper 는 <strong>Node.js</strong> 가 설치돼 있어야 동작합니다.
+          (메시지 채널 MCP·사용량 statusLine 이 <code>node</code> 로 실행됩니다.)
+          먼저 <a href="https://nodejs.org/" target="_blank" rel="noopener">nodejs.org</a> 에서
+          <strong>LTS 버전</strong>을 설치한 뒤 아래를 진행하세요.
+        </p>
+      </div>
+
       <ol class="steps">
         <li>
           <div class="step-num">1</div>
           <div class="step-body">
             <h3>{{ isUpdate ? '새 패키지 다운로드' : '패키지 다운로드' }}</h3>
-            <p class="step-desc">
+            <p v-if="isWindows" class="step-desc">
+              아래 버튼으로 본인 PC 에 Windows helper(<code>.exe</code>)를 받습니다.
+            </p>
+            <p v-else class="step-desc">
               {{ isUpdate
                   ? '아래 버튼으로 본인 mac 에 최신 .pkg 를 받습니다. 설치 시 기존 plist 환경변수는 보존됩니다.'
                   : '아래 버튼으로 본인 mac 에 .pkg 를 받습니다.' }}
             </p>
             <a class="btn-primary" :href="downloadUrl" download>
-              {{ helperVersion.latestFilename || 'AIDeskHelper .pkg' }} 다운로드
+              {{ downloadLabel }} 다운로드
             </a>
           </div>
         </li>
         <li>
           <div class="step-num">2</div>
           <div class="step-body">
-            <h3>패키지 실행 + 설치</h3>
-            <p class="step-desc">
-              다운로드 폴더에서 <code>AIDeskHelper-*.pkg</code> 더블클릭 →
-              미서명 경고가 뜨면
-              <strong>시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기</strong>
-              한 뒤 다시 실행.
-            </p>
-            <p class="step-desc small">
-              Documents 폴더 접근 권한 다이얼로그가 뜨면 <strong>허용</strong>.
-              helper 가 워크스페이스 스캔에 필요합니다.
-            </p>
+            <h3>{{ isWindows ? '압축 해제 + 설치 실행' : '패키지 실행 + 설치' }}</h3>
+            <template v-if="isWindows">
+              <p class="step-desc">
+                받은 <code>.zip</code> 을 압축 해제 → 폴더 안의 <code>install.ps1</code> 우클릭 →
+                <strong>"PowerShell에서 실행"</strong>. helper 가 설치되고 <strong>로그인 시 자동 시작</strong>으로 등록됩니다.
+              </p>
+              <p class="step-desc small">
+                실행 정책 경고가 뜨면 PowerShell 에서
+                <code>powershell -ExecutionPolicy Bypass -File install.ps1</code> 로 실행하세요.
+              </p>
+            </template>
+            <template v-else>
+              <p class="step-desc">
+                다운로드 폴더에서 <code>AIDeskHelper-*.pkg</code> 더블클릭 →
+                미서명 경고가 뜨면
+                <strong>시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기</strong>
+                한 뒤 다시 실행.
+              </p>
+              <p class="step-desc small">
+                Documents 폴더 접근 권한 다이얼로그가 뜨면 <strong>허용</strong>.
+                helper 가 워크스페이스 스캔에 필요합니다.
+              </p>
+            </template>
           </div>
         </li>
         <li>
@@ -57,8 +83,14 @@
               {{ checking ? '확인 중…' : '설치 완료 — 다시 확인' }}
             </button>
             <p v-if="lastCheckFailed" class="check-failed">
-              아직 helper 응답이 없습니다. 설치가 끝났는지, LaunchAgent 가 실행됐는지 확인해주세요.
-              <br />터미널: <code>launchctl list | grep com.aidesk.agent</code>
+              아직 helper 응답이 없습니다. 설치가 끝났는지 확인해주세요.
+              <template v-if="isWindows">
+                <br />PowerShell: <code>Get-Process win-helper</code> 로 실행 여부 확인 ·
+                Node.js 설치 확인 <code>node -v</code>.
+              </template>
+              <template v-else>
+                <br />터미널: <code>launchctl list | grep com.aidesk.agent</code>
+              </template>
             </p>
           </div>
         </li>
@@ -76,15 +108,24 @@ const lastCheckFailed = ref(false);
 
 /** subpath 배포 (예: /ai-desk) 일 때 NUXT_PUBLIC_API_BASE 가 박혀 있어
  *  href 도 그 prefix 를 붙여야 ingress 가 라우팅한다. root 운영 시 빈 문자열 → 그대로. */
+const isWindows = ref(false);
+
 const downloadUrl = computed(() => {
   const config = useRuntimeConfig();
   const base = (config.public.apiBase as string) || '';
-  return `${base}/api/helper/download`;
+  return `${base}/api/helper/download?os=${isWindows.value ? 'win' : 'mac'}`;
 });
+
+const downloadLabel = computed(() =>
+  isWindows.value
+    ? 'AIDeskHelper (Windows .zip)'
+    : (helperVersion.latestFilename || 'AIDeskHelper .pkg'),
+);
 
 /** 페이지 진입 시 store 가 비어있을 수 있어 1회 새로 조회 — 업데이트 모드 / 미설치
  *  모드 판정에 필요. */
 onMounted(async () => {
+  isWindows.value = typeof navigator !== 'undefined' && /windows/i.test(navigator.userAgent);
   if (!helperVersion.running && !helperVersion.missing) {
     await helperVersion.refresh();
   }
@@ -136,6 +177,18 @@ async function recheck(): Promise<void> {
   margin: 0 0 28px;
   font-size: 13px; color: #64748b;
 }
+.node-req {
+  margin: 0 0 24px;
+  padding: 16px 18px;
+  background: #FFF1F0;
+  border: 1.5px solid #FF7875;
+  border-radius: 8px;
+}
+.node-req-title {
+  font-size: 15px; font-weight: 800; color: #CF1322; margin-bottom: 6px;
+}
+.node-req p { margin: 0; font-size: 13px; color: #7A1A12; line-height: 1.6; }
+.node-req a { color: #CF1322; font-weight: 700; }
 .steps {
   list-style: none; padding: 0; margin: 0;
   display: flex; flex-direction: column; gap: 24px;

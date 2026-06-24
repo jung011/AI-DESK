@@ -33,7 +33,7 @@
                 {{ browsing ? '선택 중…' : '찾아보기' }}
               </button>
             </div>
-            <span class="form_help">AI가 작업할 로컬 폴더의 절대 경로(/ 로 시작)를 입력하거나 “찾아보기”로 선택하세요. (macOS 한정)</span>
+            <span class="form_help">AI가 작업할 로컬 폴더의 절대 경로를 입력하거나 “찾아보기”로 선택하세요. (예: /Users/me/proj 또는 C:/Users/me/proj)</span>
           </div>
 
           <div class="form_field">
@@ -84,9 +84,11 @@ const form = reactive<AgentCreateRequest>({
 
 const browsing = ref(false);
 
+// 절대 경로 검증 — Unix(`/...`)와 Windows(`C:/...`, `C:\...`) 를 모두 허용 (OS 분기 없이 양쪽 호환).
+const ABS_PATH_RE = /^([a-zA-Z]:[\\/]|\/).+/;
 const canSubmit = computed(() =>
   form.agentName.trim().length > 0 &&
-  /^\/.+/.test(form.workspaceDir.trim()) &&
+  ABS_PATH_RE.test(form.workspaceDir.trim()) &&
   ['claude', 'codex', 'hermes'].includes(form.model)
 );
 

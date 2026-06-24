@@ -8,5 +8,11 @@ dist/
 # pkg 빌드 산출물
 build-pkg/build/
 build-pkg/dist/
+# Windows pkg 빌드 산출물 (PyInstaller work/dist). 배포 zip 은 backend-py/helper-pkg/ 가 canonical.
+build-win/
+dist-win/
+# 디버그 캡처 junk
+ws_capture.txt
+win_helper.log
 # 동봉 zellij binary (github releases 다운, build 스크립트가 자동 fetch)
 bin/zellij
