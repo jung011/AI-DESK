@@ -29,33 +29,6 @@ echo "→ Cleaning build/ dist/"
 rm -rf "$BUILD" "$DIST"
 mkdir -p "$BUILD" "$DIST"
 
-# zellij multiplexer 자동 다운로드 — PyInstaller spec 의 datas=[('../bin/zellij', 'bin')] 가 참조.
-# 같은 mac 에서 재빌드 시 cache 활용 (한 번 다운 받으면 재사용).
-ZELLIJ_VERSION="${ZELLIJ_VERSION:-0.44.3}"
-ZELLIJ_BIN="$DESKTOP_AGENT/bin/zellij"
-if [[ "$ARCH" == "arm64" ]]; then
-    ZELLIJ_TARGET="aarch64-apple-darwin"
-elif [[ "$ARCH" == "x86_64" ]]; then
-    ZELLIJ_TARGET="x86_64-apple-darwin"
-else
-    echo "✗ 지원 안 되는 ARCH=$ARCH (zellij)"; exit 1
-fi
-if [[ ! -f "$ZELLIJ_BIN" ]] || ! "$ZELLIJ_BIN" --version 2>/dev/null | grep -q "$ZELLIJ_VERSION"; then
-    echo "→ [0/4] zellij v${ZELLIJ_VERSION} (${ZELLIJ_TARGET}) 다운로드"
-    mkdir -p "$DESKTOP_AGENT/bin"
-    curl -fSL --max-time 120 \
-        "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-${ZELLIJ_TARGET}.tar.gz" \
-        -o "$DESKTOP_AGENT/bin/zellij.tar.gz"
-    tar -xzf "$DESKTOP_AGENT/bin/zellij.tar.gz" -C "$DESKTOP_AGENT/bin"
-    rm "$DESKTOP_AGENT/bin/zellij.tar.gz"
-    chmod +x "$ZELLIJ_BIN"
-    # macOS Gatekeeper 대응 — unsigned binary 의 quarantine 회피 + ad-hoc 코드사인.
-    # [[feedback-macos-gatekeeper-binary-download]]
-    xattr -d com.apple.quarantine "$ZELLIJ_BIN" 2>/dev/null || true
-    codesign --force --sign - "$ZELLIJ_BIN" 2>/dev/null || true
-fi
-echo "  zellij: $("$ZELLIJ_BIN" --version)"
-
 echo "→ [1/4] Running PyInstaller"
 cd "$DESKTOP_AGENT"
 uv run pyinstaller \

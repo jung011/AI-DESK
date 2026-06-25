@@ -20,7 +20,6 @@ import shutil
 import signal
 import struct
 import subprocess
-import sys
 import termios
 
 from aiohttp import web
@@ -31,43 +30,6 @@ log = logging.getLogger(__name__)
 _READ_CHUNK = 8192
 # default shell — zsh 우선, 없으면 bash.
 _DEFAULT_SHELL_CANDIDATES = ("/bin/zsh", "/usr/bin/zsh", "/bin/bash", "/usr/bin/bash")
-
-
-def _zellij_path() -> str:
-    """동봉 zellij binary 경로. dev source layout + PyInstaller bundle + env override.
-
-    우선순위:
-    1. AIDESK_ZELLIJ_PATH env (테스트/오버라이드)
-    2. PyInstaller bundle: sys._MEIPASS/bin/zellij
-    3. source layout: <repo>/desktop-agent/bin/zellij
-    4. PATH fallback (시스템에 설치돼 있으면)
-    """
-    env_p = os.environ.get("AIDESK_ZELLIJ_PATH", "")
-    if env_p and os.path.isfile(env_p):
-        return env_p
-    if hasattr(sys, "_MEIPASS"):
-        p = os.path.join(sys._MEIPASS, "bin", "zellij")  # type: ignore[attr-defined]
-        if os.path.isfile(p):
-            return p
-    here = os.path.dirname(os.path.abspath(__file__))
-    p = os.path.normpath(os.path.join(here, "..", "..", "..", "bin", "zellij"))
-    if os.path.isfile(p):
-        return p
-    return "zellij"
-
-
-def _zellij_config_dir() -> str:
-    """AI Desk 전용 zellij config dir — 깔끔한 single-pane UI, tab/status bar off."""
-    if hasattr(sys, "_MEIPASS"):
-        p = os.path.join(sys._MEIPASS, "aidesk_agent", "terminal", "zellij-config")  # type: ignore[attr-defined]
-        if os.path.isdir(p):
-            return p
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "zellij-config")
-
-
-ZELLIJ = _zellij_path()
-ZELLIJ_CONFIG_DIR = _zellij_config_dir()
 
 
 def _pick_shell() -> str:
@@ -152,50 +114,76 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
         except Exception as e:  # noqa: BLE001
             log.warning("ws-terminal: mcp re-register failed cwd=%s agent=%s err=%s", cwd_q, agent_id, e)
 
-    # zellij session 존재 검사 + 없으면 detached (background) 모드로 새로 띄움.
-    # tmux 의 `has-session` / `new-session -d` 대신 zellij `list-sessions` + `attach -b -c`.
-    # cross-platform (macOS + Linux + Windows) 대비 multiplexer 통일.
+    # tmux session 존재 검사 + 없으면 detached 모드로 새로 띄움. cwd / env 같이.
     if tmux_session:
         try:
-            res = subprocess.run(
-                [ZELLIJ, "--config-dir", ZELLIJ_CONFIG_DIR, "list-sessions", "-n", "-s"],
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                check=False, timeout=3.0,
-            )
-            existing = (res.stdout or b"").decode("utf-8", "ignore").splitlines()
-            exists = any(s.strip() == tmux_session for s in existing)
-        except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as e:
-            log.warning("ws-terminal: zellij list-sessions failed (%s) — fallback to direct zsh", e)
+            rc = subprocess.run(
+                ["tmux", "has-session", "-t", tmux_session],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False,
+            ).returncode
+        except FileNotFoundError:
+            log.warning("ws-terminal: tmux not found — fallback to direct zsh")
             tmux_session = ""
-            exists = False
-
-        if tmux_session and not exists:
-            # 새 session 생성 — env 전체 copy + Popen cwd/env 로 첫 pane 의 cwd/env 전파.
-            new_env = os.environ.copy()
-            new_env["LANG"] = "ko_KR.UTF-8"
-            new_env["LC_ALL"] = "ko_KR.UTF-8"
-            new_env["TERM"] = "xterm-256color"
-            new_env["COLORTERM"] = "truecolor"
+            rc = 1
+        if tmux_session and rc != 0:
+            # 새 session 생성 — env-prefix 패턴 ([[feedback-helper-tmux-child-env-injection]]).
+            new_env = ["env", f"LANG=ko_KR.UTF-8", f"LC_ALL=ko_KR.UTF-8", f"TERM=xterm-256color", "COLORTERM=truecolor"]
             if agent_id:
-                new_env["AIDESK_AGENT_ID"] = agent_id
+                new_env.append(f"AIDESK_AGENT_ID={agent_id}")
+            new_cmd = [
+                "tmux", "new-session", "-d",
+                "-s", tmux_session,
+                "-x", str(cols), "-y", str(rows),
+                "-c", cwd,
+                " ".join(new_env) + " " + shell + " -il",
+            ]
             try:
-                # `attach NAME -b -c` = background + create-if-not-exist.
+                subprocess.run(new_cmd, check=False)
+                # mouse off — xterm.js 가 native scroll 받게. tmux mouse on 이면 scroll
+                # 이벤트가 tmux 의 copy mode 로 흡수됨.
                 subprocess.run(
-                    [ZELLIJ, "--config-dir", ZELLIJ_CONFIG_DIR, "attach", tmux_session, "-b", "-c"],
+                    ["tmux", "set-option", "-t", tmux_session, "mouse", "off"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    check=False, timeout=5.0,
-                    cwd=cwd, env=new_env,
+                    check=False,
                 )
-                log.info("ws-terminal: zellij session %s created @ cwd=%s", tmux_session, cwd)
-            except (subprocess.TimeoutExpired, OSError) as e:
-                log.warning("ws-terminal: zellij create-session failed err=%s", e)
+                log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off)", tmux_session, cwd)
+            except OSError as e:
+                log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback
 
-    # zellij 가 attach client 의 pty size 를 자동 사용 — 별도 resize 명령 불필요.
-    # scrollback 도 zellij 자체 buffer 가 보존 → attach 시 화면 그대로 복원.
-    # tmux 의 capture-pane → ws history dump 패턴은 제거. (zellij action dump-screen 은
-    # session 안에서만 호출 가능 — 외부 helper 가 못 부름.)
+    # tmux session 의 cols/rows 를 client xterm size 와 동일하게 resize. mismatch 시
+    # capture-pane / attach 출력의 grid 가 xterm parser 의 viewport 와 안 맞아 정렬 깨짐.
+    if tmux_session:
+        try:
+            subprocess.run(
+                ["tmux", "resize-window", "-t", tmux_session, "-x", str(cols), "-y", str(rows)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=1.0,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+    # tmux attach 직전 — history 한 번 dump 해서 ws 로 직접 보냄. attach 가 *현재
+    # 화면만* 전송 (옛 출력 X). capture-pane -S -3000 으로 scrollback 3000 라인 보냄.
     history_dump: bytes | None = None
+    if tmux_session:
+        try:
+            # -e 제거 — escape cursor-move 가 옛 cols 좌표 기반이라 새 cols 의 xterm 에서
+            # 계단식 정렬 사고. plain text 만 dump (과거 색상 손실, 정렬은 OK).
+            res = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-S", "-3000", "-t", tmux_session],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+            if res.returncode == 0 and res.stdout:
+                # capture-pane 의 plain output 은 \n (LF) 만 — xterm 은 LF 만 받으면
+                # cursor col 유지 → 각 line 의 다음 줄 시작이 옛 col (계단식 정렬). CR
+                # 추가해 \r\n 으로 정상 줄바꿈.
+                history_dump = res.stdout.replace(b"\n", b"\r\n")
+                log.info("ws-terminal: history dump %d bytes session=%s", len(history_dump), tmux_session)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            log.warning("ws-terminal: capture-pane failed err=%s", e)
 
     pid, fd = pty.fork()
     if pid == 0:
@@ -213,10 +201,10 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             pass
         try:
             if tmux_session:
-                # zellij attach — ws 끊김 = detach (session 살아있음, 다음 attach 시 복원).
-                os.execvpe(ZELLIJ, [ZELLIJ, "--config-dir", ZELLIJ_CONFIG_DIR, "attach", tmux_session], env)
+                # tmux attach — ws 끊김 = detach (session + claude 살아있음).
+                os.execvpe("tmux", ["tmux", "attach-session", "-t", tmux_session], env)
             else:
-                # zellij 미사용 or fallback — 직접 shell. ws 끊김 시 종료.
+                # 옛 동작 (tmux 없거나 미지정) — 직접 shell. ws 끊김 시 종료.
                 os.execvpe(shell, [shell, "-il"], env)
         except OSError as e:
             print(f"[aidesk-web-pty] exec failed: {e}", flush=True)
@@ -233,14 +221,6 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     loop = asyncio.get_event_loop()
     closed = asyncio.Event()
-    # asyncio.create_task 를 그냥 호출하면 event loop 의 weak reference 정책상 task 가 GC
-    # 될 수 있음 (Python 3.11+). 강한 reference 유지 + done callback discard.
-    pending_tasks: set[asyncio.Task] = set()
-
-    def _spawn(coro) -> None:
-        task = asyncio.create_task(coro)
-        pending_tasks.add(task)
-        task.add_done_callback(pending_tasks.discard)
 
     def _on_pty_readable() -> None:
         if closed.is_set():
@@ -255,9 +235,9 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 loop.remove_reader(fd)
             except (OSError, ValueError):
                 pass
-            _spawn(ws.close())
+            asyncio.create_task(ws.close())
             return
-        _spawn(ws.send_bytes(data))
+        asyncio.create_task(ws.send_bytes(data))
 
     loop.add_reader(fd, _on_pty_readable)
 
@@ -296,36 +276,15 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             os.close(fd)
         except OSError:
             pass
-        # SIGHUP → 짧게 대기 → 그래도 살아있으면 SIGKILL — zombie 방지.
-        # WNOHANG 만으로는 SIGHUP 무시 shell (예: trap) 시 child 가 reaped 안 됨.
         try:
             os.kill(pid, signal.SIGHUP)
         except OSError:
             pass
-        reaped = False
-        for _ in range(10):  # 약 1초까지 polling (100ms * 10).
-            try:
-                rc_pid, _status = os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                reaped = True
-                break
-            if rc_pid != 0:
-                reaped = True
-                break
-            await asyncio.sleep(0.1)
-        if not reaped:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-            try:
-                os.waitpid(pid, 0)  # blocking — SIGKILL 후엔 즉시 reaped.
-            except ChildProcessError:
-                pass
-        # 안전하게 남은 task 들도 정리 (ws.close / send_bytes 의 race 회피).
-        for t in list(pending_tasks):
-            if not t.done():
-                t.cancel()
+        # zombie 회수.
+        try:
+            os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            pass
         log.info("ws-terminal: close client=%s pid=%d", request.remote, pid)
 
     return ws

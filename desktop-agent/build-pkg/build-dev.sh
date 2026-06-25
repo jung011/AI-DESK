@@ -36,29 +36,9 @@ echo "→ Cleaning build-dev/"
 rm -rf "$BUILD"
 mkdir -p "$BUILD" "$DIST"
 
-# zellij 다운로드 — build.sh 와 동일 cache 공유 (desktop-agent/bin/zellij).
-ZELLIJ_VERSION="${ZELLIJ_VERSION:-0.44.3}"
-ZELLIJ_BIN="$DESKTOP_AGENT/bin/zellij"
-if [[ "$ARCH" == "arm64" ]]; then
-    ZELLIJ_TARGET="aarch64-apple-darwin"
-elif [[ "$ARCH" == "x86_64" ]]; then
-    ZELLIJ_TARGET="x86_64-apple-darwin"
-else
-    echo "✗ 지원 안 되는 ARCH=$ARCH (zellij)"; exit 1
-fi
-if [[ ! -f "$ZELLIJ_BIN" ]] || ! "$ZELLIJ_BIN" --version 2>/dev/null | grep -q "$ZELLIJ_VERSION"; then
-    echo "→ zellij v${ZELLIJ_VERSION} (${ZELLIJ_TARGET}) 다운로드"
-    mkdir -p "$DESKTOP_AGENT/bin"
-    curl -fSL --max-time 120 \
-        "https://github.com/zellij-org/zellij/releases/download/v${ZELLIJ_VERSION}/zellij-${ZELLIJ_TARGET}.tar.gz" \
-        -o "$DESKTOP_AGENT/bin/zellij.tar.gz"
-    tar -xzf "$DESKTOP_AGENT/bin/zellij.tar.gz" -C "$DESKTOP_AGENT/bin"
-    rm "$DESKTOP_AGENT/bin/zellij.tar.gz"
-    chmod +x "$ZELLIJ_BIN"
-    xattr -d com.apple.quarantine "$ZELLIJ_BIN" 2>/dev/null || true
-    codesign --force --sign - "$ZELLIJ_BIN" 2>/dev/null || true
-fi
-echo "  zellij: $("$ZELLIJ_BIN" --version)"
+# macOS 는 시스템 tmux 사용 — 별도 binary 다운로드 X.
+# (옛 zellij 마이그 시점엔 여기서 zellij binary 받았으나, Agent Teams 분할창 위해
+# tmux 로 복원함. Windows = zellij 사용은 build-pkg-win/ 분기에서 처리.)
 
 echo "→ [1/4] Running PyInstaller (dev)"
 cd "$DESKTOP_AGENT"

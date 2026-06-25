@@ -663,9 +663,9 @@ def build_app() -> web.Application:
     app = web.Application(middlewares=[cors_middleware])
     app.router.add_get("/api/health", health)
     app.router.add_get("/api/local-info", local_info)
-    # 2026-06-22 비활성 (웹 터미널 + zellij 로 대체):
+    # 2026-06-22 비활성 (웹 터미널 + tmux attach 패턴 으로 대체):
     #   /api/open-terminal       — 외부 iTerm 자동 띄움 (start_claude_with_mode → tmux)
-    #   /api/cleanup-agent       — agent 삭제 시 tmux session 정리 (web 터미널의 zellij 사용)
+    #   /api/cleanup-agent       — agent 삭제 시 tmux session 정리
     #   /api/check-tmux          — backend pre-flight (tmux has-session)
     # handler 함수는 코드 보존. 부활 시 route 만 해제.
     # app.router.add_post("/api/open-terminal", open_terminal_handler)

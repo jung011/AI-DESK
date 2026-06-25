@@ -38,17 +38,6 @@ _session_workers: dict[str, asyncio.Task] = {}
 # 어댑터 spawn 실패 / 미동작 시엔 set 에 안 들어가 sse_consumer 가 그대로 fallback.
 _bot_adapter_sessions: set[str] = set()
 
-# fire-and-forget task 의 강한 reference — Python event loop 의 weak ref 정책상 GC 위험.
-# done callback discard 로 무한 누적 방지.
-_pending_dispatch_tasks: set[asyncio.Task] = set()
-
-
-def _spawn_dispatch(coro) -> None:
-    """asyncio.create_task + strong ref + done callback discard."""
-    task = asyncio.create_task(coro)
-    _pending_dispatch_tasks.add(task)
-    task.add_done_callback(_pending_dispatch_tasks.discard)
-
 
 def register_bot_adapter_session(session: str) -> None:
     """봇 어댑터가 담당하기 시작한 tmux session 을 등록 — sse_consumer 가 그 session 제외."""
@@ -87,49 +76,44 @@ def _render_message(payload: dict) -> str:
     )
 
 
-async def _zellij_has_session(session: str) -> bool:
-    """zellij list-sessions 의 plain output 에 session 명 있는지."""
-    from ..terminal.web_pty import ZELLIJ
+async def _tmux_has_session(session: str) -> bool:
     try:
         proc = await asyncio.create_subprocess_exec(
-            ZELLIJ, "list-sessions", "-n", "-s",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await proc.communicate()
-        if proc.returncode != 0:
-            return False
-        names = (stdout or b"").decode("utf-8", "ignore").splitlines()
-        return any(n.strip() == session for n in names)
-    except OSError:
-        return False
-
-
-async def _zellij_send(session: str, text: str) -> bool:
-    """zellij action write-chars 로 텍스트 + 끝에 \\n 인라인 — claude TUI submit 동작.
-
-    tmux 의 `send-keys -l + send-keys C-m` 패턴을 zellij 의 `write-chars text\\n` 한 번에.
-    별도 `action write 13` 은 bracketed-paste 모드 안에서 literal 로 박혀 submit 안 됨.
-    write-chars 의 string 끝에 \\n 박으면 claude TUI 가 정상 submit (검증됨).
-    cross-platform — macOS / Linux / Windows 모두 동일 명령.
-    """
-    from ..terminal.web_pty import ZELLIJ
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            ZELLIJ, "--session", session, "action", "write-chars", text + "\n",
+            "tmux",
+            "has-session",
+            "-t",
+            session,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
         rc = await proc.wait()
         return rc == 0
-    except OSError as e:
-        log.warning("zellij action write-chars failed: %s", e)
+    except OSError:
         return False
 
 
-# tmux → zellij 마이그 — 옛 이름 alias 로 유지 (handler 가 호출).
-_tmux_has_session = _zellij_has_session
-_tmux_send = _zellij_send
+async def _tmux_send(session: str, text: str) -> bool:
+    """`tmux send-keys -l` 로 텍스트 + 짧은 지연 + 별도 Enter — 백엔드와 동일 패턴."""
+    try:
+        p1 = await asyncio.create_subprocess_exec(
+            "tmux", "send-keys", "-l", "-t", session, text,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        rc1 = await p1.wait()
+        if rc1 != 0:
+            return False
+        await asyncio.sleep(_ENTER_DELAY_SEC)
+        p2 = await asyncio.create_subprocess_exec(
+            "tmux", "send-keys", "-t", session, "C-m",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        rc2 = await p2.wait()
+        return rc2 == 0
+    except OSError as e:
+        log.warning("tmux send-keys failed: %s", e)
+        return False
 
 
 async def _send_ack(backend_url: str, message_id: str) -> None:
@@ -252,11 +236,11 @@ async def _consume_once(backend_url: str) -> None:
                 # 빈 session 이면 _handle_message_deliver 가 알아서 drop 하니까 그쪽으로 직접 넘김.
                 target_session = (payload.get("toTmuxSession") or "").strip()
                 if target_session:
-                    _spawn_dispatch(
+                    asyncio.create_task(
                         _enqueue_for_session(target_session, payload, backend_url)
                     )
                 else:
-                    _spawn_dispatch(_handle_message_deliver(payload, backend_url))
+                    asyncio.create_task(_handle_message_deliver(payload, backend_url))
 
 
 async def consumer_loop(backend_url: str) -> None:

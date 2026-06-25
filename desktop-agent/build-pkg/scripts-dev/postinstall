@@ -85,11 +85,6 @@ if [[ -x "/usr/local/share/aidesk-dev/aidesk-channel/bin/aidesk-channel" ]]; the
     codesign --force --sign - /usr/local/share/aidesk-dev/aidesk-channel/bin/aidesk-channel 2>/dev/null || true
 fi
 
-# zellij binary codesign (.pkg datas 통해 박힌 binary 도 Gatekeeper 대응)
-for ZELLIJ in /usr/local/share/aidesk-dev/helper-app/_internal/bin/zellij; do
-    [[ -x "$ZELLIJ" ]] && codesign --force --sign - "$ZELLIJ" 2>/dev/null || true
-done
-
 echo "✓ AI Desk Helper *DEV* 설치 완료"
 echo "  - 바이너리: /usr/local/bin/aidesk-helper-dev"
 echo "  - LaunchAgent: $PLIST (com.aidesk.agent.dev)"
