@@ -4,7 +4,6 @@
 //   AIDESK_AGENT_ID       선택. 이 MCP 인스턴스가 어느 t_ai_agent 에 해당하는지를 명시.
 //                         비어있거나 DB 에 없는 ID 면 process.cwd() 로 자동 매칭.
 //   AIDESK_API_URL        선택 (기본 http://localhost:30081).
-//   AIDESK_POLL_MS        선택 (기본 5000). inbox 폴링 주기.
 //   AIDESK_BEARER_TOKEN   선택. 외부 AI service (helper 없는 환경) 에서 사용.
 //                         값이 있으면 모든 backend 호출에 Authorization: Bearer 헤더 동봉.
 //                         있을 땐 ensureAgentId 가 ENV_AGENT_ID 를 무조건 신뢰
@@ -56,7 +55,6 @@ const ENV_AGENT_ID = process.env.AIDESK_AGENT_ID;
 // helper 에 *최신 backend URL* 을 묻는 보조 경로를 둔다.
 let API_URL  = process.env.AIDESK_API_URL || 'http://localhost:30081';
 const HELPER_URL = process.env.AIDESK_HELPER_URL || 'http://localhost:30083';
-const POLL_MS  = Number(process.env.AIDESK_POLL_MS || 5000);
 // Phase 2 — 외부 AI service (helper 없는 환경). 있으면 모든 backend 호출에 Bearer.
 const BEARER_TOKEN = process.env.AIDESK_BEARER_TOKEN;
 // Phase 2 자동 응답 — Anthropic Claude SDK 직접 호출. Claude Code 의 sampling 미지원 우회.
