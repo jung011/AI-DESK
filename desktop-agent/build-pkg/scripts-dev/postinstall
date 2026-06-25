@@ -77,7 +77,13 @@ PYEOF
 chown "$CONSOLE_USER" "$PLIST"
 
 # dev LaunchAgent reload (prod 건드리지 않음)
+# bootout 은 *비동기* — 옛 process 죽기까지 wait 안 하면 다음 bootstrap 이 *Input/output error*.
 launchctl bootout "gui/$USER_UID/com.aidesk.agent.dev" 2>/dev/null || true
+# 옛 LaunchAgent 가 unload 완료될 때까지 최대 5초 대기
+for _ in 1 2 3 4 5; do
+    launchctl print "gui/$USER_UID/com.aidesk.agent.dev" >/dev/null 2>&1 || break
+    sleep 1
+done
 launchctl bootstrap "gui/$USER_UID" "$PLIST"
 
 # aidesk-channel mcp binary codesign (Gatekeeper 우회)
