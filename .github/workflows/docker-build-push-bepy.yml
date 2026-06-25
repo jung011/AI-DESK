@@ -6,7 +6,8 @@ on:
       - 'bepy-*'  # FastAPI 마이그 image tag
 
 # 기존 be / fe workflow 와 다른 group — bepy 는 별도 image (jsh125/aidesk-backend-py).
-# 마이그 검증 단계라 helm values.yaml 자동 bump 없음. prod 영향 X.
+# rc48 (2026-06-22) — helm bump 자동화 활성. 마이그 안정화 완료 + rc24/47/48 사이클로
+# tag → image → helm → ArgoCD swap 패턴 검증됨. 수동 step (helm bump + master push) 제거.
 concurrency:
   group: deploy-pipeline-bepy
   cancel-in-progress: false
@@ -16,7 +17,7 @@ jobs:
     # 우드 K8s 노드 = arm64 only.
     runs-on: ubuntu-24.04-arm
     permissions:
-      contents: read  # helm bump 없으니 write 불필요
+      contents: write  # helm bump commit + master push 위해 write 필요
 
     steps:
       - name: Checkout Repository
@@ -64,3 +65,37 @@ jobs:
           tags: jsh125/aidesk-backend-py:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=backend-py
           cache-to: type=gha,scope=backend-py,mode=max
+
+      # rc48 추가 — helm values.yaml 의 backend image tag 자동 bump + master push.
+      # ArgoCD auto sync 가 master 변경 감지 → prod swap. 수동 step 제거.
+      # rc53 (2026-06-23) — fe / bepy workflow 동시 trigger 시 master push race
+      # ("cannot lock ref") 사고로 helm bump 누락. retry-on-conflict 5회.
+      - name: Helm values.yaml — backend tag bump (with retry)
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin master
+            # rc54 fix — reset --hard origin/master 만 하면 detached HEAD 라 push origin
+            # master 시 "src refspec master does not match any" 발생.
+            # switch -C 로 *local master branch* 가 origin/master 가리키게 강제.
+            git switch -C master origin/master
+            # backend image tag 만 매치 (frontend tag 형식 = 1.30.7-rc21 와 다름)
+            # Helm/ (대문자) — git case-sensitive, macOS 의 helm/ 와 다름
+            sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "${{ env.IMAGE_TAG }}"|' Helm/values.yaml
+            if git diff --quiet Helm/values.yaml; then
+              echo "values.yaml unchanged — already on $IMAGE_TAG (skip)"
+              exit 0
+            fi
+            git add Helm/values.yaml
+            git commit -m "deploy(be): helm bump ${{ env.IMAGE_TAG }} (auto from GHA)"
+            if git push origin master 2>&1; then
+              echo "✓ helm bump push success on attempt $attempt"
+              exit 0
+            fi
+            echo "× push race detected on attempt $attempt — fetch + retry in $((attempt * 3))s"
+            sleep $((attempt * 3))
+          done
+          echo "✗ helm bump push failed after 5 attempts — manual fix needed"
+          exit 1

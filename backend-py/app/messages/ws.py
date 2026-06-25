@@ -180,6 +180,9 @@ async def messages_ws_endpoint(
     """
     cookie_token = websocket.cookies.get(settings.cookie_access_name)
 
+    # 1) auth + toggle status — DB session 짧게 점유 후 닫음. ws connection lifetime 동안
+    # session 잡으면 pool capacity 위험 (rc46 fix). receive loop 동안 DB 작업 없으므로
+    # 미리 close.
     db = SessionLocal()
     try:
         auth = _authenticate(db, cookie_token, agentId, token)
@@ -193,34 +196,40 @@ async def messages_ws_endpoint(
 
         # connect → agent status='idle' (Spring 동등)
         if ws_agent_id:
-            _toggle_status(db, ws_agent_id, "idle")
+            try:
+                _toggle_status(db, ws_agent_id, "idle")
+            except Exception:  # noqa: BLE001
+                db.rollback()
+                log.exception("[ws-handler] toggle_status rollback")
             log.info("[ws-handler] connect → status=idle agentId=%s account_sn=%s", ws_agent_id, account_sn)
         else:
             log.info("[ws-handler] connect (cookie path, no agent_id binding) account_sn=%s", account_sn)
-
-        try:
-            # 클라이언트 → 서버 메시지는 PoC 단계 ignore (Spring 도 동일). receive loop 만 유지.
-            while True:
-                _ = await websocket.receive_text()
-                # 무시
-        except WebSocketDisconnect:
-            pass
-        except Exception as e:  # noqa: BLE001
-            log.warning("[ws-handler] recv loop crashed: %s", e)
-        finally:
-            await ws_broker.unregister(account_sn, ws_agent_id, websocket)
-            # rc19 design 정정 — ws disconnect ≠ claude exit. session close 만으로 offline
-            # 마킹 금지. mcp ws 의 분 단위 disconnect/reconnect cycle 시 false offline
-            # 방지. status='offline' 은 helper 의 명시적 종료 보고 (tmux 없음) 또는 agent
-            # delete 만. ws session 만 status 결정하지 않음 — idle 유지.
-            if ws_agent_id:
-                try:
-                    remaining = ws_broker.count_sessions_for_agent(ws_agent_id)
-                    log.info(
-                        "[ws-handler] disconnect agentId=%s remaining_sessions=%d (status unchanged)",
-                        ws_agent_id, remaining,
-                    )
-                except Exception:  # noqa: BLE001
-                    log.exception("[ws-handler] disconnect log failed")
     finally:
+        # auth/toggle 끝나면 즉시 session 반환 — receive loop 가 connection 묶지 않게.
         db.close()
+
+    # 2) receive loop — DB session 없이 ws 만 유지. disconnect 까지 connection pool 부담 0.
+    try:
+        # 클라이언트 → 서버 메시지는 PoC 단계 ignore (Spring 도 동일). receive loop 만 유지.
+        while True:
+            _ = await websocket.receive_text()
+            # 무시
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:  # noqa: BLE001
+        log.warning("[ws-handler] recv loop crashed: %s", e)
+    finally:
+        await ws_broker.unregister(account_sn, ws_agent_id, websocket)
+        # rc19 design 정정 — ws disconnect ≠ claude exit. session close 만으로 offline
+        # 마킹 금지. mcp ws 의 분 단위 disconnect/reconnect cycle 시 false offline
+        # 방지. status='offline' 은 helper 의 명시적 종료 보고 (tmux 없음) 또는 agent
+        # delete 만. ws session 만 status 결정하지 않음 — idle 유지.
+        if ws_agent_id:
+            try:
+                remaining = ws_broker.count_sessions_for_agent(ws_agent_id)
+                log.info(
+                    "[ws-handler] disconnect agentId=%s remaining_sessions=%d (status unchanged)",
+                    ws_agent_id, remaining,
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("[ws-handler] disconnect log failed")

@@ -18,6 +18,9 @@
     <!-- 로컬 통합 Claude 사용량 -->
     <LocalUsageBar />
 
+    <!-- 로컬 mac 의 리소스 누적 (재부팅 권장 모니터) — uptime + daemon %. 클릭 → /resource-cleanup -->
+    <LocalResourceBar />
+
     <!-- 요약 카드 -->
     <SummaryCardGrid :summary="summary" />
 
@@ -117,6 +120,7 @@ import { useAgents } from '~/composables/useAgents';
 import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
 import FilterBar from '~/components/dashboard/FilterBar.vue';
 import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
+import LocalResourceBar from '~/components/dashboard/LocalResourceBar.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentWiringView from '~/components/dashboard/AgentWiringView.vue';
 
@@ -386,4 +390,27 @@ onUnmounted(() => stopPolling());
 .toggle-btn.active {
   background: #0062FF; color: #fff; border-color: #0062FF;
 }
+
+.restart-banner {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(90deg, rgba(255,180,84,0.12), rgba(255,180,84,0.04));
+  border: 1px solid rgba(255,180,84,0.4);
+  border-left: 4px solid #FFB454;
+  border-radius: 6px;
+}
+.banner-icon { font-size: 22px; flex-shrink: 0; }
+.banner-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.banner-text strong { font-size: 13px; color: #B86E00; font-weight: 700; }
+.banner-text span { font-size: 12px; color: #6B7785; }
+.banner-action {
+  flex-shrink: 0;
+  font-size: 12px; font-weight: 600;
+  color: #B86E00; text-decoration: none;
+  padding: 6px 12px;
+  border: 1px solid #FFB454; border-radius: 4px;
+  transition: background .12s;
+}
+.banner-action:hover { background: rgba(255,180,84,0.15); }
 </style>

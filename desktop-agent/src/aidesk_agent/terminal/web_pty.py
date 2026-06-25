@@ -233,6 +233,14 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     loop = asyncio.get_event_loop()
     closed = asyncio.Event()
+    # asyncio.create_task 를 그냥 호출하면 event loop 의 weak reference 정책상 task 가 GC
+    # 될 수 있음 (Python 3.11+). 강한 reference 유지 + done callback discard.
+    pending_tasks: set[asyncio.Task] = set()
+
+    def _spawn(coro) -> None:
+        task = asyncio.create_task(coro)
+        pending_tasks.add(task)
+        task.add_done_callback(pending_tasks.discard)
 
     def _on_pty_readable() -> None:
         if closed.is_set():
@@ -247,9 +255,9 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 loop.remove_reader(fd)
             except (OSError, ValueError):
                 pass
-            asyncio.create_task(ws.close())
+            _spawn(ws.close())
             return
-        asyncio.create_task(ws.send_bytes(data))
+        _spawn(ws.send_bytes(data))
 
     loop.add_reader(fd, _on_pty_readable)
 
@@ -288,15 +296,36 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             os.close(fd)
         except OSError:
             pass
+        # SIGHUP → 짧게 대기 → 그래도 살아있으면 SIGKILL — zombie 방지.
+        # WNOHANG 만으로는 SIGHUP 무시 shell (예: trap) 시 child 가 reaped 안 됨.
         try:
             os.kill(pid, signal.SIGHUP)
         except OSError:
             pass
-        # zombie 회수.
-        try:
-            os.waitpid(pid, os.WNOHANG)
-        except ChildProcessError:
-            pass
+        reaped = False
+        for _ in range(10):  # 약 1초까지 polling (100ms * 10).
+            try:
+                rc_pid, _status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                reaped = True
+                break
+            if rc_pid != 0:
+                reaped = True
+                break
+            await asyncio.sleep(0.1)
+        if not reaped:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            try:
+                os.waitpid(pid, 0)  # blocking — SIGKILL 후엔 즉시 reaped.
+            except ChildProcessError:
+                pass
+        # 안전하게 남은 task 들도 정리 (ws.close / send_bytes 의 race 회피).
+        for t in list(pending_tasks):
+            if not t.done():
+                t.cancel()
         log.info("ws-terminal: close client=%s pid=%d", request.remote, pid)
 
     return ws

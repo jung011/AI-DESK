@@ -32,6 +32,9 @@ from .workspace import browse_file, browse_workspace, cleanup_agent, scope_works
 from .reporter import DEFAULT_BACKEND_URL, DEFAULT_REPORT_INTERVAL_SEC, reporter_loop
 from .tmux import consumer_loop, scan_sessions
 from .watchdog import watchdog_loop
+from . import cleanup as cleanup_mod
+from . import status_history
+from . import proxy as proxy_mod
 from .claude.action_hook import auto_install_on_startup as action_hook_auto_install
 from .claude.compact_hook import auto_install_on_startup as compact_hook_auto_install
 from .claude.prompt_hook import auto_install_on_startup as prompt_hook_auto_install
@@ -86,6 +89,51 @@ _OPEN_ORIGIN_PATHS = {"/api/setup", "/api/local-info", "/api/health"}
 _PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / "com.aidesk.agent.plist"
 _CLAUDE_JSON_PATH = Path.home() / ".claude.json"
 _HUB_URL_RE = re.compile(r"^https?://[\w\.\-]+(?::\d+)?(?:/[\w\.\-/]*)?/?$")
+
+
+def _migrate_mcp_to_proxy_url() -> None:
+    """helper startup 시 ~/.claude.json 의 모든 aidesk-channel mcp env.AIDESK_API_URL 을
+    helper proxy URL 로 일괄 마이그. agent claude code 가 다음에 daemon 새로 spawn 할 때
+    proxy 경유. [[feedback-mcp-bun-external-connect-block]]
+    """
+    if not _CLAUDE_JSON_PATH.exists():
+        return
+    helper_port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+    new_url = f"http://127.0.0.1:{helper_port}/api/proxy"
+    try:
+        with open(_CLAUDE_JSON_PATH) as f:
+            cdata = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("mcp migrate: ~/.claude.json read fail err=%s", e)
+        return
+    projects = cdata.get("projects", {})
+    if not isinstance(projects, dict):
+        return
+    changed = 0
+    for proj in projects.values():
+        if not isinstance(proj, dict):
+            continue
+        servers = proj.get("mcpServers")
+        if not isinstance(servers, dict):
+            continue
+        ac = servers.get("aidesk-channel")
+        if not isinstance(ac, dict):
+            continue
+        ac_env = ac.setdefault("env", {})
+        if not isinstance(ac_env, dict):
+            continue
+        if ac_env.get("AIDESK_API_URL") != new_url:
+            ac_env["AIDESK_API_URL"] = new_url
+            changed += 1
+    if changed == 0:
+        return
+    try:
+        with open(_CLAUDE_JSON_PATH, "w") as f:
+            json.dump(cdata, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        log.info("mcp migrate: %d project(s) → proxy URL=%s", changed, new_url)
+    except OSError as e:
+        log.warning("mcp migrate: ~/.claude.json write fail err=%s", e)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -201,7 +249,10 @@ def _apply_setup(hub_url: str) -> tuple[int, str]:
                 if isinstance(ac, dict):
                     ac_env = ac.setdefault("env", {})
                     if isinstance(ac_env, dict):
-                        ac_env["AIDESK_API_URL"] = backend_url
+                        # mcp daemon 은 helper proxy 경유 — 외부 IP socket 격리.
+                        # [[feedback-mcp-bun-external-connect-block]]
+                        helper_port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+                        ac_env["AIDESK_API_URL"] = f"http://127.0.0.1:{helper_port}/api/proxy"
         with open(_CLAUDE_JSON_PATH, "w") as f:
             json.dump(cdata, f, indent=2, ensure_ascii=False)
             f.write("\n")
@@ -480,6 +531,54 @@ async def code_server_status_handler(request: web.Request) -> web.Response:
     )
 
 
+async def system_status_handler(_: web.Request) -> web.Response:
+    """리소스 정리 페이지 + 대시보드 banner — uptime / 옛 daemon 갯수 / restart 권고.
+
+    [[feedback-mcp-bun-external-connect-block]] 의 *kernel state 누적* 사고 예방용
+    모니터링 데이터. agent 호스팅 mac 의 누적 임계 사전 감지.
+    """
+    return web.json_response(cleanup_mod.get_system_status())
+
+
+async def system_status_history_handler(_: web.Request) -> web.Response:
+    """resource-cleanup 페이지의 시간 추이 그래프 데이터.
+
+    1분 sampling × 24h ring buffer. helper restart 시 초기화.
+    """
+    return web.json_response({"samples": status_history.get_history()})
+
+
+async def cleanup_handler(request: web.Request) -> web.Response:
+    """리소스 정리 — 옛 mcp daemon kill + (옵션) DNS cache flush.
+
+    body 예: {"flushDns": false}
+
+    *주의* — 사용자가 현재 작업 중인 claude code 의 자식 mcp daemon 도 같이 종료될 수
+    있다. 정상 path 에선 claude code 가 다시 spawn 해서 복구. UI 가 confirm modal 로
+    사전 안내.
+    """
+    try:
+        body = await request.json()
+    except (ValueError, json.JSONDecodeError):
+        body = {}
+
+    dry_run = bool(body.get("dryRun"))
+    kill_result = cleanup_mod.kill_stale_daemons(dry_run=dry_run)
+
+    dns_result = None
+    if body.get("flushDns") is True and not dry_run:
+        dns_result = cleanup_mod.flush_dns_cache()
+
+    status_after = cleanup_mod.get_system_status()
+    return web.json_response(
+        {
+            "kill": kill_result,
+            "dns": dns_result,
+            "status": status_after,
+        }
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Lifecycle
 # ──────────────────────────────────────────────────────────────────────────────
@@ -496,6 +595,10 @@ async def _start_background_tasks(app: web.Application) -> None:
     # 충돌 X — bootstrap._BOT_ADAPTER_HELPER_BIN_PATHS 만 매칭.
     from .claude.bootstrap import cleanup_orphan_bot_adapters
     cleanup_orphan_bot_adapters()
+    # mcp daemon URL 마이그 — 모든 agent 의 ~/.claude.json 의 AIDESK_API_URL 을
+    # helper proxy URL 로 일괄 갱신. agent claude code 가 다음에 daemon 새로 spawn 할 때
+    # 자동 적용. [[feedback-mcp-bun-external-connect-block]]
+    _migrate_mcp_to_proxy_url()
     # iTerm Dynamic Profile 'AI Desk' 자동 생성 — Title Components 만 Session Name 으로
     # override 한 derivative profile. 외부 터미널 열기 시 이 profile 사용 → AI 이름이
     # title bar 에 표시됨. iTerm 미설치 환경이면 noop.
@@ -513,6 +616,9 @@ async def _start_background_tasks(app: web.Application) -> None:
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
     app["watchdog_task"] = asyncio.create_task(watchdog_loop())
+    # 리소스 상태 sampler — 60s 마다 uptime + daemon 갯수 in-memory 적재 (24h ring buffer).
+    # resource-cleanup 페이지의 시계열 차트 data source.
+    app["status_history_task"] = asyncio.create_task(status_history.sampler_loop())
     # 봇 어댑터 자가치유 — 30s 주기로 살아있는지 점검. 죽었으면 skip set 에서 빼서
     # sse_consumer 가 fallback 으로 last-mile 인수. 다음 ensure_bot_adapter 호출 시 재spawn.
     app["bot_adapter_monitor_task"] = asyncio.create_task(_bot_adapter_monitor_loop())
@@ -524,7 +630,7 @@ async def _start_background_tasks(app: web.Application) -> None:
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
-    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task"):
+    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task", "status_history_task"):
         task = app.get(key)
         if task is None:
             continue
@@ -572,10 +678,17 @@ def build_app() -> web.Application:
     # app.router.add_post("/api/check-tmux", check_tmux_handler)
     app.router.add_post("/api/setup", setup_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
+    app.router.add_get("/api/system/status", system_status_handler)
+    app.router.add_get("/api/system/status-history", system_status_history_handler)
+    app.router.add_post("/api/cleanup", cleanup_handler)
     app.router.add_get("/api/usage/local", usage_local_handler)
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
     # 웹 터미널 WS endpoint — xterm.js ↔ pty(zsh) bridge. 2026-06-21 부활.
     app.router.add_get("/ws/terminal", web_terminal_handler)
+    # Backend proxy — mcp daemon (bun) 의 외부 IP socket 격리. ws 가 먼저 (specific),
+    # http 가 catch-all (any method). [[feedback-mcp-bun-external-connect-block]]
+    app.router.add_get("/api/proxy/ws/{rest:.*}", proxy_mod.ws_proxy_handler)
+    app.router.add_route("*", "/api/proxy/{rest:.*}", proxy_mod.http_proxy_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))
     app.on_startup.append(_start_background_tasks)

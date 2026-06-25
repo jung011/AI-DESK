@@ -8,17 +8,21 @@
 - *좀비* (process 살아있는데 SSE event 안 옴): LaunchAgent 모름. watchdog 이 self-kill 로
   재기동 트리거.
 
-판정 기준:
-backend 가 30초 주기로 SSE heartbeat (comment line) 를 보내므로 — backend 1.23+ —
-어떤 SSE event 든 N초간 미수신이면 SSE 가 dead 라고 판정. sse_consumer 가 받는 모든 event
-(heartbeat comment / message.deliver) 마다 `mark_sse_event()` 호출해 idle timer 갱신.
+두 종류 좀비:
+1) *outbound 좀비* — backend SSE event 90s 미수신. mark_sse_event idle timer 로 감지.
+2) *inbound 좀비* (helper 0.8.18 추가) — port 30083 listening 잃었거나 web server handler
+   hang. 자기 /api/health 호출이 3회 연속 fail 시 self-kill. 2026-06-22 사고 = inbound
+   좀비 패턴 (outbound 정상이지만 brower 가 helper 한테 접속 불가).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 import time
+
+import aiohttp
 
 log = logging.getLogger(__name__)
 
@@ -32,9 +36,18 @@ _last_sse_event_at = time.monotonic()
 # *진짜 좀비* (한 번 정상 연결 후 끊김) 는 그대로 잡힘.
 _seen_first_event = False
 
+# self-ping 의 연속 실패 카운터. 3회 연속 fail (≈ 1.5min) 후 self-kill.
+_self_ping_fail_count = 0
+
+# self-ping 의 *최초 1회 성공* — web server bind 직후 self-kill 발동 X (initial-bootstrap guard).
+_seen_self_ping_ok = False
+
 # 감지 임계 — backend SSE heartbeat 30s 주기 가정 + 일시 reconnect buffer.
 # 90초 = heartbeat 3회 누락 = 명확한 dead.
 DEAD_SSE_THRESHOLD_SEC = 90.0
+
+# self-ping 연속 실패 임계 — 3회 (≈ 1.5min) 후 self-kill.
+SELF_PING_FAIL_THRESHOLD = 3
 
 # watchdog 폴링 주기.
 WATCHDOG_INTERVAL_SEC = 30.0
@@ -47,39 +60,82 @@ def mark_sse_event() -> None:
     _seen_first_event = True
 
 
+async def _self_ping_ok() -> bool:
+    """자기 /api/health 호출. inbound web server hang 감지."""
+    port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+    url = f"http://127.0.0.1:{port}/api/health"
+    try:
+        timeout = aiohttp.ClientTimeout(total=3.0)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            async with s.get(url) as r:
+                return r.status == 200
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+        return False
+
+
 async def watchdog_loop() -> None:
-    """SSE idle 이 너무 길면 process self-kill — LaunchAgent KeepAlive 가 자동 재기동.
+    """좀비 두 종류 감지 — process self-kill 시 LaunchAgent KeepAlive 가 자동 재기동.
 
-    단 *첫 SSE event 한 번이라도 받기 전엔* self-kill 안 함 (initial-bootstrap guard).
-    환경 이슈로 SSE 연결 자체가 안 되는 mac 에서는 watchdog 가 *조용히 대기* — process 는
-    alive 유지되지만 동작 안 함. 사용자가 외부 진단/fix 가능. 무한 self-kill 로 인한 binary
-    손상 방지.
+    1) outbound 좀비: SSE idle > 90s
+    2) inbound 좀비: self /api/health 3회 연속 fail
 
-    AIDESK_HELPER_NO_WATCHDOG=1 — dev 인스턴스 처럼 LaunchAgent 없이 직접 실행 시
-    self-kill 하면 영구 종료. 이 env 박으면 watchdog loop 비활성 (return).
+    둘 다 *initial-bootstrap guard* — 첫 정상 신호 수신 전에는 self-kill 안 함.
+    환경 이슈로 helper 자체 미동작 mac 에서 무한 self-kill 반복으로 PyInstaller 의 _MEI
+    임시 폴더 손상 방지.
+
+    AIDESK_WATCHDOG_DISABLED=1 — dev / 검증 환경 우회용. LaunchAgent 가 없는 환경에선
+    self-kill 후 자동 재기동이 없어 dev helper 죽음. 운영 .pkg 에선 절대 사용 X.
     """
-    import os
-    if os.environ.get("AIDESK_HELPER_NO_WATCHDOG", "").strip() in ("1", "true", "yes"):
-        log.info("watchdog: disabled by AIDESK_HELPER_NO_WATCHDOG env — skip loop")
+    if os.environ.get("AIDESK_WATCHDOG_DISABLED") == "1":
+        log.warning("watchdog: DISABLED via AIDESK_WATCHDOG_DISABLED=1 (dev mode)")
         return
-    log.info("watchdog: starting (threshold=%.0fs, interval=%.0fs)",
-             DEAD_SSE_THRESHOLD_SEC, WATCHDOG_INTERVAL_SEC)
+
+    global _self_ping_fail_count, _seen_self_ping_ok
+    log.info(
+        "watchdog: starting (sse_threshold=%.0fs, self_ping_fails=%d, interval=%.0fs)",
+        DEAD_SSE_THRESHOLD_SEC, SELF_PING_FAIL_THRESHOLD, WATCHDOG_INTERVAL_SEC,
+    )
     while True:
         try:
             await asyncio.sleep(WATCHDOG_INTERVAL_SEC)
         except asyncio.CancelledError:
             log.info("watchdog: cancelled — exiting cleanly")
             raise
-        if not _seen_first_event:
-            # 첫 SSE event 못 받은 상태 — 환경 이슈 가능성. self-kill 안 함.
-            log.debug("watchdog: no SSE event seen yet — guard active (no self-kill)")
+
+        # === 1) outbound 좀비 (SSE idle) — DISABLED ===
+        # helper proxy (0.8.23+) 도입 후 backend 통신은 proxy ws 가 담당. SSE 는 *event
+        # 발사 빈도* 가 사용자 mac 의 agent 활동에 따라 가변이라 idle = 정상 (사용자가
+        # 자고 있을 때, agent 모두 비활성, helper 만 reporter 돌릴 때 등).
+        # 0.8.24 의 min(sse,proxy) logic 도 *둘 다 event 없음* 케이스 false-positive
+        # self-kill 사고. inbound self-ping (아래) 만으로 helper 자체 hang 감지 충분.
+        # (자세한 회고: [[feedback-helper-watchdog-outbound-false-positive]])
+        if _seen_first_event:
+            sse_idle = time.monotonic() - _last_sse_event_at
+            log.debug("watchdog: SSE idle %.0fs (outbound check disabled)", sse_idle)
+
+        # === 2) inbound 좀비 (self /api/health) ===
+        ok = await _self_ping_ok()
+        if ok:
+            if not _seen_self_ping_ok:
+                log.info("watchdog: self-ping first OK — inbound guard activated")
+                _seen_self_ping_ok = True
+            if _self_ping_fail_count > 0:
+                log.info("watchdog: self-ping recovered after %d fails", _self_ping_fail_count)
+            _self_ping_fail_count = 0
             continue
-        idle = time.monotonic() - _last_sse_event_at
-        if idle > DEAD_SSE_THRESHOLD_SEC:
+        # fail
+        if not _seen_self_ping_ok:
+            # web server bind 전 — guard 활성 (initial-bootstrap)
+            log.debug("watchdog: self-ping not yet OK — inbound guard active (no self-kill)")
+            continue
+        _self_ping_fail_count += 1
+        log.warning(
+            "watchdog: self-ping FAIL %d/%d (web server hang/unbound)",
+            _self_ping_fail_count, SELF_PING_FAIL_THRESHOLD,
+        )
+        if _self_ping_fail_count >= SELF_PING_FAIL_THRESHOLD:
             log.error(
-                "watchdog: SSE idle %.0fs (>%.0fs threshold) — process self-kill so LaunchAgent restarts",
-                idle, DEAD_SSE_THRESHOLD_SEC,
+                "watchdog: self-ping %d 연속 fail — inbound 좀비 확정, process self-kill",
+                _self_ping_fail_count,
             )
-            # sys.exit 으로 깨끗하게 종료 — atexit hook / aiohttp shutdown 정상 실행.
             sys.exit(1)
-        log.debug("watchdog: SSE idle %.0fs (ok)", idle)

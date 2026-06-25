@@ -45,6 +45,21 @@ class AgentRepository:
         """Spring selectByIdAnyOwner — caller 인증 시 owner 검증 전 lookup."""
         return self.db.execute(select(AiAgent).where(AiAgent.agent_id == agent_id)).scalar_one_or_none()
 
+    def list_by_ids_any_owner(self, agent_ids: list[str]) -> list[AiAgent]:
+        """rc50 — N+1 SELECT 회피용 batch fetch. 빈 list 면 empty return.
+
+        get_conversations / get_unread_count 같은 list response 가 매 row 별
+        find_by_agent_id 호출하면 idle in transaction 누적 + pool 고갈 위험.
+        WHERE agent_id IN (...) 1 query 로 모든 partner / sender 일괄 조회.
+        """
+        if not agent_ids:
+            return []
+        return list(
+            self.db.execute(
+                select(AiAgent).where(AiAgent.agent_id.in_(agent_ids))
+            ).scalars()
+        )
+
     def find_by_tmux_session(self, tmux_session: str) -> AiAgent | None:
         return self.db.execute(
             select(AiAgent).where(
