@@ -294,7 +294,9 @@ def _resolve_user_path() -> str | None:
 def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> str:
     """mode 별 tmux 안에서 실행할 명령 구성.
 
-    - mode='claude'   : `claude` (또는 재실행이면 `claude -c`)
+    - mode='claude'   : `claude --dangerously-load-development-channels server:aidesk-channel`
+                        (Channels push-to-wake 활성 — idle 자동 wake + AI Desk 채널 inject).
+                        재실행이면 `-c` 추가.
     - mode='telegram' : `claude --channels plugin:telegram@claude-plugins-official` (+`-c`)
     - mode='custom'   : 사용자 입력을 `exec zsh -ic '<입력>'` 으로 wrap — alias / shell function /
                         .zshrc 정의 env 모두 expand. 사용자가 `myclaude` 같은 alias 든
@@ -303,6 +305,12 @@ def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> s
     `-c` (continue) 는 .claude/projects/<ws>/ 안에 이전 jsonl 대화가 있으면 자동 추가 —
     사용자가 exit/Ctrl+C 후 다시 모드 선택해서 띄우는 시나리오에서 컨텍스트를 살리기 위함.
     단 mode='custom' 은 사용자가 명령을 통째로 적는 모드라 `-c` 자동 추가 X (필요하면 본인이 명시).
+
+    [[project-claude-code-agent-teams]] — default mode 에 Channels flag 박는 이유:
+    Channels = idle agent push-to-wake 메커니즘. flag 없으면 mcp daemon 이 메시지
+    받아도 *prompt 안 inject* 되어 사용자 input 없이는 응답 X. flag 박으면 *Channels
+    (experimental) messages from server:aidesk-channel inject directly* 활성.
+    confirmation dialog 가 *시작 시 1회* 뜸 — tmux 안 helper 가 1회 Enter 자동화.
     """
     if mode == "custom":
         user_cmd = (custom_opts or "").strip()
@@ -313,6 +321,9 @@ def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> s
     extra = ""
     if mode == "telegram":
         extra = "--channels plugin:telegram@claude-plugins-official"
+    else:
+        # default mode = AI Desk Channels (push-to-wake) 활성
+        extra = "--dangerously-load-development-channels server:aidesk-channel"
     cmd = "claude"
     if extra:
         cmd = f"{cmd} {extra}"
@@ -368,6 +379,25 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str,
         subprocess.run(cmd_list, check=True, capture_output=True)
         log.info("bootstrap: tmux started detached ws=%s session=%s shell_cmd=%s user_path=%s",
                  workspace_dir, tmux_session, shell_cmd, "yes" if user_path else "no")
+
+        # Channels confirmation dialog 자동 Enter — claude --dangerously-load-development-channels
+        # 시작 시 *시작 시점* 에 한 번 "I am using this for local development" 선택 dialog
+        # 떴는데, headless tmux 안에선 사용자 손 없음 → Enter 자동 발사 필요.
+        # 3초 후 schedule (claude 시작 + dialog 표시까지 시간 확보).
+        # mode='telegram' 또는 'custom' 은 *Channels dialog 없음* — skip.
+        if mode not in ("telegram", "custom") and "--dangerously-load-development-channels" in claude_cmd:
+            def _send_confirm_enter() -> None:
+                import time
+                time.sleep(3)
+                try:
+                    subprocess.run(["tmux", "send-keys", "-t", tmux_session, "C-m"],
+                                   capture_output=True, timeout=2)
+                    log.info("bootstrap: Channels confirmation Enter sent session=%s", tmux_session)
+                except (subprocess.SubprocessError, OSError) as e:
+                    log.warning("bootstrap: confirmation Enter failed session=%s err=%s", tmux_session, e)
+            t = threading.Thread(target=_send_confirm_enter, daemon=True)
+            t.start()
+
         return True
     except subprocess.CalledProcessError as e:
         stderr = e.stderr.decode("utf-8", "replace") if e.stderr else ""
