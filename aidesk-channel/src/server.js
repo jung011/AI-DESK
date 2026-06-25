@@ -579,7 +579,19 @@ function startWsSubscribe() {
     ? `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`
     : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
 
-  const RECONNECT_MS = 3000;
+  // 지수 backoff — connect fail / disconnect 마다 *두 배씩* 늘려 backend storm 차단.
+  // 1s → 2 → 4 → 8 → 16 → 30 (max). connect 성공 시 1s 로 reset.
+  // 첫 시도는 즉시 (initial connect 외부 호출).
+  const RECONNECT_MIN_MS = 1000;
+  const RECONNECT_MAX_MS = 30000;
+  let reconnectDelay = RECONNECT_MIN_MS;
+
+  // ping/pong keep-alive — backend 가 *반응 안 함* (network mute / proxy timeout) 사고 시
+  // ws.on('close') 가 *바로 못 오는* 케이스 차단. 30s 마다 ping 발사 + 60s 안 pong
+  // 안 오면 강제 close → reconnect.
+  const PING_INTERVAL_MS = 30000;
+  const PONG_TIMEOUT_MS = 60000;
+
   // 401 (token rotate/revoke/delete) 같은 *명시적 인증 거부* 면 *자가 종료*.
   // 옛 token 박힌 daemon 의 무한 reconnect storm 방지 — backend log 도배 + 사용자 mac CPU 낭비
   // 차단. 사용자는 새 setup script 만 다시 실행하면 됨.
@@ -589,17 +601,40 @@ function startWsSubscribe() {
   //   - ws.on('error') 의 메시지 안 'Unexpected server response: 401' (npm ws 의 handshake 401)
   let ws = null;
   let reconnectTimer = null;
+  let pingTimer = null;
+  let pongDeadlineTimer = null;
   let lastErrorMsg = '';
+
+  function clearKeepAliveTimers() {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    if (pongDeadlineTimer) { clearTimeout(pongDeadlineTimer); pongDeadlineTimer = null; }
+  }
+
   function exitOnAuthReject(reason) {
     dbg(`aidesk-channel: auth reject — exiting daemon. reason=${reason}`);
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    clearKeepAliveTimers();
     // claude code mcp client 에 stderr 로 알림 (사용자가 새 setup 진행 필요).
     process.stderr.write(`[aidesk-channel] auth rejected (${reason}) — daemon exiting. Run new setup script.\n`);
     process.exit(1);
   }
+
+  // backlog 1회 pull — ws 가 *down 동안* 들어온 메시지 흡수. 첫 connect 시점은
+  // initial polling 이 이미 마킹했고, *reconnect 후* 가 진짜 backlog 필요 시점.
+  // firstWsOpen=true 면 *이미 marker* 했으니 skip. 아니면 pollInbox() 1회.
+  let firstWsOpen = true;
+  async function pullBacklogOnce() {
+    if (firstWsOpen) {
+      firstWsOpen = false;
+      return;
+    }
+    dbg('ws reconnected → backlog 1-shot pull');
+    await pollInbox();
+  }
+
   function connect() {
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -609,6 +644,33 @@ function startWsSubscribe() {
     ws.on('open', () => {
       dbg(`ws connected url=${wsUrl}`);
       lastErrorMsg = '';
+      reconnectDelay = RECONNECT_MIN_MS;  // reset backoff
+
+      // ping/pong keep-alive 시작
+      clearKeepAliveTimers();
+      pingTimer = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        try {
+          ws.ping();
+          // pong 안 오면 강제 close 후 reconnect cycle.
+          if (pongDeadlineTimer) clearTimeout(pongDeadlineTimer);
+          pongDeadlineTimer = setTimeout(() => {
+            dbg('aidesk-channel: pong timeout — forcing close');
+            try { ws.terminate(); } catch { /* ignore */ }
+          }, PONG_TIMEOUT_MS);
+        } catch (e) {
+          dbg(`aidesk-channel: ping send failed: ${e?.message ?? e}`);
+        }
+      }, PING_INTERVAL_MS);
+
+      // backlog 흡수 (reconnect 시만).
+      pullBacklogOnce().catch((e) => dbg(`aidesk-channel: backlog pull failed: ${e?.message ?? e}`));
+    });
+    ws.on('pong', () => {
+      if (pongDeadlineTimer) {
+        clearTimeout(pongDeadlineTimer);
+        pongDeadlineTimer = null;
+      }
     });
     ws.on('message', async (data) => {
       let evt;
@@ -625,14 +687,16 @@ function startWsSubscribe() {
     });
     ws.on('close', (code, reason) => {
       const reasonStr = reason ? reason.toString() : '';
-      dbg(`aidesk-channel: ws disconnected — code=${code} reason=${reasonStr} (reconnect in ${RECONNECT_MS}ms)`);
+      clearKeepAliveTimers();
       ws = null;
       // 1008 = WS_1008_POLICY_VIOLATION (backend 의 명시적 인증 reject). 1006 등 abnormal closure 는 reconnect.
       if (code === 1008 || /401/.test(lastErrorMsg)) {
         exitOnAuthReject(`code=${code} lastError=${lastErrorMsg}`);
         return;
       }
-      reconnectTimer = setTimeout(connect, RECONNECT_MS);
+      dbg(`aidesk-channel: ws disconnected — code=${code} reason=${reasonStr} (reconnect in ${reconnectDelay}ms)`);
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
     });
     ws.on('error', (err) => {
       lastErrorMsg = String(err?.message ?? err);
@@ -668,10 +732,10 @@ try {
   dbg(`aidesk-channel: initial agent resolve failed: ${e?.message ?? e}`);
 }
 
-dbg(`aidesk-channel ready. cwd=${process.cwd()} api=${API_URL} agent=${AGENT_ID} name=${MY_AGENT_NAME} poll=${POLL_MS}ms`);
+dbg(`aidesk-channel ready. cwd=${process.cwd()} api=${API_URL} agent=${AGENT_ID} name=${MY_AGENT_NAME}`);
 
 // Phase 2 — backend ws subscribe. status 토글 + 실시간 메시지 push + sampling 자동 응답.
+// ws 가 *주력* — 5초 polling 은 제거 (backlog 흡수는 reconnect 시 1회로 충분).
+// 초기 1회 polling 은 *기존 unread 마킹* 용 — daemon 시작 시점 이전의 메시지는 무시.
 startWsSubscribe();
-
-setInterval(pollInbox, POLL_MS);
-pollInbox(); // 즉시 1회 (백로그 마킹)
+pollInbox(); // 즉시 1회 (백로그 마킹 — firstPoll=true 가 흡수)
