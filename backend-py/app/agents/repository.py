@@ -168,6 +168,27 @@ class AgentRepository:
         )
         return list(self.db.execute(stmt).scalars())
 
+    def list_stale_idle_for_offline(self, threshold_seconds: int) -> list[AiAgent]:
+        """좀비 idle agent — *helper 죽었지만* status='idle' 영구 잔류 케이스 청산.
+
+        D 일원화 (comm-architecture-improvement.md 의 idle→offline 전이 누락 fix):
+        - 현재 watcher 는 active → idle 강등만 함.
+        - helper 가 죽으면 *idle 영구* — heartbeat 안 와도 idle 잔류.
+        - 추가 threshold (default 5분) 안 갱신 없으면 *진짜 offline* 마킹.
+
+        외부 AI 제외 — ws session 이 유일한 status source.
+        human 제외 — helper 안 돌리니 갱신 없음 (영구 idle 정상).
+        """
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=threshold_seconds)
+        stmt = select(AiAgent).where(
+            AiAgent.deleted_at.is_(None),
+            AiAgent.status == "idle",
+            AiAgent.updated_at < cutoff,
+            AiAgent.agent_type != "external",
+            AiAgent.agent_type != "human",
+        )
+        return list(self.db.execute(stmt).scalars())
+
     def soft_delete(self, agent_id: str) -> int:
         """deleted_at 마킹 — hard delete X (audit 보존)."""
         result = self.db.execute(

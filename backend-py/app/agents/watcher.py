@@ -19,6 +19,11 @@ log = logging.getLogger(__name__)
 # helper reporter 30s + 약간 여유 → 90s 안 신호 없으면 stale.
 # rc47 — ConfigMap env 로 운영 중 조정 가능 (leak 사고 시 cycle 늘려 단기 완화).
 STALE_THRESHOLD_SECONDS = int(os.environ.get("AIDESK_WATCHER_STALE_THRESHOLD_SECONDS", "90"))
+# helper *완전 죽음* 추정 threshold — idle → offline 강등 (D 일원화).
+# active → idle 90s 후, 추가 5분 = 총 ~6.5분 안 갱신 없으면 *진짜 offline*.
+# 좀비 idle 영구 잔류 fix. helper 가 *순간 멈춤* 후 복귀 시 reporter 가 즉시 status='active'
+# 갱신 → list_stale_idle_for_offline 에 안 잡혀 false offline 없음.
+OFFLINE_THRESHOLD_SECONDS = int(os.environ.get("AIDESK_WATCHER_OFFLINE_THRESHOLD_SECONDS", "300"))
 # 한 cycle 마다 check 주기.
 CHECK_INTERVAL_SECONDS = int(os.environ.get("AIDESK_WATCHER_CHECK_INTERVAL_SECONDS", "30"))
 
@@ -56,6 +61,44 @@ async def _check_once() -> int:
         # 누적 → pool 고갈 (rc24 사고 fix).
         db.rollback()
         log.exception("watcher: rolled back transaction")
+        raise
+    finally:
+        db.close()
+
+
+async def _check_idle_offline_once() -> int:
+    """좀비 idle agent (helper 완전 죽음) 를 idle → offline 강등.
+
+    D 일원화 — 현재 watcher 가 active→idle 만 함. helper 가 죽으면 idle 영구 잔류.
+    추가 threshold (5분) 안 갱신 없으면 진짜 offline 마킹.
+
+    repository 의 `update_status_from_watcher` 는 *external* 의 offline 마킹을
+    *defense-in-depth* 로 한 번 더 차단. list_stale_idle_for_offline 도 external
+    + human 제외 — 두 layer 안전.
+    """
+    db = SessionLocal()
+    try:
+        repo = AgentRepository(db)
+        stale = repo.list_stale_idle_for_offline(OFFLINE_THRESHOLD_SECONDS)
+        log.info("watcher-offline: tick threshold=%ds stale_candidates=%d", OFFLINE_THRESHOLD_SECONDS, len(stale))
+        if not stale:
+            return 0
+        updated = 0
+        for agent in stale:
+            n = repo.update_status_from_watcher(agent.agent_id, "offline")
+            if n > 0:
+                updated += 1
+                log.info(
+                    "watcher-offline: agent=%s (id=%s type=%s) idle -> offline (zombie, updated_at=%s)",
+                    agent.agent_name, agent.agent_id, agent.agent_type, agent.updated_at,
+                )
+        db.commit()
+        if updated > 0:
+            log.info("watcher-offline: tick complete — %d agent(s) demoted idle->offline", updated)
+        return updated
+    except Exception:
+        db.rollback()
+        log.exception("watcher-offline: rolled back transaction")
         raise
     finally:
         db.close()
@@ -100,6 +143,10 @@ async def _loop() -> None:
         except Exception:  # noqa: BLE001 — 어떤 예외도 loop 멈추지 못하게
             log.exception("watcher: check failed")
         try:
+            await _check_idle_offline_once()
+        except Exception:  # noqa: BLE001
+            log.exception("watcher-offline: failed")
+        try:
             await _touch_ws_active_once()
         except Exception:  # noqa: BLE001
             log.exception("ws-touch: failed")
@@ -109,5 +156,8 @@ async def _loop() -> None:
 def start() -> asyncio.Task[Any]:
     """main.py lifespan startup 에서 호출. 반환 task 는 shutdown 시 cancel."""
     task = asyncio.create_task(_loop(), name="agent-status-watcher")
-    log.info("agent watcher started — threshold=%ds interval=%ds", STALE_THRESHOLD_SECONDS, CHECK_INTERVAL_SECONDS)
+    log.info(
+        "agent watcher started — stale=%ds offline=%ds interval=%ds",
+        STALE_THRESHOLD_SECONDS, OFFLINE_THRESHOLD_SECONDS, CHECK_INTERVAL_SECONDS,
+    )
     return task
