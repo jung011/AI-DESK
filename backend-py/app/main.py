@@ -4,6 +4,7 @@ AI Desk backend (FastAPI 마이그). Spring Boot 의 대체.
 """
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -36,14 +37,19 @@ async def lifespan(app: FastAPI):
 
     # alembic upgrade head — schema 변경을 *정식 migration* 으로 적용.
     # idempotent (이미 적용된 migration 은 noop). DB 권한 부족 시 warning + 진행.
-    try:
-        from alembic import command
-        from alembic.config import Config
-        cfg = Config("alembic.ini")
-        command.upgrade(cfg, "head")
-        log.info("startup: alembic upgrade head — OK")
-    except Exception as e:  # noqa: BLE001
-        log.warning("startup: alembic upgrade failed — %s", e)
+    # AIDESK_SKIP_MIGRATIONS=1 — dev 환경 의 sqlite hang 회피 (alembic 의 sqlite
+    # non-transactional DDL 에서 block 사고). prod 영향 X.
+    if os.environ.get("AIDESK_SKIP_MIGRATIONS") != "1":
+        try:
+            from alembic import command
+            from alembic.config import Config
+            cfg = Config("alembic.ini")
+            command.upgrade(cfg, "head")
+            log.info("startup: alembic upgrade head — OK")
+        except Exception as e:  # noqa: BLE001
+            log.warning("startup: alembic upgrade failed — %s", e)
+    else:
+        log.info("startup: alembic upgrade SKIPPED (AIDESK_SKIP_MIGRATIONS=1)")
 
     from app.agents.watcher import start as start_watcher
     watcher_task = start_watcher()
