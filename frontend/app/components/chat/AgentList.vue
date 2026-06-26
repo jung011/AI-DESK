@@ -21,20 +21,12 @@
             <span class="al-model">· {{ shortModel(a.model) }}</span>
           </span>
         </span>
-        <!-- 햄버거 메뉴 — claude agent 만 (shell 은 의미 없음). hover 시 표시. -->
+        <!-- 햄버거 메뉴 — claude agent 만. dropdown 은 Teleport (overflow 회피). -->
         <button
           v-if="a.model !== 'shell'"
           class="al-menu-btn"
           title="메뉴"
-          @click.stop="toggleMenu(a.agentId)">⋯</button>
-        <div
-          v-if="menuOpenId === a.agentId"
-          class="al-menu-dropdown"
-          @click.stop>
-          <button class="al-menu-item" @click="onOpenClaude(a.agentId)">
-            <span class="al-menu-ico">▶</span>클로드 열기
-          </button>
-        </div>
+          @click.stop="toggleMenu(a.agentId, $event)">⋯</button>
         <button
           v-if="a.model === 'shell'"
           class="al-del"
@@ -42,6 +34,17 @@
           @click.stop="$emit('delete', a.agentId)">×</button>
       </li>
     </ul>
+    <Teleport to="body">
+      <div
+        v-if="menuOpenId && menuPos"
+        class="al-menu-dropdown"
+        :style="{ top: `${menuPos.top}px`, left: `${menuPos.left}px` }"
+        @click.stop>
+        <button class="al-menu-item" @click="onOpenClaude(menuOpenId)">
+          <span class="al-menu-ico">▶</span>클로드 열기
+        </button>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -60,19 +63,33 @@ const emit = defineEmits<{
   (e: 'open-claude', agentId: string): void;
 }>();
 
-// 햄버거 dropdown — 현재 열린 카드의 agentId. 동시에 1개만.
+// 햄버거 dropdown — Teleport to body + fixed position 으로 .al-list overflow 회피.
+// 좌표 = 햄버거 button 의 getBoundingClientRect 기준 (오른쪽 옆 + 약간 위로).
 const menuOpenId = ref<string | null>(null);
-function toggleMenu(agentId: string): void {
-  menuOpenId.value = menuOpenId.value === agentId ? null : agentId;
+const menuPos = ref<{ top: number; left: number } | null>(null);
+function toggleMenu(agentId: string, ev: MouseEvent): void {
+  if (menuOpenId.value === agentId) {
+    menuOpenId.value = null;
+    menuPos.value = null;
+    return;
+  }
+  const btn = ev.currentTarget as HTMLElement | null;
+  if (btn) {
+    const r = btn.getBoundingClientRect();
+    menuPos.value = { top: r.top, left: r.right + 6 };
+  }
+  menuOpenId.value = agentId;
 }
 function onOpenClaude(agentId: string): void {
   menuOpenId.value = null;
-  emit('select', agentId);   // 해당 agent 의 터미널로 select
+  menuPos.value = null;
+  emit('select', agentId);
   emit('open-claude', agentId);
 }
 
 function handleClickOutside(): void {
   menuOpenId.value = null;
+  menuPos.value = null;
 }
 onMounted(() => { document.addEventListener('click', handleClickOutside); });
 onUnmounted(() => { document.removeEventListener('click', handleClickOutside); });
@@ -181,14 +198,13 @@ function shortModel(m: string | null | undefined): string {
 .al-menu-btn:hover { color: #E5E9EE; background: rgba(79, 127, 255, 0.1); }
 
 .al-menu-dropdown {
-  position: absolute;
-  top: 100%; right: 8px;
+  position: fixed;
   background: #1A2030;
   border: 1px solid #2A3447;
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  z-index: 20;
+  z-index: 1000;
   min-width: 140px;
 }
 .al-menu-item {
