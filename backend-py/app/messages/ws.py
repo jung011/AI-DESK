@@ -50,6 +50,23 @@ class WsBroker:
             len(self._by_agent.get(agent_id, set())) if agent_id else 0,
         )
 
+    async def register_multi(self, account_sn: int, agent_ids: list[str], ws: WebSocket) -> None:
+        """B Phase 1 — 한 ws 가 여러 agent_id 와 binding (helper broker 용).
+
+        한 helper 의 단일 ws 가 *해당 mac 의 모든 agent* 를 대표. publish_to_account /
+        count_sessions_for_agent 는 기존 인덱스 (_sessions / _by_agent) 그대로 작동
+        — 다만 같은 ws 객체가 *여러 agent_id 의 set 에 등록* 됨.
+        """
+        async with self._lock:
+            self._sessions.setdefault(account_sn, set()).add(ws)
+            for agent_id in agent_ids:
+                if agent_id:
+                    self._by_agent.setdefault(agent_id, set()).add(ws)
+        log.info(
+            "[ws-broker] register_multi account_sn=%s agent_ids=%d total=%d",
+            account_sn, len([a for a in agent_ids if a]), self._total(),
+        )
+
     async def unregister(self, account_sn: int, agent_id: str | None, ws: WebSocket) -> None:
         async with self._lock:
             bucket = self._sessions.get(account_sn)
@@ -66,6 +83,27 @@ class WsBroker:
         log.info(
             "[ws-broker] unregister account_sn=%s agent_id=%s total=%d",
             account_sn, agent_id, self._total(),
+        )
+
+    async def unregister_multi(self, account_sn: int, agent_ids: list[str], ws: WebSocket) -> None:
+        """B Phase 1 — multi-agent ws 정리. 모든 agent_id set 에서 해당 ws 제거."""
+        async with self._lock:
+            bucket = self._sessions.get(account_sn)
+            if bucket:
+                bucket.discard(ws)
+                if not bucket:
+                    self._sessions.pop(account_sn, None)
+            for agent_id in agent_ids:
+                if not agent_id:
+                    continue
+                a_bucket = self._by_agent.get(agent_id)
+                if a_bucket:
+                    a_bucket.discard(ws)
+                    if not a_bucket:
+                        self._by_agent.pop(agent_id, None)
+        log.info(
+            "[ws-broker] unregister_multi account_sn=%s agent_ids=%d total=%d",
+            account_sn, len([a for a in agent_ids if a]), self._total(),
         )
 
     async def publish_to_account(self, account_sn: int, payload: dict[str, Any]) -> None:
@@ -169,6 +207,64 @@ def _toggle_status(db: Session, agent_id: str, new_status: str) -> None:
     db.commit()
 
 
+def _authenticate_broker(db: Session, agent_ids: list[str]) -> int | None:
+    """B Phase 1 — broker endpoint 인증.
+
+    helper 가 자기 mac 의 agent_id 목록을 보내 subscribe. 인증 = *모든 agent_id 가
+    동일한 owner_account_sn + active*. 한 mac = 한 사용자 가정.
+
+    실패 케이스:
+    - agent_ids 비어있음
+    - 어떤 agent_id 라도 DB 에 없음 (또는 deleted)
+    - agent_id 들이 서로 다른 owner 소속
+    - owner_account_sn 이 null 인 row (orphan)
+
+    Returns account_sn 또는 None.
+    """
+    if not agent_ids:
+        log.warning("[ws-broker-handshake] reject — empty agent_ids")
+        return None
+
+    repo = AgentRepository(db)
+    owners: set[int] = set()
+    missing: list[str] = []
+    for aid in agent_ids:
+        if not aid:
+            continue
+        agent = repo.find_by_agent_id_any_owner(aid)
+        if agent is None or agent.owner_account_sn is None:
+            missing.append(aid)
+            continue
+        owners.add(agent.owner_account_sn)
+
+    if missing:
+        log.warning("[ws-broker-handshake] reject — missing/orphan agent_ids=%s", missing[:5])
+        return None
+    if len(owners) != 1:
+        log.warning("[ws-broker-handshake] reject — agent_ids span multiple owners=%s", owners)
+        return None
+
+    account_sn = next(iter(owners))
+    log.info(
+        "[ws-broker-handshake] OK account_sn=%s agent_ids_count=%d",
+        account_sn, len(agent_ids),
+    )
+    return account_sn
+
+
+def _toggle_status_multi(db: Session, agent_ids: list[str], new_status: str) -> None:
+    """B Phase 1 — broker connect 시 모든 agent_id 동시 status 토글.
+
+    rollback 책임은 호출측. 한 row 라도 실패 시 throw → caller rollback.
+    """
+    repo = AgentRepository(db)
+    for agent_id in agent_ids:
+        if not agent_id:
+            continue
+        repo.update_status_from_watcher(agent_id, new_status)
+    db.commit()
+
+
 async def messages_ws_endpoint(
     websocket: WebSocket,
     agentId: str | None = Query(default=None),  # noqa: N803
@@ -233,3 +329,67 @@ async def messages_ws_endpoint(
                 )
             except Exception:  # noqa: BLE001
                 log.exception("[ws-handler] disconnect log failed")
+
+
+async def messages_broker_ws_endpoint(
+    websocket: WebSocket,
+    agentIds: str = Query(...),  # noqa: N803 — query: comma-separated agent_id
+) -> None:
+    """B Phase 1 — helper broker WS endpoint.
+
+    한 helper 의 *단일 영속 ws* 가 자기 mac 의 *모든 agent* 를 대표. query 의
+    agentIds (comma-separated) 는 *해당 helper 가 subscribe 할 agent_id 목록*.
+
+    인증 = `_authenticate_broker` — agentIds 가 모두 같은 owner + active. helper 의
+    별도 token 없이 *agent_id 자체* 를 인증 소재로 사용 (옛 ?agentId= 경로 확장).
+
+    옛 /ws/messages endpoint 는 그대로 유지 (Phase 4 까지 호환).
+
+    수신 메시지 envelope (backend → helper):
+        {"type":"message.deliver", "toAgentId":"...", "fromAgentName":"...", "content":"...", "messageId":"..."}
+
+    helper 가 toAgentId 보고 자기 mcp loopback 으로 fan-out 책임.
+    """
+    parsed = [a.strip() for a in (agentIds or "").split(",") if a.strip()]
+
+    db = SessionLocal()
+    try:
+        account_sn = _authenticate_broker(db, parsed)
+        if account_sn is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        await websocket.accept()
+        await ws_broker.register_multi(account_sn, parsed, websocket)
+
+        # connect → 모든 agent_id status='idle' (Spring 정합).
+        try:
+            _toggle_status_multi(db, parsed, "idle")
+            log.info(
+                "[ws-broker-handler] connect → all idle account_sn=%s count=%d",
+                account_sn, len(parsed),
+            )
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("[ws-broker-handler] toggle_status_multi rollback")
+    finally:
+        db.close()
+
+    # receive loop — broker 가 자기 ws 로 보내는 메시지는 *PoC 단계 ignore*.
+    # Phase 2 시점에 helper → backend 의 outbound (send_to) 도 이 ws 안 envelope 로
+    # 통일 가능. 지금은 receive 만 유지.
+    try:
+        while True:
+            _ = await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:  # noqa: BLE001
+        log.warning("[ws-broker-handler] recv loop crashed: %s", e)
+    finally:
+        await ws_broker.unregister_multi(account_sn, parsed, websocket)
+        # rc19 design 정정 — ws disconnect ≠ claude exit. multi-agent 라도 동일 —
+        # offline 마킹은 helper 명시적 종료 보고만. status 유지.
+        log.info(
+            "[ws-broker-handler] disconnect account_sn=%s agent_ids_count=%d (status unchanged)",
+            account_sn, len(parsed),
+        )

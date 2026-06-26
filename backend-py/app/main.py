@@ -118,8 +118,11 @@ app.include_router(logs_router,             prefix="/api",                 tags=
 
 # WebSocket /ws/messages — Spring 1:1. 3경로 인증 (cookie JWT / ?agentId / ?token Bearer).
 # 외부 AI mcp 의 ws client + frontend dashboard 둘 다 사용.
-from app.messages.ws import messages_ws_endpoint  # noqa: E402
+from app.messages.ws import messages_ws_endpoint, messages_broker_ws_endpoint  # noqa: E402
 app.add_api_websocket_route("/ws/messages", messages_ws_endpoint)
+# B Phase 1 — helper broker endpoint. 한 ws 로 *여러 agent_id* subscribe (?agentIds=id1,id2,...).
+# 옛 /ws/messages 와 *공존* — Phase 4 까지 호환 유지.
+app.add_api_websocket_route("/ws/messages-broker", messages_broker_ws_endpoint)
 
 # /api/external/mcp — 외부 AI mcp standalone binary 배포 (git 없는 운영 환경 대상).
 # binary 는 backend-py/static/mcp/ 에 baked. 외부 AI 가 curl 로 다운로드 + chmod +x + 실행.
