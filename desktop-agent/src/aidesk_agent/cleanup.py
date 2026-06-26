@@ -17,19 +17,29 @@ import time
 log = logging.getLogger(__name__)
 
 
-# 옛 daemon 검출 패턴 — bun standalone binary (~/.aidesk/aidesk-channel) 또는
-# node 로 실행된 옛 server.js 둘 다 잡는다.
+# 옛 daemon 검출 패턴 — *aidesk-channel binary 의 정확한 path* 만. claude TUI 의
+# cmdline arg (예: `--channels server:aidesk-channel`) 나 wrapper zsh 의 env
+# (`AIDESK_AGENT_ID=...`) 같은 *동일 단어 포함 line* 은 제외.
 _STALE_PROCESS_PATTERNS = (
-    "aidesk-channel",  # bun standalone binary path 또는 인자 매칭
+    "/aidesk-channel/bin/aidesk-channel",  # mcp daemon binary path (prod + dev 둘 다 covered)
 )
 
 
 def _list_stale_processes() -> list[dict]:
-    """현재 살아있는 aidesk-channel daemon 들. 자기 자신 (helper) 은 제외."""
+    """진짜 옛 잔재 (orphan) mcp daemon 들. *현재 active agent 의 정상 mcp daemon* 은 제외.
+
+    조건:
+    1. command 가 mcp binary path 정확 매칭 (`/aidesk-channel/bin/aidesk-channel`)
+    2. PPID=1 (parent 가 launchd 로 reparent 됨 — orphan). 정상 daemon = PPID=claude TUI 의 pid.
+       이게 *진짜 옛 잔재* 의 신호 — parent claude 가 죽었는데 mcp 만 살아있음.
+
+    self (helper) 는 제외.
+    """
     own_pid = os.getpid()
     try:
+        # ppid 도 같이 — orphan 검사용
         out = subprocess.check_output(
-            ["ps", "-axo", "pid=,etime=,command="],
+            ["ps", "-axo", "pid=,ppid=,etime=,command="],
             text=True,
             timeout=5.0,
         )
@@ -42,18 +52,22 @@ def _list_stale_processes() -> list[dict]:
         line = line.strip()
         if not line:
             continue
-        parts = line.split(None, 2)
-        if len(parts) < 3:
+        parts = line.split(None, 3)
+        if len(parts) < 4:
             continue
-        pid_str, etime, command = parts
+        pid_str, ppid_str, etime, command = parts
         try:
             pid = int(pid_str)
+            ppid = int(ppid_str)
         except ValueError:
             continue
         if pid == own_pid:
             continue
-        # *명령어 안에* 패턴 포함 시 매칭. helper 자체 명령엔 패턴 없음.
+        # 1) command 의 *binary path 정확 매칭*
         if not any(pat in command for pat in _STALE_PROCESS_PATTERNS):
+            continue
+        # 2) PPID=1 (orphan) 만 — 정상 daemon (PPID=claude TUI) 제외
+        if ppid != 1:
             continue
         result.append({"pid": pid, "etime": etime, "command": command[:120]})
     return result
