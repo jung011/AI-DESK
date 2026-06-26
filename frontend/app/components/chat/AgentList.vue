@@ -21,6 +21,20 @@
             <span class="al-model">· {{ shortModel(a.model) }}</span>
           </span>
         </span>
+        <!-- 햄버거 메뉴 — claude agent 만 (shell 은 의미 없음). hover 시 표시. -->
+        <button
+          v-if="a.model !== 'shell'"
+          class="al-menu-btn"
+          title="메뉴"
+          @click.stop="toggleMenu(a.agentId)">⋯</button>
+        <div
+          v-if="menuOpenId === a.agentId"
+          class="al-menu-dropdown"
+          @click.stop>
+          <button class="al-menu-item" @click="onOpenClaude(a.agentId)">
+            <span class="al-menu-ico">▶</span>클로드 열기
+          </button>
+        </div>
         <button
           v-if="a.model === 'shell'"
           class="al-del"
@@ -32,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue';
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 
 defineProps<{
@@ -39,10 +54,28 @@ defineProps<{
   activeId: string;
   loading: boolean;
 }>();
-defineEmits<{
+const emit = defineEmits<{
   (e: 'select', agentId: string): void;
   (e: 'delete', agentId: string): void;
+  (e: 'open-claude', agentId: string): void;
 }>();
+
+// 햄버거 dropdown — 현재 열린 카드의 agentId. 동시에 1개만.
+const menuOpenId = ref<string | null>(null);
+function toggleMenu(agentId: string): void {
+  menuOpenId.value = menuOpenId.value === agentId ? null : agentId;
+}
+function onOpenClaude(agentId: string): void {
+  menuOpenId.value = null;
+  emit('select', agentId);   // 해당 agent 의 터미널로 select
+  emit('open-claude', agentId);
+}
+
+function handleClickOutside(): void {
+  menuOpenId.value = null;
+}
+onMounted(() => { document.addEventListener('click', handleClickOutside); });
+onUnmounted(() => { document.removeEventListener('click', handleClickOutside); });
 
 function statusClass(s: AgentStatus): string {
   return s;
@@ -127,8 +160,54 @@ function shortModel(m: string | null | undefined): string {
 .al-status.error   { color: #F87171; font-weight: 600; }
 .al-model { color: #6B7785; }
 
+/* agent item position relative — dropdown 의 absolute positioning anchor */
+.al-item { position: relative; }
+
+/* 햄버거 메뉴 버튼 — hover 시 표시 */
+.al-menu-btn {
+  width: 22px; height: 22px;
+  background: transparent;
+  border: 0;
+  color: #8B95A5;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 6px;
+  visibility: hidden;
+  flex-shrink: 0;
+}
+.al-item:hover .al-menu-btn,
+.al-item.active .al-menu-btn { visibility: visible; }
+.al-menu-btn:hover { color: #E5E9EE; background: rgba(79, 127, 255, 0.1); }
+
+.al-menu-dropdown {
+  position: absolute;
+  top: 100%; right: 8px;
+  background: #1A2030;
+  border: 1px solid #2A3447;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+  min-width: 140px;
+}
+.al-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 8px 10px;
+  color: #E5E9EE;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.al-menu-item:hover { background: rgba(79, 127, 255, 0.15); }
+.al-menu-ico { font-size: 10px; color: #6BB6FF; }
+
 /* shell 항목 — hover 시 delete 버튼 표시 */
-.al-item-shell { position: relative; }
+.al-item-shell {}
 .al-del {
   width: 22px; height: 22px;
   background: transparent;

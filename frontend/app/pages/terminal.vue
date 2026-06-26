@@ -20,10 +20,12 @@
           :loading="loadingAgents"
           @select="onSelectPartner"
           @delete="onDeleteLocal"
+          @open-claude="onOpenClaude"
         />
       </div>
       <div class="term-pane term-pane-conv">
         <WebTerminal
+          ref="webTermRef"
           :partner="activePartner"
           :show-back="true"
           @back="showTermMobile = false"
@@ -153,6 +155,19 @@ async function fetchAgents(): Promise<void> {
 async function onSelectPartner(agentId: string): Promise<void> {
   partnerId.value = agentId;
   showTermMobile.value = true;
+}
+
+// 햄버거 메뉴 → 클로드 열기 — WebTerminal 의 textarea 에 명령어 자동 입력.
+// AgentList 의 select 가 먼저 처리됨 (active partner 변경) → ref 의 pasteCommand 호출.
+// dev/macOS = Agent Teams 분할창 활성. -c 로 옛 대화 이어가기.
+const webTermRef = ref<{ pasteCommand?: (text: string) => void } | null>(null);
+async function onOpenClaude(_agentId: string): Promise<void> {
+  // WebTerminal 가 새 partner 로 ws connect 시작 — 잠깐 wait
+  await nextTick();
+  setTimeout(() => {
+    const cmd = "claude --dangerously-load-development-channels server:aidesk-channel --teammate-mode tmux -c";
+    webTermRef.value?.pasteCommand?.(cmd);
+  }, 600);
 }
 
 onMounted(async () => {

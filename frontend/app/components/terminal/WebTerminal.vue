@@ -562,6 +562,19 @@ function applyFontSizeInput(): void {
 }
 function resetFontSize(): void { applyFontSize(FONT_DEFAULT_PX); }
 
+/**
+ * 외부에서 명령어 자동 입력 — 사용자가 *햄버거 메뉴 → 클로드 열기* 등 trigger 시.
+ * inputDraft 박고 onInputUpdate 호출 → diff ws send → zsh prompt 에 명령어 입력.
+ * Enter 안 누름 (사용자가 직접 확인 후 실행). textarea focus.
+ */
+function pasteCommand(text: string): void {
+  inputDraft.value = text;
+  onInputUpdate();
+  nextTick(() => inputRef.value?.focus());
+}
+
+defineExpose({ pasteCommand });
+
 // Esc 로 모달 닫기
 function onSettingsKey(e: KeyboardEvent): void {
   if (e.key === 'Escape' && settingsOpen.value) settingsOpen.value = false;
