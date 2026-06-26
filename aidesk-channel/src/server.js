@@ -453,44 +453,11 @@ async function pollInbox() {
  * SDK 가 createMessage 시 즉시 throw — catch 후 fallback.
  */
 async function deliverIncoming({ messageId, fromAgentName, content }) {
-  // 옛 sse_consumer 의 _HEADER_TEMPLATE 정확 보존 + 수신 메시지 *background
-  // highlight*. ANSI escape: \x1b[100;97m...\x1b[0m = bright black bg (회색) +
-  // bright white text. xterm.js / terminal 모두 ANSI 해석.
-  const legacyHeader =
-    `\x1b[100;97m[aidesk · FROM:${fromAgentName} | MSG:${messageId}]\x1b[0m ${content}` +
-    `  ↳ 응답: adesk reply ${messageId} '<답변>'`;
-
-  // ★ claude code 의 channel notification — session 안 직접 inject (자동 trigger).
-  // claude.exe binary 의 example: method='notifications/claude/channel', params.content +
-  // params.meta. meta keys 가 [channel] tag attributes 가 됨.
-  // params.content 에 옛 헤더 형식 박아 prompt 영역 표시 통일.
-  try {
-    await server.notification({
-      method: 'notifications/claude/channel',
-      params: {
-        content: legacyHeader,
-        meta: {
-          task_id: messageId,
-          sender: fromAgentName,
-          source: 'aidesk-channel',
-        },
-      },
-    });
-    dbg(`channel notification sent msg=${messageId}`);
-  } catch (e) {
-    dbg(`channel notification failed: ${e?.message ?? e}`);
-  }
-
-  // 사람 모드 fallback / audit — sampling 미지원 client 에 표시. 같은 형식 통일.
-  try {
-    await server.sendLoggingMessage({
-      level: 'info',
-      logger: 'aidesk-channel',
-      data: legacyHeader,
-    });
-  } catch (e) {
-    dbg(`aidesk-channel: notify failed: ${e?.message ?? e}`);
-  }
+  // 옛 방식 정확 통일 (사용자 결정) — mcp 의 channel notification + sendLoggingMessage
+  // 둘 다 비활성. helper sse_consumer 의 tmux send-keys 가 *유일한* last-mile.
+  // Channels banner 의 truncate `…` + send-keys prompt 의 전체 내용 중복 표시 사고
+  // 차단. anthropic SDK 의 sampling 자동 응답 (아래 path) 만 keep.
+  dbg(`deliverIncoming msg=${messageId} from=${fromAgentName} — channel notification skipped (옛 방식 통일)`);
 
   // 1) Anthropic SDK 직접 호출 (Phase 2 옵션 B) — ANTHROPIC_API_KEY 가 있으면 우선.
   //    Claude Code 의 sampling 미지원 우회. 24/7 자동 응답 보장.
