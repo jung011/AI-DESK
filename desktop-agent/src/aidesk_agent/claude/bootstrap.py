@@ -513,11 +513,19 @@ def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
                 ["tmux", "send-keys", "-l", "-t", tmux_session, prompt],
                 check=True, capture_output=True,
             )
-            # 최근 claude code update 후 Enter 흡수 → 500ms + raw C-m (sse_consumer 와 동일 패턴).
-            time.sleep(0.5)
+            # paste-bracketed mode 안 흡수되도록 충분히 wait — 0.5s 부족 사고
+            # ([[feedback-helper-send-keys-c-m-fix]] 옛 fix 도 최근 claude TUI 버전엔
+            # 안 통과). 2s + Enter keysym + C-m fallback 둘 다 시도. 빈 Enter 한 번
+            # 추가는 prompt submit 1회 추가 사고 없음 (이미 submit 후 prompt 비워짐).
+            time.sleep(2.0)
+            subprocess.run(
+                ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                check=True, capture_output=True,
+            )
+            time.sleep(0.3)
             subprocess.run(
                 ["tmux", "send-keys", "-t", tmux_session, "C-m"],
-                check=True, capture_output=True,
+                check=False, capture_output=True,
             )
             log.info("bootstrap: prompt injected session=%s chars=%d", tmux_session, len(prompt))
             return
