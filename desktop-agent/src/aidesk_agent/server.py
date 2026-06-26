@@ -162,7 +162,10 @@ async def cors_middleware(request: web.Request, handler):
     else:
         resp = await handler(request)
 
-    allow = origin in ALLOWED_ORIGINS or request.path in _OPEN_ORIGIN_PATHS
+    # AIDESK_ENV=dev 면 모든 origin allow — wifi 의 모바일 등 frontend hostname 변동
+    # 자유 접근. 신뢰 wifi 가정 + helper 0.0.0.0 listen ([[feedback-dev-prod-environment-separation]]).
+    is_dev = os.environ.get("AIDESK_ENV") == "dev"
+    allow = is_dev or origin in ALLOWED_ORIGINS or request.path in _OPEN_ORIGIN_PATHS
     if allow and origin:
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
