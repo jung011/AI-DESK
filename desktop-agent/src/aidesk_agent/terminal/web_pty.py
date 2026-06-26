@@ -166,7 +166,15 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     check=False,
                 )
-                log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off)", tmux_session, cwd)
+                # aggressive-resize on — 여러 client (mini preview + 큰 화면) attach 시
+                # *현재 active client 의 grid* 만 적용. 작은 grid client 가 큰 client
+                # 의 grid 강제 wrap 시키는 사고 차단.
+                subprocess.run(
+                    ["tmux", "set-window-option", "-t", tmux_session, "aggressive-resize", "on"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off + aggressive-resize on)", tmux_session, cwd)
             except OSError as e:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback

@@ -20,6 +20,13 @@
       <span class="ctx-pct" :class="ctxLevel">{{ agent.contextPct }}%</span>
     </div>
 
+    <!-- mini terminal preview (read-only) — helper /ws/terminal attach -->
+    <AgentCardTerminal
+      v-if="terminalEnabled"
+      :agent-id="agent.agentId"
+      :tmux-session="agent.tmuxSession || `aidesk-${agent.agentId.slice(0, 8)}`"
+    />
+
     <div class="ai-card-footer">
       <span class="ai-model-tag" :class="modelClass">{{ modelLabel }}</span>
       <div class="ai-meta">{{ metaLabel }}: <strong>{{ metaValue }}</strong></div>
@@ -69,7 +76,9 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { AgentItem } from '~/vo/agents/AgentVo';
+import AgentCardTerminal from '~/components/dashboard/AgentCardTerminal.vue';
 // 외부 터미널 열기 비활성 (2026-06-21) — 부활 시 import + 아래 type / function 모두 해제.
 // import TerminalModeDialog from '~/components/dashboard/TerminalModeDialog.vue';
 
@@ -85,6 +94,14 @@ const emit = defineEmits<{
   (e: 'delete', agent: AgentItem): void;
   (e: 'select', agent: AgentItem): void;
 }>();
+
+// mini terminal preview — human (사람) / 외부 환경 agent 제외. tmux session 있어야.
+const terminalEnabled = computed(() => {
+  if ((props.agent.model || '').toLowerCase() === 'human') return false;
+  if (!props.agent.tmuxSession && !props.agent.agentId) return false;
+  // offline status 도 표시 시도 — 빈 화면 보일 수 있지만 reconnect 가능
+  return true;
+});
 
 function onSelect(): void {
   if (menuOpen.value) return; // 메뉴 떠 있을 땐 카드 선택 무시
