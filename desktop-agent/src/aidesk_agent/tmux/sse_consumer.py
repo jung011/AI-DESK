@@ -174,28 +174,20 @@ async def _enqueue_for_session(session: str, payload: dict, backend_url: str) ->
 
 
 async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
+    """B Phase 5 (dev 브랜치 Channels 통일 정책) — last-mile 책임 mcp(bun) Channels 로 이관.
+
+    sse_consumer 의 옛 책임 = tmux send-keys + ack. 변경:
+      - send-keys 제거 — Channels inject 가 유일한 last-mile.
+      - ack 도 mcp 가 책임 — sse_consumer 는 ack 안 함.
+      - 본 함수는 *SSE liveness keep-alive* 역할만 (event 수신 자체 = watchdog
+        의 _last_sse_event_at 갱신 — _consume_once 의 mark_sse_event 가 처리).
+    """
     session = (payload.get("toTmuxSession") or "").strip()
     message_id = payload.get("messageId") or ""
-    if not session:
-        log.warning("message.deliver: empty toTmuxSession, dropping")
-        return
-    if session in _bot_adapter_sessions:
-        log.debug("message.deliver: session=%s handled by bot-adapter — skip", session)
-        return
-    if not await _tmux_has_session(session):
-        log.info("message.deliver: target session %s not on this Mac — ignored", session)
-        return
-    rendered = _render_message(payload)
-    ok = await _tmux_send(session, rendered)
-    log.info(
-        "message.deliver: session=%s msg=%s ok=%s",
-        session,
-        message_id,
-        ok,
+    log.debug(
+        "message.deliver: session=%s msg=%s — skip (Channels last-mile)",
+        session, message_id,
     )
-    # send-keys 성공일 때만 ACK — 실패면 backend retry 가 다시 발행하게 둠.
-    if ok:
-        await _send_ack(backend_url, message_id)
 
 
 async def _consume_once(backend_url: str) -> None:

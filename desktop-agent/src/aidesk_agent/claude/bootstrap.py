@@ -620,36 +620,16 @@ _BOT_ADAPTER_MAX_RESPAWN = 5
 
 
 def ensure_bot_adapter(agent_id: str, tmux_session: str) -> bool:
-    """봇 어댑터 자식 process 가 동작 중이면 그대로, 아니면 spawn.
+    """B Phase 5 (dev 브랜치 Channels 통일 정책) — bot-adapter spawn 영구 skip.
 
-    open_terminal 시점 (tmux 살아있어도) 마다 호출 가능 — 이미 동작 중이면 idempotent.
-    helper 가 spawn 한 process 가 (수동 kill / crash 로) 죽었으면 새로 spawn.
+    옛 책임 = ws 받아 tmux send-keys (last-mile). Channels inject 가 그 역할 대체
+    → bot-adapter 굳이 spawn 안 함. orphan cleanup (cleanup_orphan_bot_adapters) 은
+    그대로 유지 — 옛 helper 가 spawn 한 잔재 정리 책임.
 
-    spawn 성공 시 sse_consumer 의 skip set 에 등록 — 그 session 의 last-mile 은
-    봇 어댑터가 담당, sse_consumer 는 fallback 으로만.
-
-    사용자 의도적 호출이므로 fail_count 도 reset.
+    caller (server.py open_terminal_handler 등) 호환 위해 False 반환 — *spawn 안 함*
+    의 의미. sse_consumer skip set 등록도 안 함 (sse_consumer 자체가 last-mile 안 함).
     """
-    existing = _bot_adapter_procs.get(agent_id)
-    if existing is not None:
-        proc, _, _ = existing
-        if proc.poll() is None:
-            log.debug("bot-adapter: already running agent_id=%s pid=%d", agent_id, proc.pid)
-            return True
-        log.info("bot-adapter: previous instance exited (rc=%d) agent_id=%s — respawning",
-                 proc.returncode, agent_id)
-        _bot_adapter_procs.pop(agent_id, None)
-
-    proc = _spawn_bot_adapter(agent_id, tmux_session)
-    if proc is None:
-        return False
-    _bot_adapter_procs[agent_id] = (proc, tmux_session, time.monotonic())
-    # 사용자 액션으로 새로 spawn — backoff 상태 reset.
-    _bot_adapter_fail_counts.pop(agent_id, None)
-    # 봇 어댑터가 last-mile 담당 → sse_consumer 는 이 session 제외.
-    from ..tmux.sse_consumer import register_bot_adapter_session
-    register_bot_adapter_session(tmux_session)
-    return True
+    return False
 
 
 def monitor_bot_adapters() -> int:
