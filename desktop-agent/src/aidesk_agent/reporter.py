@@ -63,7 +63,31 @@ async def reporter_loop(backend_url: str, interval_sec: float) -> None:
     while True:
         try:
             async with httpx.AsyncClient() as client:
-                await send_once(client, backend_url)
+                body = await send_once(client, backend_url)
+                # B Phase 2 — broker 의 subscribe list 동기화. local-info response 의
+                # matchedAgentIds 가 *이 mac 이 hosting 중인 agent_id 목록*. broker 가
+                # backend ws 의 ?agentIds= 에 사용.
+                if body is not None:
+                    _sync_broker_subscribe(body)
         except Exception as e:  # noqa: BLE001 — 어떤 예외도 루프를 멈추지 못하게.
             log.warning("reporter loop iteration failed: %s", e)
         await asyncio.sleep(interval_sec)
+
+
+def _sync_broker_subscribe(body: dict) -> None:
+    """reporter response 의 matchedAgentIds 를 broker 로 전달.
+
+    broker singleton 은 server.py 의 app["broker"] 에 박혀있음 — 직접 import 하면
+    순환. server module 의 _LATEST_BROKER (module global) 로 우회. broker.start()
+    시점에 설정.
+    """
+    try:
+        from . import server as _server  # noqa: PLC0415
+        broker = getattr(_server, "_LATEST_BROKER", None)
+        if broker is None:
+            return
+        agent_ids = body.get("data", {}).get("matchedAgentIds") or []
+        if isinstance(agent_ids, list):
+            broker.update_subscribed_ids([str(a) for a in agent_ids if a])
+    except Exception as e:  # noqa: BLE001
+        log.warning("reporter: broker subscribe sync failed: %s", e)

@@ -49,6 +49,10 @@ log = logging.getLogger(__name__)
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 30083
 
+# B Phase 2 — broker singleton (reporter 가 매 cycle 의 matchedAgentIds 갱신 시 사용).
+# _start_background_tasks 에서 set. reporter._sync_broker_subscribe 가 읽음.
+_LATEST_BROKER = None
+
 # --- 단일 진실: AIDESK_HUB_URL ---
 # 옛엔 AIDESK_BACKEND_URL + AIDESK_EXTRA_ORIGINS 두 변수가 별도 — URL 한 번 바꿀 때 두 군데
 # 일관성 유지가 어려웠다 (path 포함 vs 제거 등 결함 빈발). 이제 HUB_URL 하나만 보면 된다:
@@ -612,6 +616,16 @@ async def _start_background_tasks(app: web.Application) -> None:
     # Claude Code 자동 compact (PreCompact/PostCompact) 훅 자동 등록 —
     # backend agent.status='compacting' set + memory 정리 prompt 자동 inject.
     compact_hook_auto_install()
+    # B Phase 2 — helper python broker. backend 와 단일 영속 ws + loopback fan-out.
+    # subscribe_ids 는 reporter 의 매 cycle 에서 local-info response 의 matchedAgentIds
+    # 로 갱신. broker start 시점엔 subscribe_ids=[] → 첫 reporter cycle 이후 connect.
+    from .broker import Broker
+    broker = Broker(backend_url)
+    app["broker"] = broker
+    # reporter 모듈이 순환 import 없이 broker 에 접근하기 위한 module global.
+    global _LATEST_BROKER  # noqa: PLW0603
+    _LATEST_BROKER = broker
+    broker.start()
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
@@ -630,6 +644,13 @@ async def _start_background_tasks(app: web.Application) -> None:
 
 
 async def _stop_background_tasks(app: web.Application) -> None:
+    # B Phase 2 — broker 먼저 정리 (backend ws close + loop task cancel).
+    broker = app.get("broker")
+    if broker is not None:
+        try:
+            await broker.stop()
+        except Exception:  # noqa: BLE001
+            log.exception("broker stop failed")
     for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task", "status_history_task"):
         task = app.get(key)
         if task is None:
@@ -685,6 +706,10 @@ def build_app() -> web.Application:
     app.router.add_post("/api/usage/install-statusline", usage_install_statusline_handler)
     # 웹 터미널 WS endpoint — xterm.js ↔ pty(zsh) bridge. 2026-06-21 부활.
     app.router.add_get("/ws/terminal", web_terminal_handler)
+    # B Phase 2 — helper broker loopback ws. mcp(bun) 가 backend 대신 helper 로 connect.
+    # Phase 3 까지 *기존 helper proxy ws* 와 *공존* — mcp 가 target 변경하기 전까진 옛 path.
+    from . import broker as broker_mod
+    app.router.add_get("/ws/messages-broker", broker_mod.broker_ws_handler)
     # Backend proxy — mcp daemon (bun) 의 외부 IP socket 격리. ws 가 먼저 (specific),
     # http 가 catch-all (any method). [[feedback-mcp-bun-external-connect-block]]
     app.router.add_get("/api/proxy/ws/{rest:.*}", proxy_mod.ws_proxy_handler)
