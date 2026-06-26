@@ -21,6 +21,9 @@
  *   AIDESK_AGENT_ID    (필수) — 본 봇이 담당할 t_ai_agent.agent_id
  *   AIDESK_HUB_URL     (필수) — backend hub URL
  *   AIDESK_TMUX_SESSION(필수) — 본 봇이 send-keys 할 tmux session 이름
+ *   AIDESK_HELPER_URL  (선택) — helper python URL. helper 가 spawn 시 자동 박음.
+ *                              있으면 B Phase 4 의 broker mode (loopback) 사용 —
+ *                              backend 직접 ws 안 함. 없으면 backend 직접.
  *   AIDESK_BEARER_TOKEN(선택) — Phase 2 외부 AI service 용. 있으면 ws URL 의 ?token= 인증
  *                              + ack POST 에 Authorization: Bearer 헤더 동봉.
  *                              없으면 internal 모드 (?agentId= 인증).
@@ -35,6 +38,7 @@ const execFileP = promisify(execFile);
 const AGENT_ID = process.env.AIDESK_AGENT_ID;
 const HUB_URL = process.env.AIDESK_HUB_URL;
 const TMUX_SESSION = process.env.AIDESK_TMUX_SESSION;
+const HELPER_URL = process.env.AIDESK_HELPER_URL;
 const BEARER_TOKEN = process.env.AIDESK_BEARER_TOKEN;
 
 if (!AGENT_ID || !HUB_URL || !TMUX_SESSION) {
@@ -42,13 +46,26 @@ if (!AGENT_ID || !HUB_URL || !TMUX_SESSION) {
   process.exit(2);
 }
 
+// B Phase 4 — broker mode 분기.
+//   internal + helper 환경 (HELPER_URL 박힘) → helper broker loopback
+//   external (BEARER_TOKEN 박힘) → backend 직접 ?token=
+//   fallback → backend 직접 ?agentId= (helper 없는 internal 환경)
+const useBroker = !BEARER_TOKEN && AGENT_ID && HELPER_URL;
 const wsBase = HUB_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
-// Phase 2: BEARER_TOKEN 있으면 외부 mode (?token=), 없으면 internal mode (?agentId=).
-const wsUrl = BEARER_TOKEN
-  ? `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`
-  : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+let wsUrl, mode;
+if (useBroker) {
+  const helperWsBase = HELPER_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
+  wsUrl = `${helperWsBase}/ws/messages-broker?agentId=${encodeURIComponent(AGENT_ID)}`;
+  mode = 'broker';
+} else if (BEARER_TOKEN) {
+  wsUrl = `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`;
+  mode = 'external';
+} else {
+  wsUrl = `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+  mode = 'internal-legacy';
+}
 
-console.log(`[bot-adapter] starting agentId=${AGENT_ID} tmux=${TMUX_SESSION} mode=${BEARER_TOKEN ? 'external' : 'internal'}`);
+console.log(`[bot-adapter] starting agentId=${AGENT_ID} tmux=${TMUX_SESSION} mode=${mode}`);
 
 const RECONNECT_DELAY_MS = 3000;
 const HEARTBEAT_INTERVAL_MS = 60000;
