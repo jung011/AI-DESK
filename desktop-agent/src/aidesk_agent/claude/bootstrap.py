@@ -781,6 +781,10 @@ def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | N
     env["AIDESK_AGENT_ID"] = agent_id
     env["AIDESK_HUB_URL"] = hub_url
     env["AIDESK_TMUX_SESSION"] = tmux_session
+    # B Phase 4 — bot-adapter 도 helper broker loopback 우회. helper port (dev=30084,
+    # prod=30083) 의 ws://.../ws/messages-broker?agentId=... 로 connect.
+    helper_port = os.environ.get("AIDESK_HELPER_PORT", "30083")
+    env["AIDESK_HELPER_URL"] = f"http://127.0.0.1:{helper_port}"
 
     log_path = _bot_adapter_log_path(agent_id)
     try:
