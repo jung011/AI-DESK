@@ -460,6 +460,10 @@ function connectWs(): void {
   if (apiUrl) url += `&apiUrl=${encodeURIComponent(apiUrl)}`;
   // tmuxSession — helper 가 tmux attach 패턴 사용. ws 끊김 = detach, claude 상태 유지.
   if (tmuxSession) url += `&tmuxSession=${encodeURIComponent(tmuxSession)}`;
+  // agentName — helper 가 *처음 claude 부팅* 시 identity prompt 자동 inject 용
+  // (옛 start_claude_with_mode 의 `_build_identity_prompt(agent_name)` 부활).
+  const agentName = props.partner?.agentName || '';
+  if (agentName) url += `&agentName=${encodeURIComponent(agentName)}`;
   connClass.value = 'pending';
 
   let s: WebSocket;

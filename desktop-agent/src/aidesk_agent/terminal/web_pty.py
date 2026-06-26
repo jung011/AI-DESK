@@ -83,6 +83,9 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # tmuxSession — 있으면 tmux attach 패턴 (ws 끊겨도 session + claude 살아있음).
     # 없으면 옛 zsh 직접 spawn (backward compatible).
     tmux_session = request.query.get("tmuxSession", "").strip()
+    # agentName — *처음 claude 부팅* 시 identity prompt 자동 inject 용. 옛
+    # start_claude_with_mode 의 _build_identity_prompt 부활.
+    agent_name = request.query.get("agentName", "").strip()
 
     log.info(
         "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s tmux=%s",
@@ -175,6 +178,41 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                     check=False,
                 )
                 log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off + aggressive-resize on)", tmux_session, cwd)
+                # 옛 start_claude_with_mode 의 *처음 부팅 시 identity prompt 자동
+                # send-keys* 부활. dev/macOS = claude 자동 시작 + agent_name 박혔으면
+                # 1) Channels confirmation Enter 자동 (3s 후) — dialog 통과
+                # 2) identity prompt 발사 (_send_keys_after_delay 가 8s 후, dialog
+                #    통과 후 prompt 영역 ready 시점)
+                if is_dev_macos and agent_id:
+                    try:
+                        import threading as _threading
+                        def _confirm_channels_enter():
+                            import time as _time
+                            _time.sleep(3.0)
+                            try:
+                                subprocess.run(
+                                    ["tmux", "send-keys", "-t", tmux_session, "C-m"],
+                                    capture_output=True, timeout=2,
+                                )
+                                log.info("ws-terminal: Channels confirmation Enter sent session=%s", tmux_session)
+                            except (subprocess.SubprocessError, OSError) as e:
+                                log.warning("ws-terminal: confirmation Enter failed: %s", e)
+                        _threading.Thread(target=_confirm_channels_enter, daemon=True).start()
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("ws-terminal: confirmation thread failed: %s", e)
+                if is_dev_macos and agent_id and agent_name:
+                    try:
+                        from ..claude.bootstrap import _build_identity_prompt, _send_keys_after_delay
+                        import threading as _threading
+                        identity_prompt = _build_identity_prompt(agent_name)
+                        _threading.Thread(
+                            target=_send_keys_after_delay,
+                            args=(tmux_session, identity_prompt),
+                            daemon=True,
+                        ).start()
+                        log.info("ws-terminal: identity prompt scheduled for agent=%s session=%s", agent_name, tmux_session)
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("ws-terminal: identity prompt schedule failed: %s", e)
             except OSError as e:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback

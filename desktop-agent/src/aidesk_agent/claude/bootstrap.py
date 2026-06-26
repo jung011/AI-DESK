@@ -40,7 +40,10 @@ log = logging.getLogger(__name__)
 _DEFAULT_BACKEND_URL = "http://localhost:30081"
 # claude 가 첫 프롬프트를 그릴 때까지의 *초기* 대기 — 너무 짧으면 send-keys 가 이전 출력에 묻힘.
 # cold start (인증 / 모델 로딩) 가 길어지는 케이스를 위해 _MAX_WAIT_SEC 안에서 polling 으로 재시도.
-_BOOTSTRAP_PROMPT_DELAY_SEC = 2.5
+# Channels confirmation dialog 가 *시작 시 1회* 뜸 — confirmation Enter 후 prompt
+# 영역 ready 까지 ~4-6s. delay 8s 면 안전. _BOOTSTRAP_PROMPT_MAX_WAIT_SEC 안의 retry
+# 로 cold start 더 오래 걸려도 잡힘.
+_BOOTSTRAP_PROMPT_DELAY_SEC = 8.0
 _BOOTSTRAP_PROMPT_MAX_WAIT_SEC = 30.0
 _BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC = 1.5
 
@@ -487,7 +490,24 @@ def _send_keys_after_delay(tmux_session: str, prompt: str) -> None:
             last_err = "session not found yet"
             time.sleep(_BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC)
             continue
-        # 2) send-keys 시도
+        # 2) claude prompt 영역 ready 검사 — capture-pane 으로 *Try "..."* sample tip
+        #    또는 *❯ ` (빈 prompt) 가 보여야 함. Channels confirmation dialog 단계
+        #    (`I am using this for local development`) 면 prompt 영역 아님 — wait.
+        try:
+            cap = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-t", tmux_session],
+                capture_output=True, text=True, timeout=2,
+            )
+            screen = cap.stdout or ""
+            is_dialog = "I am using this for local development" in screen
+            has_prompt = "for agents" in screen  # claude TUI 의 footer indicator
+            if is_dialog or not has_prompt:
+                last_err = "claude prompt not ready (dialog or loading)"
+                time.sleep(_BOOTSTRAP_PROMPT_RETRY_INTERVAL_SEC)
+                continue
+        except (subprocess.TimeoutExpired, OSError):
+            pass  # capture 실패 — send-keys 시도로 진행
+        # 3) send-keys 시도
         try:
             subprocess.run(
                 ["tmux", "send-keys", "-l", "-t", tmux_session, prompt],
