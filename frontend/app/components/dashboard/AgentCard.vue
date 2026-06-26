@@ -25,6 +25,8 @@
       v-if="terminalEnabled"
       :agent-id="agent.agentId"
       :tmux-session="agent.tmuxSession || `aidesk-${agent.agentId.slice(0, 8)}`"
+      :workspace-dir="agent.workspaceDir || ''"
+      :agent-name="agent.agentName"
     />
 
     <div class="ai-card-footer">

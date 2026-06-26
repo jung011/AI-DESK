@@ -23,6 +23,8 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 const props = defineProps<{
   agentId: string;
   tmuxSession: string;
+  workspaceDir?: string;
+  agentName?: string;
 }>();
 
 const hostRef = ref<HTMLElement | null>(null);
@@ -48,6 +50,10 @@ function helperWsUrl(): string {
     agentId: props.agentId,
     tmuxSession: props.tmuxSession,
   });
+  // workspaceDir 박혀있으면 cwd 전달 — helper 가 *tmux new-session 처음 만들 때*
+  // 정확한 workspace 에서 claude 시작 (workspace trust dialog 회피).
+  if (props.workspaceDir) params.set('cwd', props.workspaceDir);
+  if (props.agentName) params.set('agentName', props.agentName);
   return `ws://${window.location.hostname}:${port}/ws/terminal?${params.toString()}`;
 }
 
