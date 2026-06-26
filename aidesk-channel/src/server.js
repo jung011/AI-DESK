@@ -572,10 +572,22 @@ function startWsSubscribe() {
     dbg('aidesk-channel: ws subscribe skipped — agent_id not resolved yet');
     return;
   }
+  // B Phase 3 — 내부 봇 (helper 환경) 은 *helper broker* 의 loopback ws 로 연결.
+  //   ws://localhost:30083/ws/messages-broker?agentId=<id>
+  // helper broker 가 backend 와의 *단일 영속 ws* 책임 + fan-out. 즉 macOS 의 *bun
+  // outbound connection 수* 도 1개 / mcp 만 (loopback 만). 외부 AI (BEARER_TOKEN 박힘)
+  // 는 helper 없는 환경 → 기존 path 그대로 (backend 직접).
   const wsBase = API_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
-  const wsUrl = BEARER_TOKEN
-    ? `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`
-    : `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+  const useBroker = !BEARER_TOKEN && AGENT_ID;
+  let wsUrl;
+  if (useBroker) {
+    const helperWsBase = HELPER_URL.replace(/^http(s?):\/\//, (_, s) => `ws${s}://`);
+    wsUrl = `${helperWsBase}/ws/messages-broker?agentId=${encodeURIComponent(AGENT_ID)}`;
+  } else if (BEARER_TOKEN) {
+    wsUrl = `${wsBase}/ws/messages?token=${encodeURIComponent(BEARER_TOKEN)}`;
+  } else {
+    wsUrl = `${wsBase}/ws/messages?agentId=${encodeURIComponent(AGENT_ID)}`;
+  }
 
   // 지수 backoff — connect fail / disconnect 마다 *두 배씩* 늘려 backend storm 차단.
   // 1s → 2 → 4 → 8 → 16 → 30 (max). connect 성공 시 1s 로 reset.
