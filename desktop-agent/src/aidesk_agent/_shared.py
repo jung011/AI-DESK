@@ -4,10 +4,29 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 _ESCAPE_RE = re.compile(r"[^A-Za-z0-9_]")
+
+
+def aidesk_share_dir() -> str:
+    """helper-pkg payload install root — dev / prod 분기.
+
+    prod (.pkg)  : /usr/local/share/aidesk/
+    dev   (.pkg) : /usr/local/share/aidesk-dev/
+
+    build-dev.sh 의 PAYLOAD 가 -dev/ 자리 사용 — helper python 코드가 같은 자리
+    참조해야 dev .pkg 검증 시 *prod 파일 안 사용*. 일관성 룰
+    [[feedback-dev-prod-environment-separation]] 의 응용.
+    """
+    return "/usr/local/share/aidesk-dev" if os.environ.get("AIDESK_ENV") == "dev" else "/usr/local/share/aidesk"
+
+
+def aidesk_hooks_dir() -> Path:
+    """Claude Code hooks (action/prompt/compact .cjs + statusline). dev/prod 분기."""
+    return Path(aidesk_share_dir()) / "hooks"
 
 
 def applescript_escape(s: str) -> str:

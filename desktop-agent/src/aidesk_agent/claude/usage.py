@@ -36,10 +36,11 @@ class HookState(str, Enum):
 def _locate_script() -> Path | None:
     """`aidesk-statusline.cjs` 의 절대 경로 반환.
 
-    우선순위: pkg 설치본 (/usr/local/share/aidesk/hooks/) → 개발 모드 monorepo 경로.
+    우선순위: pkg 설치본 (aidesk_share_dir/hooks) → 개발 모드 monorepo 경로.
     """
+    from .._shared import aidesk_hooks_dir  # noqa: PLC0415
     candidates = [
-        Path("/usr/local/share/aidesk/hooks") / _SCRIPT_FILENAME,
+        aidesk_hooks_dir() / _SCRIPT_FILENAME,
         Path(__file__).resolve().parents[3] / "adesk-cli" / "bin" / _SCRIPT_FILENAME,
     ]
     for c in candidates:

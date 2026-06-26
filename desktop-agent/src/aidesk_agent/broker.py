@@ -44,6 +44,7 @@ class Broker:
         self._reconnect_max = 30.0
         # background task strong ref ([[feedback-resource-cleanup-rule]])
         self._loop_task: asyncio.Task | None = None
+        self._close_tasks: set[asyncio.Task] = set()
         self._closing = False
 
     # ---- subscribe list 동기화 (reporter 가 매 cycle 호출) ----
@@ -58,12 +59,11 @@ class Broker:
         # 현재 backend ws 가 떠있다면 close → 다음 cycle 에 새 agentIds 로 재연결
         ws = self._backend_ws
         if ws is not None and not ws.closed:
-            # close 자체는 *async* — fire-and-forget 으로 띄우되 strong ref 보관.
+            # close task 의 strong ref — fire-and-forget 의 GC 회피.
+            # [[feedback-resource-cleanup-rule]] (3) async task 패턴.
             task = asyncio.create_task(ws.close(), name="broker-ws-reconnect-trigger")
-            self._loopback.setdefault("__close_tasks__", set())  # 임시 — race 회피용 dummy
-            self._loopback.pop("__close_tasks__", None)
-            # task 의 reference 안 잡아도 close() 는 짧고 cancel 안 됨 — OK.
-            del task
+            self._close_tasks.add(task)
+            task.add_done_callback(self._close_tasks.discard)
 
     # ---- loopback session registry ----
 

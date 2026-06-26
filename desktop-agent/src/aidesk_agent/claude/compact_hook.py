@@ -29,8 +29,9 @@ _HOOK_SPEC: list[tuple[str, str]] = [
 
 
 def _locate_script() -> Path | None:
+    from .._shared import aidesk_hooks_dir  # noqa: PLC0415
     candidates = [
-        Path("/usr/local/share/aidesk/hooks") / _SCRIPT_FILENAME,
+        aidesk_hooks_dir() / _SCRIPT_FILENAME,
         Path(__file__).resolve().parents[3] / "desktop-agent" / "scripts" / _SCRIPT_FILENAME,
     ]
     for c in candidates:

@@ -36,9 +36,10 @@ _HOOK_SPEC: list[tuple[str, str | None, str]] = [
 
 
 def _locate_script() -> Path | None:
+    from .._shared import aidesk_hooks_dir  # noqa: PLC0415 — module init 시점 env 변경 회피
     # pkg 설치본 우선, 그 다음 git repo 경로 (개발 모드)
     candidates = [
-        Path("/usr/local/share/aidesk/hooks") / _SCRIPT_FILENAME,
+        aidesk_hooks_dir() / _SCRIPT_FILENAME,
         Path(__file__).resolve().parents[3] / "desktop-agent" / "scripts" / _SCRIPT_FILENAME,
     ]
     for c in candidates:

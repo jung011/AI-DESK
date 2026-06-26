@@ -90,7 +90,14 @@ ALLOWED_ORIGINS = (
 # 그 외 (browse, scope, agents/bootstrap 등) 는 기존 정책 유지 — 정상 origin 만.
 _OPEN_ORIGIN_PATHS = {"/api/setup", "/api/local-info", "/api/health"}
 
-_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / "com.aidesk.agent.plist"
+# dev / prod 분기 — dev helper 가 prod LaunchAgent (com.aidesk.agent) 를 덮어쓰는
+# 사고 차단. dev .pkg 는 com.aidesk.agent.dev 라벨/plist 사용. setup_handler 의
+# plist 갱신 + launchctl bootout/bootstrap 호출 시 *자기 자신* 만 만짐.
+def _self_launch_agent_label() -> str:
+    return "com.aidesk.agent.dev" if os.environ.get("AIDESK_ENV") == "dev" else "com.aidesk.agent"
+
+
+_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{_self_launch_agent_label()}.plist"
 _CLAUDE_JSON_PATH = Path.home() / ".claude.json"
 _HUB_URL_RE = re.compile(r"^https?://[\w\.\-]+(?::\d+)?(?:/[\w\.\-/]*)?/?$")
 
@@ -271,7 +278,7 @@ def _spawn_detached_reload() -> None:
     helper 자기 자신을 죽이는 작업이므로 *detached subprocess* 로 띄워야 한다 —
     self-bootout 후에도 그 sh 가 살아남아 bootstrap 까지 완수."""
     uid = os.getuid()
-    label = f"gui/{uid}/com.aidesk.agent"
+    label = f"gui/{uid}/{_self_launch_agent_label()}"
     plist_path = str(_PLIST_PATH)
     try:
         subprocess.Popen(
@@ -710,9 +717,8 @@ def build_app() -> web.Application:
     # Phase 3 까지 *기존 helper proxy ws* 와 *공존* — mcp 가 target 변경하기 전까진 옛 path.
     from . import broker as broker_mod
     app.router.add_get("/ws/messages-broker", broker_mod.broker_ws_handler)
-    # Backend proxy — mcp daemon (bun) 의 외부 IP socket 격리. ws 가 먼저 (specific),
-    # http 가 catch-all (any method). [[feedback-mcp-bun-external-connect-block]]
-    app.router.add_get("/api/proxy/ws/{rest:.*}", proxy_mod.ws_proxy_handler)
+    # Backend HTTP proxy — mcp(bun) 의 외부 IP socket 격리 (outbound api/messages POST 등).
+    # ws proxy 는 B Phase 3 의 /ws/messages-broker 로 대체 — 삭제.
     app.router.add_route("*", "/api/proxy/{rest:.*}", proxy_mod.http_proxy_handler)
     # CORS preflight 는 미들웨어가 처리 — OPTIONS 라우트도 등록해야 404 안 남.
     app.router.add_route("OPTIONS", "/api/{tail:.*}", lambda r: web.Response(status=204))

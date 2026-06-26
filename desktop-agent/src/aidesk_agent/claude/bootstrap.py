@@ -132,7 +132,10 @@ def _resolve_backend_url() -> str:
 
 
 _LOCAL_MCP_NAME = "aidesk-channel"
-_LOCAL_MCP_BIN = "/usr/local/share/aidesk/aidesk-channel/bin/aidesk-channel"
+# dev / prod 분기 — _shared.aidesk_share_dir 일원화.
+# [[feedback-dev-prod-environment-separation]]
+from .._shared import aidesk_share_dir as _aidesk_share_dir  # noqa: E402
+_LOCAL_MCP_BIN = f"{_aidesk_share_dir()}/aidesk-channel/bin/aidesk-channel"
 
 
 def _register_local_mcp(
@@ -520,7 +523,13 @@ def bootstrap_agent(
     """
     trust_ok = _mark_folder_trusted(workspace_dir)
     perms_ok, perms_added = _write_default_permissions(workspace_dir)
-    mcp_ok = _register_local_mcp(workspace_dir, agent_id) if agent_id else False
+    # dev env — mcp(bun) 가 default HELPER_URL=http://localhost:30083 (prod) 가 아닌
+    # dev helper port 사용하도록 env 자동 박음. prod 는 default 가 일치 → 박지 않음.
+    helper_url = None
+    if os.environ.get("AIDESK_ENV") == "dev":
+        helper_port = os.environ.get("AIDESK_HELPER_PORT", "30084")
+        helper_url = f"http://127.0.0.1:{helper_port}"
+    mcp_ok = _register_local_mcp(workspace_dir, agent_id, helper_url=helper_url) if agent_id else False
     return {
         "trustMarked": trust_ok,
         "permissionsWritten": perms_ok,
@@ -709,7 +718,7 @@ def _bot_adapter_log_path(agent_id: str) -> Path:
 # helper 가 spawn 한 봇 어댑터를 식별하는 binary path 들.
 # Phase 2 후 외부 AI 의 daemon 봇 어댑터는 npm install 위치라 path 가 달라 충돌 X.
 _BOT_ADAPTER_HELPER_BIN_PATHS = (
-    "/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter",
+    f"{_aidesk_share_dir()}/aidesk-bot-adapter/bin/aidesk-bot-adapter",
     str(Path.home() / "Documents/jsh/workspace/ai-desk/aidesk-bot-adapter/bin/aidesk-bot-adapter"),
 )
 
@@ -744,8 +753,8 @@ def cleanup_orphan_bot_adapters() -> int:
 def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | None:
     """봇 어댑터 자식 process spawn.
 
-    - binary: helper-pkg payload 의 `/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter`
-              (운영 .pkg 배포 시). 개발자 mac 에선 workspace path fallback.
+    - binary: helper-pkg payload 의 `{aidesk_share_dir}/aidesk-bot-adapter/bin/aidesk-bot-adapter`
+              (운영 .pkg 배포 시 = prod, dev .pkg = -dev/ 분기). 개발자 mac monorepo path fallback.
     - env: AIDESK_AGENT_ID + AIDESK_HUB_URL + AIDESK_TMUX_SESSION.
     - stdout/stderr: ~/Library/Logs/aidesk-bot-adapter-<agent_id>.log (append) — ack POST
       결과, ws connect/disconnect, tmux send-keys 결과를 self-contained 로 확인 가능.
@@ -754,7 +763,7 @@ def _spawn_bot_adapter(agent_id: str, tmux_session: str) -> subprocess.Popen | N
     - 실패 시 log warning + 어댑터 없이 helper sse_consumer 만으로 fallback (회귀 방지).
     """
     bin_candidates = [
-        "/usr/local/share/aidesk/aidesk-bot-adapter/bin/aidesk-bot-adapter",
+        f"{_aidesk_share_dir()}/aidesk-bot-adapter/bin/aidesk-bot-adapter",
         str(Path.home() / "Documents/jsh/workspace/ai-desk/aidesk-bot-adapter/bin/aidesk-bot-adapter"),
     ]
     bin_path = next((p for p in bin_candidates if Path(p).exists()), None)
