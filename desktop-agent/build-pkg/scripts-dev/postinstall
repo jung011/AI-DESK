@@ -60,6 +60,7 @@ plist = {
     'ProgramArguments': [
         '/usr/local/bin/aidesk-helper-dev',
         '--port', '30084',
+        '--host', '0.0.0.0',
         '--hub-url', 'http://localhost:30081',
     ],
     'RunAtLoad': True,
