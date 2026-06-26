@@ -34,5 +34,8 @@ class DesktopLocalInfoRs(BaseModel):
     total_workspaces: int = Field(default=0, serialization_alias="totalWorkspaces")
     matched_agents: int = Field(default=0, serialization_alias="matchedAgents")
     updated_agents: int = Field(default=0, serialization_alias="updatedAgents")
+    # B Phase 2 — broker subscribe list 동기화. helper 의 broker 가 backend ws 에
+    # ?agentIds= 로 subscribe 할 agent_id 들. 매 reporter cycle 마다 갱신.
+    matched_agent_ids: list[str] = Field(default_factory=list, serialization_alias="matchedAgentIds")
 
     model_config = ConfigDict(populate_by_name=True)

@@ -43,6 +43,7 @@ class DesktopService:
 
         matched = 0
         updated = 0
+        matched_ids: list[str] = []
         for w in req.workspaces:
             if not w.workspace_dir or not w.status:
                 continue
@@ -50,6 +51,7 @@ class DesktopService:
             if agent is None:
                 continue
             matched += 1
+            matched_ids.append(agent.agent_id)
 
             # tmux fact-check
             effective_status = w.status
@@ -80,4 +82,5 @@ class DesktopService:
         self.db.commit()
         rs.matched_agents = matched
         rs.updated_agents = updated
+        rs.matched_agent_ids = matched_ids
         return rs
