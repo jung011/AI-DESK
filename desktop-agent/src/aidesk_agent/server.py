@@ -448,6 +448,18 @@ async def browse_file_handler(request: web.Request) -> web.Response:
     return web.json_response({"rc": 0, "path": path_or_msg})
 
 
+async def has_past_session_handler(request: web.Request) -> web.Response:
+    """frontend 가 *클로드 열기* 명령어 박을 때 `-c` 옵션 여부 결정 — 옛 대화 없으면
+    `claude -c` 가 `No conversation found to continue` 에러 fail. workspace 의
+    jsonl 존재 검사.
+    """
+    ws = (request.query.get("workspaceDir") or "").strip()
+    if not ws:
+        return web.json_response({"hasPast": False})
+    from ._shared import has_past_session
+    return web.json_response({"hasPast": has_past_session(ws)})
+
+
 async def cleanup_agent_handler(request: web.Request) -> web.Response:
     """에이전트 삭제 시 프론트가 호출 — tmux 세션 + Terminal 윈도우 정리.
 
@@ -707,6 +719,7 @@ def build_app() -> web.Application:
     app.router.add_post("/api/browse-file", browse_file_handler)
     # 2026-06-27 부활 — agent 삭제 시 mac 자원 (tmux + mcp config + jsonl history) 정리.
     app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
+    app.router.add_get("/api/has-past-session", has_past_session_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
     # app.router.add_post("/api/check-tmux", check_tmux_handler)
     app.router.add_post("/api/setup", setup_handler)

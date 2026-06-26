@@ -159,13 +159,27 @@ async function onSelectPartner(agentId: string): Promise<void> {
 
 // 햄버거 메뉴 → 클로드 열기 — WebTerminal 의 textarea 에 명령어 자동 입력.
 // AgentList 의 select 가 먼저 처리됨 (active partner 변경) → ref 의 pasteCommand 호출.
-// dev/macOS = Agent Teams 분할창 활성. -c 로 옛 대화 이어가기.
+// dev/macOS = Agent Teams 분할창 활성. *옛 대화 있을 때만* -c 박음
+// (없으면 `No conversation found to continue` 에러).
 const webTermRef = ref<{ pasteCommand?: (text: string) => void } | null>(null);
-async function onOpenClaude(_agentId: string): Promise<void> {
-  // WebTerminal 가 새 partner 로 ws connect 시작 — 잠깐 wait
+async function onOpenClaude(agentId: string): Promise<void> {
+  const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
+  let hasPast = false;
+  if (agent?.workspaceDir) {
+    try {
+      const port = import.meta.dev ? 30084 : 30083;
+      const url = `http://${window.location.hostname}:${port}/api/has-past-session?workspaceDir=${encodeURIComponent(agent.workspaceDir)}`;
+      const res = await fetch(url);
+      const body = await res.json() as { hasPast?: boolean };
+      hasPast = !!body.hasPast;
+    } catch (_e) {
+      hasPast = false;  // fail-safe = `-c` 안 박음
+    }
+  }
   await nextTick();
   setTimeout(() => {
-    const cmd = "claude --dangerously-load-development-channels server:aidesk-channel --teammate-mode tmux -c";
+    const continueFlag = hasPast ? ' -c' : '';
+    const cmd = `claude --dangerously-load-development-channels server:aidesk-channel --teammate-mode tmux${continueFlag}`;
     webTermRef.value?.pasteCommand?.(cmd);
   }, 600);
 }

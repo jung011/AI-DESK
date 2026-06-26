@@ -24,6 +24,78 @@ import termios
 
 from aiohttp import web
 
+import time as _time
+
+
+def _poll_and_inject_identity(tmux_session: str, agent_name: str) -> None:
+    """옵션 C — 사용자가 직접 `claude` 명령 + Enter 후, claude TUI prompt ready 시점에
+    *identity prompt 자동 inject*.
+
+    polling — capture-pane 으로 *Channels confirmation dialog* 또는 *claude TUI
+    footer (← for agents)* 검출. 5분 안 ready 안 되면 abort (사용자가 claude 안 띄움).
+
+    Channels confirmation 가 *시작 시 1회* 자동으로 Enter 처리 — 사용자 손 0.
+    """
+    from ..claude.bootstrap import _build_identity_prompt
+    deadline = _time.monotonic() + 300  # 5분 limit
+    identity_prompt = _build_identity_prompt(agent_name)
+    confirmed_channels = False
+    while _time.monotonic() < deadline:
+        _time.sleep(2.0)
+        # session alive 검사
+        check = subprocess.run(
+            ["tmux", "has-session", "-t", tmux_session],
+            capture_output=True,
+        )
+        if check.returncode != 0:
+            log.info("ws-terminal: identity poll — session gone, abort %s", tmux_session)
+            return
+        try:
+            cap = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-t", tmux_session],
+                capture_output=True, text=True, timeout=2,
+            )
+            screen = cap.stdout or ""
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        # 1) Channels confirmation dialog 단계 — 자동 Enter
+        if "I am using this for local development" in screen and not confirmed_channels:
+            try:
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_session, "C-m"],
+                    capture_output=True, timeout=2,
+                )
+                confirmed_channels = True
+                log.info("ws-terminal: identity poll — Channels confirmation Enter %s", tmux_session)
+            except (subprocess.SubprocessError, OSError):
+                pass
+            continue
+        # 2) claude TUI ready — footer 의 `for agents` 표시 + prompt 영역 빈 상태
+        #    (`I am using this for local development` 안 보임 + `for agents` 보임)
+        if "for agents" in screen and "I am using this for local development" not in screen:
+            # identity prompt inject
+            try:
+                subprocess.run(
+                    ["tmux", "send-keys", "-l", "-t", tmux_session, identity_prompt],
+                    check=True, capture_output=True,
+                )
+                _time.sleep(2.0)
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_session, "Enter"],
+                    check=True, capture_output=True,
+                )
+                _time.sleep(0.3)
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", tmux_session, "C-m"],
+                    check=False, capture_output=True,
+                )
+                log.info("ws-terminal: identity prompt injected agent=%s session=%s", agent_name, tmux_session)
+                return
+            except subprocess.CalledProcessError as e:
+                log.warning("ws-terminal: identity prompt inject retry — %s", e)
+                continue
+    log.info("ws-terminal: identity poll deadline reached — abort %s", tmux_session)
+
 log = logging.getLogger(__name__)
 
 # 최대 read 단위 — claude code 같은 TUI 가 큰 ANSI 출력 보낼 때 chunk 잘게 자르지 않음.
@@ -147,18 +219,10 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             is_dev_macos = os.environ.get("AIDESK_ENV") == "dev" and _sys.platform == "darwin"
             if is_dev_macos:
                 new_cmd.extend(["-e", "EXPERIMENTAL_AGENT_TEAMS=1"])
-            # shell 명령 — dev+macOS+agent_id 면 *claude TUI 자동 시작* (Channels + Agent
-            # Teams flag). claude 종료 시 zsh fallback (exit 후 fresh shell). 다른 환경은
-            # 옛 zsh -il (사용자가 직접 claude 입력).
-            if is_dev_macos and agent_id:
-                claude_cmd = (
-                    "claude --dangerously-load-development-channels server:aidesk-channel "
-                    "--teammate-mode tmux"
-                )
-                # 사용자 exit/Ctrl+C 후 fresh zsh 으로 fallback — 다시 claude 입력 가능.
-                shell_cmd = f"{' '.join(new_env)} {claude_cmd}; exec {shell} -il"
-            else:
-                shell_cmd = " ".join(new_env) + " " + shell + " -il"
+            # shell 명령 = zsh -il (옛 동작 — 사용자가 직접 claude 입력). 옵션 C.
+            # claude 자동 시작 분기 제거 — 카드 click 시 zsh 만, 사용자가 *햄버거 →
+            # 클로드 열기* 로 명령어 textarea 박은 후 직접 Enter.
+            shell_cmd = " ".join(new_env) + " " + shell + " -il"
             new_cmd.append(shell_cmd)
             try:
                 subprocess.run(new_cmd, check=False)
@@ -178,41 +242,24 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                     check=False,
                 )
                 log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off + aggressive-resize on)", tmux_session, cwd)
-                # 옛 start_claude_with_mode 의 *처음 부팅 시 identity prompt 자동
-                # send-keys* 부활. dev/macOS = claude 자동 시작 + agent_name 박혔으면
-                # 1) Channels confirmation Enter 자동 (3s 후) — dialog 통과
-                # 2) identity prompt 발사 (_send_keys_after_delay 가 8s 후, dialog
-                #    통과 후 prompt 영역 ready 시점)
-                if is_dev_macos and agent_id:
-                    try:
-                        import threading as _threading
-                        def _confirm_channels_enter():
-                            import time as _time
-                            _time.sleep(3.0)
-                            try:
-                                subprocess.run(
-                                    ["tmux", "send-keys", "-t", tmux_session, "C-m"],
-                                    capture_output=True, timeout=2,
-                                )
-                                log.info("ws-terminal: Channels confirmation Enter sent session=%s", tmux_session)
-                            except (subprocess.SubprocessError, OSError) as e:
-                                log.warning("ws-terminal: confirmation Enter failed: %s", e)
-                        _threading.Thread(target=_confirm_channels_enter, daemon=True).start()
-                    except Exception as e:  # noqa: BLE001
-                        log.warning("ws-terminal: confirmation thread failed: %s", e)
+                # 옵션 C — identity prompt 자동 inject 는 *background polling* 으로.
+                # 사용자가 *햄버거 → 클로드 열기* + Enter 직접 → zsh 가 claude 실행 →
+                # Channels confirmation dialog → polling 이 dialog 통과 + claude prompt
+                # ready 검출 → identity prompt send-keys + Enter. first_boot agent 만.
                 if is_dev_macos and agent_id and agent_name:
                     try:
-                        from ..claude.bootstrap import _build_identity_prompt, _send_keys_after_delay
                         import threading as _threading
-                        identity_prompt = _build_identity_prompt(agent_name)
-                        _threading.Thread(
-                            target=_send_keys_after_delay,
-                            args=(tmux_session, identity_prompt),
-                            daemon=True,
-                        ).start()
-                        log.info("ws-terminal: identity prompt scheduled for agent=%s session=%s", agent_name, tmux_session)
+                        from .._shared import has_past_session
+                        is_first_boot = not has_past_session(cwd) if cwd else True
+                        if is_first_boot:
+                            _threading.Thread(
+                                target=_poll_and_inject_identity,
+                                args=(tmux_session, agent_name),
+                                daemon=True,
+                            ).start()
+                            log.info("ws-terminal: identity prompt poll started agent=%s session=%s", agent_name, tmux_session)
                     except Exception as e:  # noqa: BLE001
-                        log.warning("ws-terminal: identity prompt schedule failed: %s", e)
+                        log.warning("ws-terminal: identity prompt poll failed: %s", e)
             except OSError as e:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback
