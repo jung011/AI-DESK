@@ -162,16 +162,18 @@ export function useAgents(initialStatus: string = 'all') {
   ): Promise<boolean> {
     // 1) 헬퍼에 OS 정리 위임 — best-effort
     try {
-      if (agent.tmuxSession) {
-        await $helper<{ rc: number; message?: string }>('/api/cleanup-agent', {
-          method: 'POST',
-          body: {
-            tmuxSession: agent.tmuxSession,
-            workspaceDir: agent.workspaceDir || '',
-            purgeHistory: !!opts.purgeHistory,
-          },
-        });
-      }
+      // 2026-06-27 부활 — helper cleanup-agent 가 mac 자원 (tmux + ~/.claude.json
+      // mcpServers entry + 옛 bot-adapter + 옵션 jsonl history) 정리. tmux 없어도
+      // mcp config 만 박혀있을 수 있어 항상 호출.
+      await $helper<{ rc: number; message?: string }>('/api/cleanup-agent', {
+        method: 'POST',
+        body: {
+          agentId: agent.agentId,
+          tmuxSession: agent.tmuxSession || '',
+          workspaceDir: agent.workspaceDir || '',
+          purgeHistory: !!opts.purgeHistory,
+        },
+      });
     } catch (e) {
       // 헬퍼 미가동/오류여도 백엔드 삭제는 진행
       console.warn('helper cleanup-agent failed (continuing with backend delete):', e);

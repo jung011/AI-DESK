@@ -103,33 +103,89 @@ def purge_claude_history(workspace_dir: str) -> bool:
     return removed > 0
 
 
+def _remove_mcp_entry(workspace_dir: str) -> bool:
+    """`~/.claude.json` 의 `projects[workspace_dir].mcpServers["aidesk-channel"]` 삭제.
+
+    그대로 두면 같은 workspace 로 *재생성 시* 옛 agent_id env 박힌 mcp 가 *deleted*
+    backend agent_id 로 reconnect 시도 → 401 → 옛 token daemon storm 패턴.
+    """
+    if not workspace_dir:
+        return False
+    import json
+    from pathlib import Path
+    cj = Path.home() / ".claude.json"
+    if not cj.is_file():
+        return False
+    try:
+        data = json.loads(cj.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("cleanup: ~/.claude.json read failed: %s", e)
+        return False
+    projects = data.get("projects", {})
+    proj = projects.get(workspace_dir)
+    if not isinstance(proj, dict):
+        return False
+    servers = proj.get("mcpServers", {})
+    if not isinstance(servers, dict) or "aidesk-channel" not in servers:
+        return False
+    del servers["aidesk-channel"]
+    try:
+        cj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        log.info("cleanup: removed mcp entry from ~/.claude.json projects.%s", workspace_dir)
+        return True
+    except OSError as e:
+        log.warning("cleanup: ~/.claude.json write failed: %s", e)
+        return False
+
+
+def _kill_orphan_bot_adapter(agent_id: str) -> None:
+    """agent_id 박힌 옛 bot-adapter process kill — Phase 5 후 spawn 안 하지만 옛 잔재."""
+    if not agent_id:
+        return
+    try:
+        subprocess.run(
+            ["pkill", "-f", f"AIDESK_AGENT_ID={agent_id}"],
+            capture_output=True, timeout=3, check=False,
+        )
+        log.info("cleanup: pkill -f AIDESK_AGENT_ID=%s", agent_id)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        log.warning("cleanup: pkill bot-adapter failed: %s", e)
+
+
 def cleanup_agent(
     tmux_session: str,
     workspace_dir: str | None = None,
     purge_history: bool = False,
+    agent_id: str | None = None,
 ) -> tuple[int, str]:
-    """에이전트 삭제 시 호출 — tmux 세션 + 그에 attach 된 Terminal 윈도우 정리.
+    """에이전트 삭제 시 호출 — 사용자 mac 의 모든 잔재 정리.
 
-    purge_history=True + workspace_dir 가 주어지면 `~/.claude/projects/{escaped}/` 의
-    Claude 대화 jsonl 도 함께 삭제. 같은 워크스페이스 경로로 새 에이전트 생성 시 옛 대화가
-    `claude -c` 로 살아오는 걸 막는 용도.
+    1) tmux session kill — claude TUI + mcp(bun) daemon 도 child 라 같이 죽음
+    2) attached Terminal.app 윈도우 close (tty 매칭)
+    3) `~/.claude.json` 의 projects[workspace_dir].mcpServers["aidesk-channel"] entry
+       삭제 — 옛 token daemon storm 차단
+    4) agent_id 박힌 옛 bot-adapter process pkill (잔재)
+    5) purge_history=True + workspace_dir 면 `~/.claude/projects/{escaped}/` 의
+       jsonl 까지 삭제 (재생성 시 `claude -c` 옛 대화 부활 차단)
 
-    실패해도 백엔드 DB 삭제 자체엔 영향 없도록 비-치명적으로 처리.
+    실패해도 backend DB 삭제 자체엔 영향 없도록 비-치명적으로 처리.
     """
-    if not tmux_session:
-        if workspace_dir and purge_history:
-            purge_claude_history(workspace_dir)
-            return 0, "no tmux session; history purged"
-        return 0, "no-op (empty tmuxSession)"
-    tty = _tmux_client_tty(tmux_session)
-    tmux_kill_session(tmux_session)
-    if tty:
-        _close_terminal_tab_by_tty(tty)
+    tty = _tmux_client_tty(tmux_session) if tmux_session else ""
+    if tmux_session:
+        tmux_kill_session(tmux_session)
+        if tty:
+            _close_terminal_tab_by_tty(tty)
+
+    mcp_removed = _remove_mcp_entry(workspace_dir) if workspace_dir else False
+    _kill_orphan_bot_adapter(agent_id) if agent_id else None
+
     purged = False
     if workspace_dir and purge_history:
         purged = purge_claude_history(workspace_dir)
+
     log.info(
-        "cleanup_agent: session=%s tty=%s purgeHistory=%s purged=%s",
-        tmux_session, tty or "(none)", purge_history, purged,
+        "cleanup_agent: session=%s tty=%s mcp_removed=%s bot_killed=%s purgeHistory=%s purged=%s",
+        tmux_session or "(none)", tty or "(none)", mcp_removed,
+        bool(agent_id), purge_history, purged,
     )
     return 0, "ok"

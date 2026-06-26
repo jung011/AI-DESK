@@ -455,7 +455,8 @@ async def cleanup_agent_handler(request: web.Request) -> web.Response:
     tmux_session = (body.get("tmuxSession") or "").strip()
     workspace_dir = (body.get("workspaceDir") or "").strip()
     purge_history = bool(body.get("purgeHistory") or False)
-    rc, msg = cleanup_agent(tmux_session, workspace_dir or None, purge_history)
+    agent_id = (body.get("agentId") or "").strip()
+    rc, msg = cleanup_agent(tmux_session, workspace_dir or None, purge_history, agent_id or None)
     return web.json_response({"rc": rc, "message": msg})
 
 
@@ -701,7 +702,8 @@ def build_app() -> web.Application:
     app.router.add_post("/api/browse-workspace", browse_workspace_handler)
     app.router.add_post("/api/scope-workspace", scope_workspace_handler)
     app.router.add_post("/api/browse-file", browse_file_handler)
-    # app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
+    # 2026-06-27 부활 — agent 삭제 시 mac 자원 (tmux + mcp config + jsonl history) 정리.
+    app.router.add_post("/api/cleanup-agent", cleanup_agent_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
     # app.router.add_post("/api/check-tmux", check_tmux_handler)
     app.router.add_post("/api/setup", setup_handler)
