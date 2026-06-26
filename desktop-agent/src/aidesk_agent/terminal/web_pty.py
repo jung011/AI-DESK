@@ -136,8 +136,27 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 "-s", tmux_session,
                 "-x", str(cols), "-y", str(rows),
                 "-c", cwd,
-                " ".join(new_env) + " " + shell + " -il",
             ]
+            # B Phase 6 — dev + macOS = Agent Teams 분할창 자동 활성.
+            # _start_tmux_detached 와 같은 분기 — web 터미널 의 tmux 도 동일 env + cmd.
+            # [[project-claude-code-agent-teams]]
+            import sys as _sys  # noqa: PLC0415
+            is_dev_macos = os.environ.get("AIDESK_ENV") == "dev" and _sys.platform == "darwin"
+            if is_dev_macos:
+                new_cmd.extend(["-e", "EXPERIMENTAL_AGENT_TEAMS=1"])
+            # shell 명령 — dev+macOS+agent_id 면 *claude TUI 자동 시작* (Channels + Agent
+            # Teams flag). claude 종료 시 zsh fallback (exit 후 fresh shell). 다른 환경은
+            # 옛 zsh -il (사용자가 직접 claude 입력).
+            if is_dev_macos and agent_id:
+                claude_cmd = (
+                    "claude --dangerously-load-development-channels server:aidesk-channel "
+                    "--teammate-mode tmux"
+                )
+                # 사용자 exit/Ctrl+C 후 fresh zsh 으로 fallback — 다시 claude 입력 가능.
+                shell_cmd = f"{' '.join(new_env)} {claude_cmd}; exec {shell} -il"
+            else:
+                shell_cmd = " ".join(new_env) + " " + shell + " -il"
+            new_cmd.append(shell_cmd)
             try:
                 subprocess.run(new_cmd, check=False)
                 # mouse off — xterm.js 가 native scroll 받게. tmux mouse on 이면 scroll
