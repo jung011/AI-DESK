@@ -122,6 +122,14 @@ class MessageService:
         # SSE push (helper sse_consumer) + WS push (frontend dashboard / 외부 AI mcp ws client)
         payload = item.model_dump(by_alias=True)
         payload["toTmuxSession"] = receiver.tmux_session
+        # B Phase 7 — render 책임 backend 이관. helper sse_consumer 의 _HEADER_TEMPLATE
+        # 대체. ANSI: \x1b[100;97m...\x1b[0m = 회색 bg + 흰 글자. 형식 변경 시 backend
+        # rebuild 만 — helper 안 만짐.
+        payload["renderedContent"] = (
+            f"\x1b[100;97m[aidesk · FROM:{sender.agent_name} | MSG:{msg.message_id}]"
+            f"\x1b[0m {body.content}"
+            f"  ↳ 응답: adesk reply {msg.message_id} '<답변>'"
+        )
         broker.publish("message.deliver", payload)
         # WS payload — mcp aidesk-channel 의 ws client 가 evt.type === 'message.deliver' +
         # evt.toAgentId === AGENT_ID 매칭. type 필드 없으면 skip → 외부 AI 가 메시지 못 받음.

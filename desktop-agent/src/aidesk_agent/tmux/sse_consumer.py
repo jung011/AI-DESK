@@ -57,12 +57,23 @@ _QUEUE_GRACE_SEC = 0.5
 
 
 def _render_message(payload: dict) -> str:
+    """수신 메시지 render — backend 의 renderedContent 우선 (Phase 7).
+
+    backend payload 에 `renderedContent` 박혀있으면 그대로 사용 — 형식 변경 시
+    backend rebuild 만 (helper 안 만짐). 없으면 (옛 backend image 호환) 기존
+    _HEADER_TEMPLATE 로 fallback.
+
+    첨부 (attachments[]) 는 backend renderedContent 에 안 박힌 경우 helper 가
+    append (옛 동작). backend 가 renderedContent 만들 때 attachments 도 박았다면
+    helper 는 그대로 pass-through.
+    """
+    rendered = payload.get("renderedContent")
+    if rendered:
+        return rendered
+    # fallback — 옛 backend image 호환
     content = payload.get("content", "")
     attachments = payload.get("attachments") or []
     if attachments:
-        # 채팅 첨부 (옵션 A) — backend가 보낸 attachments[] 를 tmux 텍스트 라인으로 append.
-        # AI 는 path 만 보고 본인 backend host 와 합성해 GET 으로 다운로드. URL prefix 는
-        # AI 환경마다 다를 수 있어 helper 가 host 까지 박지 않음.
         lines = []
         for a in attachments:
             aid = a.get("attachmentId", "")
