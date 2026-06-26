@@ -33,7 +33,11 @@
           v-for="m in messages"
           :key="m.messageId"
           class="cv-msg"
-          :class="{ mine: m.fromAgentId === meId, theirs: m.fromAgentId !== meId }">
+          :class="{
+            mine: m.fromAgentId === meId,
+            theirs: m.fromAgentId !== meId,
+            failed: m.status === 'failed',
+          }">
           <div class="cv-bubble">
             <!--
               발신자 이름 라벨 — contact-centric view 에서는 partner 와의 1:1 페어 외에도
@@ -415,6 +419,19 @@ function formatSize(bytes: number): string {
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
 .cv-status.failed   { color: #F87171; font-weight: 700; }
+
+/* 차단/실패 메시지 — bubble 자체 highlight (옛 차단 표시 통일). policy block (context
+   guard / hop / rate / canCommunicate) 또는 ws delivery fail 시 status=failed. */
+.cv-msg.failed.mine .cv-bubble {
+  background: linear-gradient(135deg, #B73E55, #A03048);
+  box-shadow: 0 4px 14px rgba(183, 62, 85, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+}
+.cv-msg.failed.theirs .cv-bubble {
+  background: rgba(127, 29, 29, 0.25);
+  border: 1px solid rgba(248, 113, 113, 0.5);
+  color: #FECACA;
+}
 
 /* code block (markdown 또는 사용자 입력) */
 .cv-bubble :deep(pre) {

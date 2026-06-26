@@ -453,21 +453,22 @@ async function pollInbox() {
  * SDK 가 createMessage 시 즉시 throw — catch 후 fallback.
  */
 async function deliverIncoming({ messageId, fromAgentName, content }) {
-  const channelTag =
-    `<channel source="aidesk-channel" task_id="${messageId}" from="${fromAgentName}">\n` +
-    `${content}\n` +
-    `</channel>`;
+  // 옛 sse_consumer 의 _HEADER_TEMPLATE 정확 보존 + 수신 메시지 *background
+  // highlight*. ANSI escape: \x1b[100;97m...\x1b[0m = bright black bg (회색) +
+  // bright white text. xterm.js / terminal 모두 ANSI 해석.
+  const legacyHeader =
+    `\x1b[100;97m[aidesk · FROM:${fromAgentName} | MSG:${messageId}]\x1b[0m ${content}` +
+    `  ↳ 응답: adesk reply ${messageId} '<답변>'`;
 
   // ★ claude code 의 channel notification — session 안 직접 inject (자동 trigger).
   // claude.exe binary 의 example: method='notifications/claude/channel', params.content +
   // params.meta. meta keys 가 [channel] tag attributes 가 됨.
-  // 사용자가 `claude --channels server:aidesk-channel-ext --dangerously-load-development-channels server:aidesk-channel-ext`
-  // 로 실행해야 활성.
+  // params.content 에 옛 헤더 형식 박아 prompt 영역 표시 통일.
   try {
     await server.notification({
       method: 'notifications/claude/channel',
       params: {
-        content: content,
+        content: legacyHeader,
         meta: {
           task_id: messageId,
           sender: fromAgentName,
@@ -480,12 +481,12 @@ async function deliverIncoming({ messageId, fromAgentName, content }) {
     dbg(`channel notification failed: ${e?.message ?? e}`);
   }
 
-  // 사람 모드 fallback / audit — 항상 보내서 로그/UI 에 노출. sampling 자동 응답 환경에서도 audit 용.
+  // 사람 모드 fallback / audit — sampling 미지원 client 에 표시. 같은 형식 통일.
   try {
     await server.sendLoggingMessage({
       level: 'info',
       logger: 'aidesk-channel',
-      data: channelTag,
+      data: legacyHeader,
     });
   } catch (e) {
     dbg(`aidesk-channel: notify failed: ${e?.message ?? e}`);

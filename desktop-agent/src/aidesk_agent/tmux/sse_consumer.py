@@ -17,8 +17,9 @@ from ..watchdog import mark_sse_event
 log = logging.getLogger(__name__)
 
 # 백엔드 TmuxLastMileAdapter 와 동일한 렌더 포맷 (adesk_cli.md 와 정합).
+# ANSI: \x1b[100;97m...\x1b[0m = 회색 background + 흰 글자 (수신 메시지 highlight).
 _HEADER_TEMPLATE = (
-    "[aidesk · FROM:{from_name} | MSG:{msg_id}] {content}"
+    "\x1b[100;97m[aidesk · FROM:{from_name} | MSG:{msg_id}]\x1b[0m {content}"
     "  ↳ 응답: adesk reply {msg_id} '<답변>'"
 )
 # Claude TUI 가 bracketed-paste 로 Enter 를 흡수하지 않도록 분리 송신 사이 지연.
@@ -174,20 +175,29 @@ async def _enqueue_for_session(session: str, payload: dict, backend_url: str) ->
 
 
 async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
-    """B Phase 5 (dev 브랜치 Channels 통일 정책) — last-mile 책임 mcp(bun) Channels 로 이관.
+    """Phase 5 부분 revert — send-keys + ack 부활.
 
-    sse_consumer 의 옛 책임 = tmux send-keys + ack. 변경:
-      - send-keys 제거 — Channels inject 가 유일한 last-mile.
-      - ack 도 mcp 가 책임 — sse_consumer 는 ack 안 함.
-      - 본 함수는 *SSE liveness keep-alive* 역할만 (event 수신 자체 = watchdog
-        의 _last_sse_event_at 갱신 — _consume_once 의 mark_sse_event 가 처리).
+    Channels banner UI 의 고정 truncate (`…` 표시) 한계 우회. Channels banner =
+    *짧은 헤더 알림* (회색 highlight), tmux send-keys = *전체 내용 prompt 영역*.
+    dual 표시지만 사용자 가시성 우선. bot-adapter spawn 은 그대로 skip
+    (`ensure_bot_adapter` 무조건 False) — sse_consumer 만 send-keys 책임.
     """
     session = (payload.get("toTmuxSession") or "").strip()
     message_id = payload.get("messageId") or ""
-    log.debug(
-        "message.deliver: session=%s msg=%s — skip (Channels last-mile)",
-        session, message_id,
+    if not session:
+        log.warning("message.deliver: empty toTmuxSession, dropping")
+        return
+    if not await _tmux_has_session(session):
+        log.info("message.deliver: target session %s not on this Mac — ignored", session)
+        return
+    rendered = _render_message(payload)
+    ok = await _tmux_send(session, rendered)
+    log.info(
+        "message.deliver: session=%s msg=%s ok=%s",
+        session, message_id, ok,
     )
+    if ok:
+        await _send_ack(backend_url, message_id)
 
 
 async def _consume_once(backend_url: str) -> None:
