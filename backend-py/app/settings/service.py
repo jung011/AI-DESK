@@ -23,7 +23,12 @@ log = logging.getLogger(__name__)
 KEY_A2A_WORKSPACE = "a2a_workspace"
 KEY_WORKROLE_FILE = "workrole_file"
 
-ME_TMUX_PREFIX = "aidesk-self-"
+import os as _os
+
+# dev 환경 (AIDESK_ENV=dev) 에선 *별 prefix* — prod 사용자 mac 의 옛
+# aidesk-self-{login} tmux session 충돌 차단. 사용자가 dev 에서 me 만들 때
+# *prod 리키 의 운용 화면* 보이는 환경 섞임 사고 fix.
+ME_TMUX_PREFIX = "aidesk-self-dev-" if _os.environ.get("AIDESK_ENV") == "dev" else "aidesk-self-"
 ME_MODEL = "claude-opus-4-7"
 _EMPLOYEE_KEY_SAFE = re.compile(r"[^a-z0-9_-]")
 
