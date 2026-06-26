@@ -329,14 +329,11 @@ def _build_claude_cmd(workspace_dir: str, mode: str, custom_opts: str = "") -> s
     if mode == "telegram":
         extra = "--channels plugin:telegram@claude-plugins-official"
     else:
-        # default mode = AI Desk Channels (push-to-wake) 활성
+        # default mode = AI Desk Channels (push-to-wake) 활성.
+        # Agent Teams 분할창 모드 flag (--teammate-mode tmux) + env 는
+        # ~/.claude/settings.json 의 teammateMode=auto + CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+        # 박혀있어 *불필요 중복*. tmux session 안 = settings auto 가 자동 검출 → split-window.
         extra = "--dangerously-load-development-channels server:aidesk-channel"
-        # dev 브랜치 + macOS 만 — Claude Code Agent Teams (분할창 모드) flag.
-        # [[project-claude-code-agent-teams]] — tmux 안 + --teammate-mode tmux +
-        # env EXPERIMENTAL_AGENT_TEAMS=1 (_start_tmux_detached 가 env 박음).
-        # zellij 미지원 → Windows 제외. prod 영향 0 (env 분기).
-        if os.environ.get("AIDESK_ENV") == "dev" and sys.platform == "darwin":
-            extra += " --teammate-mode tmux"
     cmd = "claude"
     if extra:
         cmd = f"{cmd} {extra}"
@@ -379,11 +376,8 @@ def _start_tmux_detached(tmux_session: str, workspace_dir: str, claude_cmd: str,
     cmd_list = ["tmux", "new-session", "-d", "-s", tmux_session, "-c", workspace_dir]
     if user_path:
         cmd_list.extend(["-e", f"PATH={user_path}"])
-    # dev 브랜치 + macOS 만 — Claude Code Agent Teams 분할창 모드 env.
-    # _build_claude_cmd 가 같은 분기에서 --teammate-mode tmux flag 박음. 두 쌍.
-    # [[project-claude-code-agent-teams]]
-    if os.environ.get("AIDESK_ENV") == "dev" and sys.platform == "darwin":
-        cmd_list.extend(["-e", "EXPERIMENTAL_AGENT_TEAMS=1"])
+    # Agent Teams env (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1) 는 ~/.claude/settings.json
+    # 박혀있어 중복 — 제거. settings 의 *자동 검출* (tmux session 안) 으로 충분.
     if mode == "custom":
         # claude_cmd 가 이미 `exec zsh -ic '...'` 형태 — zsh 가 .zshrc 거치며 PATH/env 다시
         # set 하므로 sh 단계의 PATH= prefix 가 무의미하고 오히려 zsh 의 export 와 섞일 위험.

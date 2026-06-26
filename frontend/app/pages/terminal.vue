@@ -179,7 +179,9 @@ async function onOpenClaude(agentId: string): Promise<void> {
   await nextTick();
   setTimeout(() => {
     const continueFlag = hasPast ? ' -c' : '';
-    const cmd = `claude --dangerously-load-development-channels server:aidesk-channel --teammate-mode tmux${continueFlag}`;
+    // Agent Teams 분할창 flag (--teammate-mode tmux) 는 ~/.claude/settings.json
+    // 의 teammateMode=auto 가 *환경 자동 검출* — 명령어 안 박음.
+    const cmd = `claude --dangerously-load-development-channels server:aidesk-channel${continueFlag}`;
     webTermRef.value?.pasteCommand?.(cmd);
   }, 600);
 }

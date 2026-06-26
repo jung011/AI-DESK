@@ -212,13 +212,11 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 "-x", str(cols), "-y", str(rows),
                 "-c", cwd,
             ]
-            # B Phase 6 — dev + macOS = Agent Teams 분할창 자동 활성.
-            # _start_tmux_detached 와 같은 분기 — web 터미널 의 tmux 도 동일 env + cmd.
-            # [[project-claude-code-agent-teams]]
+            # Agent Teams env (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1) 는
+            # ~/.claude/settings.json 박혀있어 중복 — 제거. is_dev_macos 는 polling
+            # thread schedule 조건으로 keep.
             import sys as _sys  # noqa: PLC0415
             is_dev_macos = os.environ.get("AIDESK_ENV") == "dev" and _sys.platform == "darwin"
-            if is_dev_macos:
-                new_cmd.extend(["-e", "EXPERIMENTAL_AGENT_TEAMS=1"])
             # shell 명령 = zsh -il (옛 동작 — 사용자가 직접 claude 입력). 옵션 C.
             # claude 자동 시작 분기 제거 — 카드 click 시 zsh 만, 사용자가 *햄버거 →
             # 클로드 열기* 로 명령어 textarea 박은 후 직접 Enter.
