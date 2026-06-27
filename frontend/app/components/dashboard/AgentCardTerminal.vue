@@ -143,8 +143,15 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
-  if (term) { try { term.dispose(); } catch { /* ignore */ } term = null; }
+  // ws.close / term.dispose 비동기 (setTimeout 0) — 대시보드 의 14+ mini preview 동시
+  // unmount 시 동기 cleanup 의 누적 시간이 router navigation 을 지연시켜 *click 무반응*
+  // 사고. cleanup 은 background 에서 진행.
+  const oldWs = ws; ws = null;
+  const oldTerm = term; term = null;
+  setTimeout(() => {
+    if (oldWs) { try { oldWs.close(); } catch { /* ignore */ } }
+    if (oldTerm) { try { oldTerm.dispose(); } catch { /* ignore */ } }
+  }, 0);
 });
 </script>
 
