@@ -7,7 +7,7 @@
     <table class="task-table">
       <thead>
         <tr>
-          <th style="width:55%">Task</th>
+          <th style="width:55%">태스크명</th>
           <th style="width:25%">담당자</th>
           <th style="width:20%">상태</th>
         </tr>

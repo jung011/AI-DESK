@@ -112,17 +112,24 @@ class AiTaskService:
             )
             return
         att_rows = self.att_repo.find_by_task_id(nxt.task_id)
-        # task 메시지 의 content — task_id 메타 박힘. AI 가 추출해서 task_start 호출.
-        # 첨부는 content 메타에 GET URL 박음 — task_attachment row 와 message_attachment
-        # link 분리 (task 의 attachment 가 message 의 attachment 로 *재link* 되면 owner
-        # ambiguity 사고 우려). AI 가 content 의 URL 통해 직접 다운로드.
+        # task 메시지 의 content — task_id 메타 + 명시 지시 박힘. AI 가 매 메시지 읽으니
+        # mcp server instructions (시작 시 1회 로드) 보다 매 task 메시지 의 지시 가 더 정합.
+        # AI 가 task_start / task_complete mcp tool 호출 path 학습.
+        # 첨부는 content 의 GET URL 메타 (task_attachment row 와 message_attachment link
+        # 분리 — owner ambiguity 회피). AI 가 URL 통해 직접 다운로드.
         att_lines = []
         for a in att_rows:
             size_kb = (a.size_bytes + 1023) // 1024
             att_lines.append(
                 f"- {a.original_filename} ({size_kb}KB) — GET /api/attachments/{a.attachment_id}"
             )
-        content = f"[task:{nxt.task_id}]\n{nxt.content}"
+        content = (
+            f"[task:{nxt.task_id}]\n"
+            f"{nxt.content}\n\n"
+            f"⚠ 이 메시지는 사용자가 대시보드 task 패널에 박은 task 임. "
+            f"처리 시작 시 mcp tool `task_start` (task_id=\"{nxt.task_id}\") 호출, "
+            f"처리 완료 시 `task_complete` (task_id=\"{nxt.task_id}\", result=\"<완료 요약>\") 호출."
+        )
         if att_lines:
             content += "\n\n첨부:\n" + "\n".join(att_lines)
         body = MessageCreateRq(

@@ -12,11 +12,14 @@
             :disabled="submitting" />
         </div>
         <div class="modal-field">
-          <label class="modal-label">담당 AI</label>
+          <label class="modal-label">담당 AI <span class="modal-label-hint">(온라인 만)</span></label>
           <select v-model="agentId" class="modal-input" :disabled="submitting">
             <option value="">(선택)</option>
-            <option v-for="a in agents" :key="a.agentId" :value="a.agentId">{{ a.agentName }}</option>
+            <option v-for="a in onlineAgents" :key="a.agentId" :value="a.agentId">{{ a.agentName }}</option>
           </select>
+          <p v-if="onlineAgents.length === 0" class="modal-empty-hint">
+            온라인 AI 가 없어요. 대시보드에서 *클로드 열기* 로 시작 후 다시 시도.
+          </p>
         </div>
         <div class="modal-field">
           <label class="modal-label">첨부 파일 (선택)</label>
@@ -71,6 +74,10 @@ const uploading = ref(false);
 const errorMsg = ref<string | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
+// 온라인 AI 만 — TODO status 도 *수신 가능* path 하지만 *처리 시작* 위해서는 active.
+// active / waiting / idle 모두 *online* 으로 통합 ([[useAgents]] 의 ONLINE_BACKEND_STATUSES).
+const ONLINE_STATUSES = new Set(['active', 'waiting', 'idle']);
+const onlineAgents = computed(() => props.agents.filter((a) => ONLINE_STATUSES.has(a.status)));
 const canSubmit = computed(() => content.value.trim().length > 0 && !!agentId.value);
 
 watch(() => props.open, (v) => {
@@ -150,6 +157,8 @@ async function submit(): Promise<void> {
 .modal h3 { margin: 0 0 14px; color: #FBBF24; font-size: 15px; }
 .modal-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .modal-label { font-size: 11px; color: #8B95A5; font-weight: 600; }
+.modal-label-hint { color: #6B7280; font-weight: 400; margin-left: 6px; }
+.modal-empty-hint { color: #FBBF24; font-size: 11px; margin: 4px 0 0; padding: 0; }
 .modal-input { background: #0F1729; border: 1px solid #2A3950; color: #E5EBF5; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
 .modal-textarea { min-height: 80px; resize: vertical; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
