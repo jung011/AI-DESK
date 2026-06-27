@@ -18,6 +18,7 @@
           :agents="partners"
           :active-id="partnerId"
           :loading="loadingAgents"
+          :show-menu="true"
           @select="onSelectPartner"
           @delete="onDeleteLocal"
           @open-claude="onOpenClaude"

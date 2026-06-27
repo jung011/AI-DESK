@@ -21,9 +21,9 @@
             <span class="al-model">· {{ shortModel(a.model) }}</span>
           </span>
         </span>
-        <!-- 햄버거 메뉴 — claude agent 만. dropdown 은 Teleport (overflow 회피). -->
+        <!-- 햄버거 메뉴 — claude agent 만 + showMenu=true (terminal 페이지). -->
         <button
-          v-if="a.model !== 'shell'"
+          v-if="showMenu && a.model !== 'shell'"
           class="al-menu-btn"
           title="메뉴"
           @click.stop="toggleMenu(a.agentId, $event)">⋯</button>
@@ -56,6 +56,9 @@ defineProps<{
   agents: AgentItem[];
   activeId: string;
   loading: boolean;
+  // 햄버거 (⋯) + 클로드 열기 드롭다운 표시 여부 — terminal 페이지에서만 의미.
+  // chat 페이지 = 메시지 송수신만이라 햄버거 클릭 시 nothing happens → 노출 X.
+  showMenu?: boolean;
 }>();
 const emit = defineEmits<{
   (e: 'select', agentId: string): void;
