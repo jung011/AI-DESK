@@ -121,6 +121,33 @@ const TOOLS = [
     name: 'list_agents',
     description: '다른 AI 에이전트 목록을 조회합니다 (자기 자신만 제외, 상태 무관).',
     inputSchema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'task_start',
+    description:
+      '사용자가 대시보드 task 패널에서 박은 task 의 처리 시작 신호. backend 에 status=in_progress 마킹. ' +
+      '사용자 메시지가 task_id 동봉해서 도착하면 처리 시작 시점에 호출.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'task UUID — 도착 메시지의 메타에서' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'task_complete',
+    description:
+      'task 처리 완료 신호. backend 에 status=done 마킹 + 다음 task push. result 는 사용자에게 ' +
+      '보여줄 요약 (옵션).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'task UUID' },
+        result: { type: 'string', description: '완료 요약 (옵션)' }
+      },
+      required: ['task_id']
+    }
   }
 ];
 
@@ -362,6 +389,23 @@ async function replyToMessage({ message_id, content }) {
   });
 }
 
+async function taskStart({ task_id } = {}) {
+  if (!task_id) throw new Error('task_id required');
+  await ensureAgentId();
+  await api(`/api/tasks/${encodeURIComponent(task_id)}/start`, { method: 'POST', body: '{}' });
+  return { ok: true, taskId: task_id, status: 'in_progress' };
+}
+
+async function taskComplete({ task_id, result } = {}) {
+  if (!task_id) throw new Error('task_id required');
+  await ensureAgentId();
+  await api(`/api/tasks/${encodeURIComponent(task_id)}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ result: result ?? null }),
+  });
+  return { ok: true, taskId: task_id, status: 'done' };
+}
+
 async function checkInbox({ unread_only = true, limit = 10 } = {}) {
   const me = await ensureAgentId();
   const url = `/api/messages?agentId=${encodeURIComponent(me)}&direction=inbox&limit=${encodeURIComponent(
@@ -399,7 +443,10 @@ const server = new Server(
       '다른 AI 가 채팅에서 부르는 이름이 곧 당신의 이름입니다.' +
       '\n\n[도구] 다른 AI 에게 메시지 → send_to. 받은 메시지(<channel> 태그)에 답 → reply. ' +
       '미확인 점검 → check_inbox. 다른 AI 목록 → list_agents. ' +
-      '답변 시 <channel> 태그의 task_id 를 message_id 로 그대로 전달하세요.'
+      '답변 시 <channel> 태그의 task_id 를 message_id 로 그대로 전달하세요.' +
+      '\n\n[task 큐] 사용자가 대시보드 task 패널에서 박은 task 가 *task_id 메타* 동봉된 메시지로 ' +
+      '도착합니다. 처리 시작 시 task_start(task_id) 호출, 완료 시 task_complete(task_id, result) ' +
+      '호출하세요. mcp tool 호출 안 하면 backend 가 stuck 상태로 인식.'
   }
 );
 
@@ -414,6 +461,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'reply':       result = await replyToMessage(args); break;
       case 'check_inbox': result = await checkInbox(args); break;
       case 'list_agents': result = await listAgents(); break;
+      case 'task_start':  result = await taskStart(args); break;
+      case 'task_complete': result = await taskComplete(args); break;
       default: throw new Error(`Unknown tool: ${name}`);
     }
     return {
