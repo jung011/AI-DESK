@@ -354,6 +354,7 @@ let webLinks: any = null;
 let resizeObserver: ResizeObserver | null = null;
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;  // exp backoff 카운터 — onopen 시 reset
 
 // helper WS URL — 사용자 mac 의 helper 직접 연결.
 // dev = 30084 (LaunchAgent --host 0.0.0.0 — wifi 외부 모바일 접근 가능).
@@ -470,6 +471,11 @@ function sendResize(): void {
 function connectWs(): void {
   if (!term) return;
   if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
+  // reconnect 시 옛 outputHtml 비움 — helper 가 ws connect 마다 tmux capture-pane -S -3000
+  // dump 라 N 번 reconnect 누적 사고 차단 (사용자 새 탭 로그인 시 JWT cookie 덮어쓰기 →
+  // 옛 ws kick → reconnect storm → 3000 라인 padding/status line 누적 → 점 엄청 사고).
+  term.reset();
+  outputHtml.value = '';
 
   const cwd = props.partner?.workspaceDir || '';
   const agentId = props.partner?.agentId || '';
@@ -504,6 +510,7 @@ function connectWs(): void {
 
   s.onopen = () => {
     connClass.value = 'live';
+    reconnectAttempt = 0;  // 성공 시 backoff 카운터 reset
     sendResize();
   };
   s.onmessage = (ev) => {
@@ -520,10 +527,13 @@ function connectWs(): void {
   };
   s.onclose = (ev) => {
     connClass.value = 'down';
+    // exp backoff — JWT 덮어쓰기 등 사유로 backend kick 지속 시 reconnect storm 차단.
+    // 3s → 6s → 12s → 24s → 30s (cap). onopen 시 reset.
+    reconnectAttempt += 1;
+    const delay = Math.min(30000, 3000 * Math.pow(2, reconnectAttempt - 1));
     if (term) {
-      term.writeln(`\r\n\x1b[38;2;245;158;11m[연결 끊김]\x1b[0m code=${ev.code} — 3초 후 자동 재연결 시도…`);
+      term.writeln(`\r\n\x1b[38;2;245;158;11m[연결 끊김]\x1b[0m code=${ev.code} — ${Math.round(delay / 1000)}초 후 재연결 시도…`);
     }
-    // 같은 partner 면 3s 후 자동 reconnect. 사용자가 agent 바꾸면 watch 가 disconnect 후 새로 연결.
     if (ws === s && props.partner?.agentId) {
       const sameAgentId = props.partner.agentId;
       reconnectTimer = setTimeout(() => {
@@ -531,7 +541,7 @@ function connectWs(): void {
           term.writeln('\x1b[38;2;107;117;133m[재연결 시도]\x1b[0m');
           connectWs();
         }
-      }, 3000);
+      }, delay);
     }
   };
 }
