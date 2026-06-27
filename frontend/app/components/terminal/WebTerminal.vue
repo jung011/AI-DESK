@@ -81,6 +81,7 @@
 
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
+import { useInputDrafts } from '~/composables/useInputDrafts';
 
 const props = defineProps<{
   partner: AgentItem | null;
@@ -99,7 +100,14 @@ const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
 
 const cols = ref(80);
 const rows = ref(24);
-const inputDraft = ref('');
+// agent-scoped draft store — partner 전환 시 :key 로 컴포넌트 destroy + remount.
+// tmux pty 의 line buffer 는 server-side 유지라 textarea 만 reset 되면 desync.
+// store 에서 mount 시 복원 + watch 로 변경 갱신.
+const inputDrafts = useInputDrafts();
+const inputDraft = ref(props.partner?.agentId ? inputDrafts.get(props.partner.agentId) : '');
+watch(inputDraft, (v) => {
+  if (props.partner?.agentId) inputDrafts.set(props.partner.agentId, v);
+});
 const outputHtml = ref('');
 const emptyHtml = '<span style="color:#6B7785">📡 터미널 백단 작동 중. 입력 → claude 에 전송.</span>';
 const outputRef = ref<HTMLElement | null>(null);
