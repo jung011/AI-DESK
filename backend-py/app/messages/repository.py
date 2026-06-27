@@ -51,22 +51,22 @@ class MessageRepository:
     ) -> tuple[list[Message], bool]:
         """direction = 'in' / 'out' / 'all'.
 
+        with_id 박혀있으면 *contact-centric* 모드 — partner (with_id) 가 관여한
+        모든 메시지 반환 ([[project-user-entity-model]] 룰: 채팅창은 partner 관여
+        모든 메시지 표시). 예: test ↔ test2 통신도 test2 채팅창에 보여야.
+        with_id 없으면 *agent in/out* 모드 — agent_id 의 메시지만.
         Returns (rows, has_more) — has_more = limit + 1 패턴.
         """
         stmt = select(Message)
-        if direction == "in":
+        if with_id:
+            # contact-centric — partner 가 관여한 모든 메시지 (agent_id filter 안 함)
+            stmt = stmt.where(or_(Message.from_agent_id == with_id, Message.to_agent_id == with_id))
+        elif direction == "in":
             stmt = stmt.where(Message.to_agent_id == agent_id)
         elif direction == "out":
             stmt = stmt.where(Message.from_agent_id == agent_id)
         else:
             stmt = stmt.where(or_(Message.from_agent_id == agent_id, Message.to_agent_id == agent_id))
-        if with_id:
-            stmt = stmt.where(
-                or_(
-                    and_(Message.from_agent_id == agent_id, Message.to_agent_id == with_id),
-                    and_(Message.from_agent_id == with_id, Message.to_agent_id == agent_id),
-                )
-            )
         if status:
             stmt = stmt.where(Message.status == status)
         stmt = stmt.order_by(desc(Message.created_at)).limit(limit + 1)
