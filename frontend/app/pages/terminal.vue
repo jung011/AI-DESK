@@ -167,8 +167,13 @@ async function onOpenClaude(agentId: string): Promise<void> {
   let hasPast = false;
   if (agent?.workspaceDir) {
     try {
-      const port = import.meta.dev ? 30084 : 30083;
-      const url = `http://${window.location.hostname}:${port}/api/has-past-session?workspaceDir=${encodeURIComponent(agent.workspaceDir)}`;
+      // prod = 127.0.0.1:30083 사용자 mac local helper. frontend hostname (kaflix.internal)
+      // 가리키면 ingress 30083 listen X → fetch fail → hasPast=false → `-c` 안 박음.
+      // WebTerminal.vue / AgentCardTerminal.vue 와 동일 분기 패턴.
+      const helperBase = import.meta.dev
+        ? `http://${window.location.hostname}:30084`
+        : 'http://127.0.0.1:30083';
+      const url = `${helperBase}/api/has-past-session?workspaceDir=${encodeURIComponent(agent.workspaceDir)}`;
       const res = await fetch(url);
       const body = await res.json() as { hasPast?: boolean };
       hasPast = !!body.hasPast;
