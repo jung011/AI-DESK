@@ -101,8 +101,19 @@ function toShellAgent(t: LocalTerminal): AgentItem {
   };
 }
 
+// type 우선순위 — 휴먼/내(me) 가 위, 다음 internal, external. 같은 그룹 안 agentName
+// 알파벳. polling 시 backend updated_at desc 순서 변동을 막아 list 위치 고정.
+const TYPE_RANK: Record<string, number> = { human: 0, me: 1, internal: 2, external: 3 };
 const partners = computed(() => {
-  const ai = agents.value.filter((a) => a.agentId !== currentUser.value?.agentId);
+  const ai = agents.value
+    .filter((a) => a.agentId !== currentUser.value?.agentId)
+    .slice()
+    .sort((a, b) => {
+      const ra = TYPE_RANK[a.agentType] ?? 9;
+      const rb = TYPE_RANK[b.agentType] ?? 9;
+      if (ra !== rb) return ra - rb;
+      return (a.agentName || '').localeCompare(b.agentName || '');
+    });
   const local = localTerminals.value.map(toShellAgent);
   return [...ai, ...local];
 });
