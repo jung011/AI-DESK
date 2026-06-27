@@ -24,22 +24,16 @@
         />
       </div>
       <div class="term-pane term-pane-conv">
-        <!-- B 옵션 — partner 별 WebTerminal 인스턴스 영구 살림. v-show 의 display:none
-             은 xterm viewport size 0x0 → claude TUI 와 cols mismatch → 화면 깨짐.
-             :class 토글 + visibility/position 로 *layout 유지* 하면서 hide. -->
+        <!-- partner 전환 시 :key 로 컴포넌트 destroy + remount → ws + xterm + helper PTY
+             모두 정리. 옛 textarea 만 useInputDrafts store 로 agent-scoped 보존.
+             옛 claude TUI 대화는 AI Desk 채팅 페이지 (/chat) 에서 봄. -->
         <WebTerminal
-          v-for="aid in mountedAgentIds"
-          :key="aid"
-          :ref="(el) => registerWebTermRef(aid, el)"
-          :class="{ 'wt-hidden': aid !== partnerId }"
-          :partner="partnersById[aid] || null"
-          :is-active="aid === partnerId"
+          ref="webTermRef"
+          :key="activePartner?.agentId || 'none'"
+          :partner="activePartner"
           :show-back="true"
           @back="showTermMobile = false"
         />
-        <div v-if="!mountedAgentIds.length" class="term-empty-hint">
-          왼쪽에서 에이전트를 선택하세요
-        </div>
       </div>
     </div>
 
@@ -130,21 +124,6 @@ const activePartner = computed(() =>
   partners.value.find((a) => a.agentId === partnerId.value) ?? null
 );
 
-// B 옵션 — partner 별 WebTerminal 인스턴스 영구 살림.
-// mountedAgentIds = 한 번이라도 선택된 partner. v-for + v-show 토글로 xterm /
-// ws / scrollback / lastSentInput 모두 보존.
-const mountedAgentIds = ref<string[]>([]);
-const partnersById = computed(() => {
-  const map: Record<string, AgentItem> = {};
-  for (const p of partners.value) map[p.agentId] = p;
-  return map;
-});
-watch(partnerId, (id) => {
-  if (id && !mountedAgentIds.value.includes(id)) {
-    mountedAgentIds.value.push(id);
-  }
-});
-
 // 추가 모달
 const showAddModal = ref(false);
 const addName = ref('');
@@ -197,14 +176,7 @@ async function onSelectPartner(agentId: string): Promise<void> {
 // AgentList 의 select 가 먼저 처리됨 (active partner 변경) → ref 의 pasteCommand 호출.
 // dev/macOS = Agent Teams 분할창 활성. *옛 대화 있을 때만* -c 박음
 // (없으면 `No conversation found to continue` 에러).
-// B 옵션 refactor 후 — v-for 의 WebTerminal 인스턴스가 agentId 별 → ref function 으로
-// Map<agentId, component> 등록 → 호출 시 partnerId 의 인스턴스 lookup.
-type WebTermInstance = { pasteCommand?: (text: string) => void };
-const webTermRefs = new Map<string, WebTermInstance>();
-function registerWebTermRef(aid: string, el: unknown): void {
-  if (el) webTermRefs.set(aid, el as WebTermInstance);
-  else webTermRefs.delete(aid);
-}
+const webTermRef = ref<{ pasteCommand?: (text: string) => void } | null>(null);
 async function onOpenClaude(agentId: string): Promise<void> {
   const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
   let hasPast = false;
@@ -230,7 +202,7 @@ async function onOpenClaude(agentId: string): Promise<void> {
     // Agent Teams 분할창 flag (--teammate-mode tmux) 는 ~/.claude/settings.json
     // 의 teammateMode=auto 가 *환경 자동 검출* — 명령어 안 박음.
     const cmd = `claude --dangerously-load-development-channels server:aidesk-channel${continueFlag}`;
-    webTermRefs.get(agentId)?.pasteCommand?.(cmd);
+    webTermRef.value?.pasteCommand?.(cmd);
   }, 600);
 }
 
@@ -299,14 +271,6 @@ onBeforeUnmount(() => {
   grid-template-columns: 36px 1fr;
 }
 .term-pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-
-/* B 옵션 — partner 별 WebTerminal 인스턴스 stack. parent 가 position:relative,
- * 각 인스턴스가 *absolute fill*. background 인스턴스는 layout 유지하며 hide
- * (display:none 가 xterm viewport 0x0 사고 차단). */
-.term-pane-conv { position: relative; }
-.term-pane-conv > * { position: absolute; inset: 0; }
-.term-pane-conv > .term-empty-hint { display: flex; align-items: center; justify-content: center; color: #6B7785; font-size: 14px; }
-.wt-hidden { visibility: hidden; pointer-events: none; }
 
 /* 접기 버튼 — 대화상대 박스 좌측 상단 (펼친 / 접힌 상태 둘 다 visible) */
 .term-pane-list { position: relative; }

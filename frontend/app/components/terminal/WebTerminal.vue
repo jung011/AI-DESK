@@ -89,8 +89,6 @@ import { useInputDrafts } from '~/composables/useInputDrafts';
 const props = defineProps<{
   partner: AgentItem | null;
   showBack: boolean;
-  // B 옵션 — terminal.vue 가 partner 별 인스턴스 v-show 토글. visible 시에만 fit 호출.
-  isActive?: boolean;
 }>();
 
 defineEmits<{ (e: 'back'): void }>();
@@ -643,13 +641,6 @@ watch(() => props.partner?.agentId, async (id) => {
   resetAndConnect();
 });
 
-// B 옵션 — visibility:hidden 패턴이라 layout 유지. background 시에도 viewport
-// size 측정 정상 → cols/rows 안 흔들림. active 화 시 focus 만.
-watch(() => props.isActive, (active) => {
-  if (active) {
-    nextTick(() => { inputRef.value?.focus(); });
-  }
-});
 
 function statusLabel(s: AgentStatus): string {
   return { active: '작업중', waiting: '응답 대기', idle: '대기중', offline: '오프라인', compacting: '압축 중', error: '오류' }[s] ?? s;
