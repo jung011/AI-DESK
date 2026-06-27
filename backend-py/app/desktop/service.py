@@ -12,13 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.agents.repository import AgentRepository
 from app.desktop.schemas import DesktopLocalInfoRq, DesktopLocalInfoRs
-from app.messages.sse import broker
 
 log = logging.getLogger(__name__)
-
-# in-memory cache — last reported prompt_dialog state per agent_id.
-# K8s replica > 1 시 inconsistent (옛 broker 와 같은 한계). 변화 감지 + 중복 publish 차단용.
-_last_prompt_dialog: dict[str, dict | None] = {}
 
 
 class DesktopService:
@@ -49,8 +44,6 @@ class DesktopService:
         # 만 살아남은 tmux session 을 idle 그대로 → 'offline' 강제 (helper 0.8.57+).
         # helper 옛 버전 (claudeAlive 미보고) 호환 — None 이면 그대로 통과.
         dead_claude_tmux = {t.name for t in req.tmux_sessions if t.name and t.claude_alive is False}
-        # helper 0.8.69+ — prompt dialog per tmux session. agent 매칭 후 변화 감지 publish.
-        prompt_by_tmux = {t.name: t.prompt_dialog for t in req.tmux_sessions if t.name}
 
         matched = 0
         updated = 0
@@ -92,27 +85,6 @@ class DesktopService:
             # 의 cwd 매칭으로 추출. None 이면 갱신 skip.
             if w.context_pct is not None:
                 self.repo.update_context_pct(agent.agent_id, w.context_pct)
-
-            # prompt_dialog change detection — variation 감지 시 SSE publish.
-            # in-memory cache 기반 — replica > 1 시 inconsistent 하지만 옛 broker 와 동일 한계.
-            current_pd = prompt_by_tmux.get(agent.tmux_session) if agent.tmux_session else None
-            last_pd = _last_prompt_dialog.get(agent.agent_id)
-            if current_pd != last_pd:
-                _last_prompt_dialog[agent.agent_id] = current_pd
-                broker.publish(
-                    "agent.prompt-dialog",
-                    {
-                        "agentId": agent.agent_id,
-                        "tmuxSession": agent.tmux_session,
-                        "options": (current_pd or {}).get("options") if current_pd else None,
-                    },
-                )
-                log.info(
-                    "desktop: agent=%s prompt_dialog change %s -> %s",
-                    agent.agent_name,
-                    "present" if last_pd else "none",
-                    "present" if current_pd else "none",
-                )
 
         self.db.commit()
         rs.matched_agents = matched

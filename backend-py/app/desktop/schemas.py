@@ -21,10 +21,6 @@ class TmuxSessionItem(BaseModel):
     # helper 0.8.57+ — session pane tree 안 claude process 살아있는지. False = claude
     # 종료됨 → status='offline' 강제 (zsh prompt 만 남은 tmux session 의 false idle 차단).
     claude_alive: bool | None = Field(default=None, alias="claudeAlive")
-    # helper 0.8.69+ — claude TUI 의 yes/no option dialog 검출 결과.
-    # None = dialog 없음, dict = {"options": [{"index": 1, "label": "Yes"}, ...]}.
-    # backend 가 *변화 시* `agent.prompt-dialog` SSE event 발사 → frontend dynamic 버튼 UI.
-    prompt_dialog: dict | None = Field(default=None, alias="promptDialog")
 
     model_config = ConfigDict(populate_by_name=True)
 

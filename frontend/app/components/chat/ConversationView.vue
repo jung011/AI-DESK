@@ -124,27 +124,6 @@
       </div>
     </Teleport>
 
-    <!-- claude TUI 의 yes/no option dialog 가 떠있으면 dynamic 버튼 표시.
-         사용자가 클릭하면 backend → helper 가 tmux send-keys 번호 + Enter 박음.
-         [[project-prompt-dialog-respond]] -->
-    <div v-if="partner && partnerDialog && partnerDialog.length > 0" class="conv-prompt-dialog">
-      <div class="cv-pd-header">
-        <span class="cv-pd-icon">❓</span>
-        <span class="cv-pd-label">{{ partner.agentName }} 가 응답 대기 중</span>
-      </div>
-      <div class="cv-pd-options">
-        <button
-          v-for="opt in partnerDialog"
-          :key="opt.index"
-          class="cv-pd-btn"
-          :disabled="respondingIndex === opt.index"
-          @click="onPromptRespond(opt.index)">
-          <span class="cv-pd-num">{{ opt.index }}.</span>
-          <span class="cv-pd-text">{{ opt.label }}</span>
-        </button>
-      </div>
-    </div>
-
     <footer v-if="partner" class="conv-input">
       <!-- 선택된 첨부 chip (upload 전 또는 후) -->
       <div v-if="pendingAttachments.length > 0 || uploadingFiles" class="cv-pending-attachments">
@@ -204,21 +183,6 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 const pendingAttachments = ref<AttachmentRef[]>([]);
 const uploadingFiles = ref(false);
 const settingsOpen = ref(false);
-const respondingIndex = ref<number | null>(null);
-
-// claude TUI 의 yes/no option dialog — helper 가 detect 한 결과 SSE 받음.
-const { ensureSubscribed, getDialog, respond: respondPromptDialog } = usePromptDialogs();
-const partnerDialog = computed(() => getDialog(props.partner?.agentId));
-
-async function onPromptRespond(index: number): Promise<void> {
-  if (!props.partner?.agentId) return;
-  respondingIndex.value = index;
-  try {
-    await respondPromptDialog(props.partner.agentId, index);
-  } finally {
-    respondingIndex.value = null;
-  }
-}
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
 const FONT_MAX_PX = 24;
@@ -238,8 +202,6 @@ onMounted(() => {
   // 새로고침 / 첫 mount 시 — parent 가 미리 fetch 한 messages 가 박혀있을 수 있음.
   // watch source 가 *변화 없으면* 발사 안 하므로 mount 시점에도 명시적 scroll 박음.
   scrollToBottomDeferred();
-  // claude TUI prompt-dialog SSE subscribe 보장 (글로벌 singleton).
-  ensureSubscribed();
 });
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') document.removeEventListener('keydown', onSettingsKey);
@@ -511,42 +473,6 @@ function formatSize(bytes: number): string {
   flex-shrink: 0;
   display: flex; flex-direction: column; gap: 8px;
 }
-
-/* claude TUI prompt-dialog (yes/no option) — composer 위에 황색 highlight box. */
-.conv-prompt-dialog {
-  border-top: 1px solid #4A4017;
-  background: linear-gradient(180deg, rgba(251, 191, 36, 0.12) 0%, rgba(251, 191, 36, 0.04) 100%);
-  padding: 12px 22px;
-  display: flex; flex-direction: column; gap: 10px;
-  flex-shrink: 0;
-}
-.cv-pd-header {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; color: #FBBF24; font-weight: 600;
-}
-.cv-pd-icon { font-size: 14px; }
-.cv-pd-label { letter-spacing: 0.01em; }
-.cv-pd-options {
-  display: flex; flex-wrap: wrap; gap: 8px;
-}
-.cv-pd-btn {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 14px;
-  background: rgba(251, 191, 36, 0.16);
-  border: 1px solid rgba(251, 191, 36, 0.4);
-  color: #FDE68A;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.cv-pd-btn:hover:not(:disabled) {
-  background: rgba(251, 191, 36, 0.28);
-  border-color: rgba(251, 191, 36, 0.7);
-}
-.cv-pd-btn:disabled { opacity: 0.5; cursor: progress; }
-.cv-pd-num { color: #FBBF24; font-weight: 700; font-variant-numeric: tabular-nums; }
-.cv-pd-text { color: #FDE68A; }
 .cv-textarea {
   flex: 1; resize: none; padding: 10px 14px;
   font-size: 13px; line-height: 1.55; font-family: inherit;
