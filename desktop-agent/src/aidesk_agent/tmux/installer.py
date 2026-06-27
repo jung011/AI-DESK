@@ -62,9 +62,15 @@ async def ensure_tmux_installed() -> str | None:
 
     linux/windows 는 *부재 시도 skip* — 패키지 매니저 가정 어렵고 helper .pkg
     환경 외에서 사용자 자체 install 가정.
+
+    log path 별:
+    - 있음 → "tmux already installed: <path>" (사용자가 skip 정상 작동 확인 가능)
+    - 부재 + brew 있음 → "tmux 자동 설치 시도" → 성공 "tmux 설치 완료" or 실패 warning
+    - 부재 + brew 없음 → "tmux 미설치 + brew 도 없음" warning
     """
     path = shutil.which("tmux")
     if path:
+        log.info("tmux already installed: %s — skip auto-install", path)
         return path
     if sys.platform != "darwin":
         log.warning("tmux 미설치 (platform=%s). 사용자가 직접 설치 필요.", sys.platform)
