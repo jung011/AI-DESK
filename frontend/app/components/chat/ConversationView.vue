@@ -199,6 +199,9 @@ onMounted(() => {
     fontSizePxInput.value = n;
   }
   document.addEventListener('keydown', onSettingsKey);
+  // 새로고침 / 첫 mount 시 — parent 가 미리 fetch 한 messages 가 박혀있을 수 있음.
+  // watch source 가 *변화 없으면* 발사 안 하므로 mount 시점에도 명시적 scroll 박음.
+  scrollToBottomDeferred();
 });
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') document.removeEventListener('keydown', onSettingsKey);
@@ -281,16 +284,23 @@ function scrollToBottom(): void {
   bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
 }
 
+// nextTick 만으로는 *async render component (image / syntax-highlight 등)* 의 layout shift
+// 후 scroll 위치가 상단으로 보이는 사고. 2 frames 후 한 번 더 박음 — render 완료 보장.
+function scrollToBottomDeferred(): void {
+  void nextTick().then(() => {
+    scrollToBottom();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToBottom);
+    });
+  });
+}
+
 // 마지막 메시지 ID watch — length 대신. fetchMessages 가 array 새로 박을 때 limit=100
 // 초과 conversation 에서 옛 1 빠지고 새 1 추가되면 length 변화 없어 옛 watch 미발화 사고 fix.
-watch(() => props.messages[props.messages.length - 1]?.messageId, () => {
-  void nextTick().then(scrollToBottom);
-});
+watch(() => props.messages[props.messages.length - 1]?.messageId, scrollToBottomDeferred);
 // partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
 // 새 partner 의 마지막 메시지 ID 도 위 watch 가 잡지만, 빈 conversation 같은 edge 도 cover.
-watch(() => props.partner?.agentId, () => {
-  void nextTick().then(scrollToBottom);
-});
+watch(() => props.partner?.agentId, scrollToBottomDeferred);
 
 function statusLabel(s: AgentStatus): string {
   // 3 layer 통합: 온라인 / 오프라인 / 압축중.
