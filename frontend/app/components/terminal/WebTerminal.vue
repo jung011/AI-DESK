@@ -23,7 +23,7 @@
     <div v-if="partner" class="tv-body">
       <!-- 채팅 UI — D 옵션. output area = xterm buffer text 실시간 추출. -->
       <div class="tv-chat">
-        <pre class="tv-chat-output" ref="outputRef" v-html="outputHtml || emptyHtml"></pre>
+        <pre class="tv-chat-output" ref="outputRef" :style="{ fontSize: fontSizePx + 'px' }" v-html="outputHtml || emptyHtml"></pre>
         <div class="tv-chat-input-row">
           <textarea
             v-model="inputDraft"
@@ -771,7 +771,8 @@ function avatar(s: AgentStatus): string {
   padding: 16px 18px;
   color: #C5CDD8;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px; line-height: 1.55;
+  /* font-size 는 template 의 :style="{ fontSize: fontSizePx + 'px' }" 로 동적 (모달 조절). */
+  line-height: 1.55;
   /* 원본 grid 보존 — wrap 안 함, 긴 라인은 horizontal scroll. 한글 wide char 정렬 유지. */
   white-space: pre;
   tab-size: 8;
