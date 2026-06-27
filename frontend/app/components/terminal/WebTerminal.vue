@@ -39,6 +39,9 @@
             @keydown.arrow-down.prevent="onArrowDown"
             @keydown="onInputKeyDown"
           />
+          <button class="tv-chat-clear" type="button" @click="onClearLine"
+                  title="현재 라인 비움 (Ctrl-U). 클로드 자동완성처럼 textarea 거치지
+                         않은 입력도 reset.">✕</button>
         </div>
       </div>
       <!-- xterm DOM 자체는 mount 유지 (buffer parser 작동 위해), 화면에서만 숨김. -->
@@ -306,6 +309,17 @@ function onInputEnter(e: KeyboardEvent): void {
 
 function onInputTab(): void { wsSendBytes('\t'); }
 function onInputEsc(): void { wsSendBytes('\x1b'); }
+
+// 지우기 버튼 — 현재 라인 buffer reset. textarea 비어있어도 pty 의 line buffer 가
+// 자동완성 (Tab) 등으로 채워졌으면 backspace 로 지울 수 없음. Ctrl-U + Ctrl-W 조합
+// 으로 *cursor 앞/뒤 모두 비움* (zsh / claude readline 둘 다 호환).
+function onClearLine(): void {
+  wsSendBytes('\x15');        // Ctrl-U — cursor 앞 라인 kill
+  wsSendBytes('\x0b');        // Ctrl-K — cursor 뒤 라인 kill (line 전체 정리)
+  inputDraft.value = '';
+  lastSentInput = '';
+  nextTick(() => inputRef.value?.focus());
+}
 function onArrowUp(): void { wsSendBytes('\x1b[A'); }
 function onArrowDown(): void { wsSendBytes('\x1b[B'); }
 
@@ -790,6 +804,16 @@ function avatar(s: AgentStatus): string {
 .tv-chat-input:focus {
   outline: none; border-color: #4F7FFF;
   box-shadow: 0 0 0 3px rgba(79, 127, 255, 0.15);
+}
+.tv-chat-clear {
+  width: 36px; height: 36px; align-self: center;
+  background: #1A2030; border: 1px solid #2A3447; border-radius: 10px;
+  color: #8B95A8; font-size: 14px; cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+  flex-shrink: 0;
+}
+.tv-chat-clear:hover {
+  background: #232b3d; border-color: #4F7FFF; color: #E5E9EE;
 }
 .tv-chat-send {
   padding: 8px 16px; font-size: 13px; font-weight: 600;
