@@ -244,7 +244,9 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 # 사용자가 *햄버거 → 클로드 열기* + Enter 직접 → zsh 가 claude 실행 →
                 # Channels confirmation dialog → polling 이 dialog 통과 + claude prompt
                 # ready 검출 → identity prompt send-keys + Enter. first_boot agent 만.
-                if is_dev_macos and agent_id and agent_name:
+                # 옛 is_dev_macos guard 가 prod 의 identity inject 까지 죽이는 사고 fix.
+                # _poll_and_inject_identity = tmux capture-pane 기반이라 mac/linux 모두 가능.
+                if agent_id and agent_name:
                     try:
                         import threading as _threading
                         from .._shared import has_past_session
