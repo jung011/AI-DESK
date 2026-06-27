@@ -9,6 +9,9 @@ dependencies = [
     "httpx-sse>=0.4",
     # Windows helper(win_helper.py) — ConPTY 래퍼. mac/linux 빌드엔 미설치.
     "pywinpty>=2.0; sys_platform == 'win32'",
+    # Windows helper — ConPTY session 의 자식 process tree 검사 (claude 살아있는지).
+    # macOS 의 tmux pane PID tree 와 동등 path. mac 은 옛 ps 방식 유지라 Windows only.
+    "psutil>=5.9; sys_platform == 'win32'",
 ]
 
 [project.scripts]

@@ -263,10 +263,50 @@ async def ws_terminal(request: web.Request) -> web.StreamResponse:
     return ws
 
 
+def _session_has_claude(sess: "TermSession") -> bool:
+    """ConPTY 의 cmd.exe 자식 tree 안에 claude / node 프로세스 살아있는지.
+
+    macOS 의 tmux pane PID tree 검사와 동등한 path — `claudeAlive=false` 면 backend
+    가 status='offline' 강제 ([[feedback-claude-detect-status-3layer]] 룰 정합).
+
+    psutil 의 children(recursive=True) 사용 — Windows / mac / linux 모두 안전.
+    pywinpty 없는 환경 (PyInstaller bundle 안 dep) 에선 psutil 도 같이 안 보이면
+    False 반환 (옛 동작 = always idle, helper 옛 버전 호환).
+    """
+    try:
+        import psutil
+    except ImportError:
+        return False
+    try:
+        pid = sess.pty.pid
+    except Exception:  # noqa: BLE001
+        return False
+    try:
+        proc = psutil.Process(pid)
+        for child in proc.children(recursive=True):
+            try:
+                name = child.name().lower()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            if "claude" in name or name in ("node.exe", "node"):
+                return True
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+    return False
+
+
 async def reporter_loop() -> None:
     async with httpx.AsyncClient(timeout=5.0) as client:
         while True:
-            sessions = [{"name": n, "attached": bool(s.subscribers)} for n, s in SESSIONS.items() if s.alive()]
+            # session 별 claudeAlive 검사 — macOS 의 tmux pane PID tree 와 동등 path.
+            sessions = [
+                {
+                    "name": n,
+                    "attached": bool(s.subscribers),
+                    "claudeAlive": _session_has_claude(s),
+                }
+                for n, s in SESSIONS.items() if s.alive()
+            ]
             try:
                 workspaces = await asyncio.to_thread(scan_workspaces)
             except Exception as e:  # noqa: BLE001
