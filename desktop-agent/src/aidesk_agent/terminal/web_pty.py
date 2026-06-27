@@ -312,22 +312,16 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             pass
 
     # tmux attach 직전 — history 한 번 dump 해서 ws 로 직접 보냄. attach 가 *현재
-    # 화면만* 전송 (옛 출력 X). 모드 별 capture-pane scope:
-    # - 일반 mode (terminal 페이지 cols 150+) : -S -3000 으로 scrollback 3000 라인.
-    #   사용자가 위로 스크롤해 옛 명령 history 볼 수 있게.
-    # - background mode (mini preview, cols < 150) : 현재 grid 만 (No -S). xterm 의
-    #   14 rows = 현재 화면 의 마지막 N rows = claude TUI 의 *입력란 + footer* 영역.
-    #   scrollback dump 면 *xterm 의 14 rows 가 옛 부분 stuck* 사고.
+    # 화면만* 전송 (옛 출력 X). capture-pane -S -3000 으로 scrollback 3000 라인 보냄.
+    # background mode = mini preview 라 dump skip (대용량 history 가 mini xterm 에 누적
+    # 사고 차단). attach 후 *현재 화면 만* 자연 fill.
     history_dump: bytes | None = None
-    if tmux_session:
+    if tmux_session and not background_mode:
         try:
             # -e 제거 — escape cursor-move 가 옛 cols 좌표 기반이라 새 cols 의 xterm 에서
             # 계단식 정렬 사고. plain text 만 dump (과거 색상 손실, 정렬은 OK).
-            capture_cmd = ["tmux", "capture-pane", "-p", "-t", tmux_session]
-            if not background_mode:
-                capture_cmd[3:3] = ["-S", "-3000"]
             res = subprocess.run(
-                capture_cmd,
+                ["tmux", "capture-pane", "-p", "-S", "-3000", "-t", tmux_session],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 timeout=2.0,
             )
@@ -335,20 +329,8 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                 # capture-pane 의 plain output 은 \n (LF) 만 — xterm 은 LF 만 받으면
                 # cursor col 유지 → 각 line 의 다음 줄 시작이 옛 col (계단식 정렬). CR
                 # 추가해 \r\n 으로 정상 줄바꿈.
-                dump_lines = res.stdout.split(b"\n")
-                # background mode 시 *마지막 N lines* 만 (xterm rows + 여유). 사용자
-                # 의도 = 입력란 + footer 보임 — alt-screen 의 *맨 아래* 부분. capture-pane
-                # dump 전체 (24+ rows) 시 xterm 14 rows 의 *처음 14 = 위쪽 stuck* 사고.
-                if background_mode:
-                    # 정확 xterm rows 만 — viewport 가득 + 마지막 line = footer/입력란
-                    dump_lines = dump_lines[-rows:]
-                stdout_trim = b"\n".join(dump_lines)
-                # ANSI clear screen + cursor home (\x1b[2J\x1b[H) prefix — frontend
-                # xterm 의 *옛 잔재* 차단. AgentCardTerminal / WebTerminal 모두 코드
-                # 변경 없이 xterm 자동 reset.
-                dump_payload = b"\x1b[2J\x1b[H" + stdout_trim.replace(b"\n", b"\r\n")
-                history_dump = dump_payload
-                log.info("ws-terminal: history dump %d bytes session=%s background=%s lines=%d", len(history_dump), tmux_session, background_mode, len(dump_lines))
+                history_dump = res.stdout.replace(b"\n", b"\r\n")
+                log.info("ws-terminal: history dump %d bytes session=%s", len(history_dump), tmux_session)
         except (subprocess.TimeoutExpired, OSError) as e:
             log.warning("ws-terminal: capture-pane failed err=%s", e)
 
