@@ -40,6 +40,10 @@ class DesktopService:
 
         # 보고된 tmux session 이름 set — agent.tmux_session 이 여기 없으면 offline 강제
         reported_tmux = {t.name for t in req.tmux_sessions if t.name}
+        # claudeAlive=False 인 session — 사용자가 claude 종료한 case. 옛 path 는 zsh prompt
+        # 만 살아남은 tmux session 을 idle 그대로 → 'offline' 강제 (helper 0.8.57+).
+        # helper 옛 버전 (claudeAlive 미보고) 호환 — None 이면 그대로 통과.
+        dead_claude_tmux = {t.name for t in req.tmux_sessions if t.name and t.claude_alive is False}
 
         matched = 0
         updated = 0
@@ -56,6 +60,9 @@ class DesktopService:
             # tmux fact-check
             effective_status = w.status
             if agent.tmux_session and agent.tmux_session not in reported_tmux:
+                effective_status = "offline"
+            # claude detect — tmux 살아있어도 pane tree 에 claude 없으면 offline.
+            elif agent.tmux_session and agent.tmux_session in dead_claude_tmux:
                 effective_status = "offline"
 
             # compacting stick — helper reporter 의 status override 차단

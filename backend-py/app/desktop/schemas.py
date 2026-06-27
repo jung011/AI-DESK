@@ -18,6 +18,9 @@ class TmuxSessionItem(BaseModel):
     name: str | None = None
     created: int | None = None
     attached: bool | None = None
+    # helper 0.8.57+ — session pane tree 안 claude process 살아있는지. False = claude
+    # 종료됨 → status='offline' 강제 (zsh prompt 만 남은 tmux session 의 false idle 차단).
+    claude_alive: bool | None = Field(default=None, alias="claudeAlive")
 
     model_config = ConfigDict(populate_by_name=True)
 
