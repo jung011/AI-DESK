@@ -38,8 +38,10 @@ let disposed = false;
 // attach 시 *작은 client 의 grid 가 master* 라 *큰 화면 client* 의 wrap 영향.
 // helper web_pty 의 tmux session 에 aggressive-resize=on 자동 박혀있어야 *각
 // client 별 grid 분리* — wrap 영향 작아짐.
+// claude TUI alt-screen 의 24-row 표준 정합 — 14 row 시 cursor 가 viewport 밖
+// stuck (alt buffer = scrollback X). fontSize 줄여 같은 viewport 안에 24 row fit.
 const MINI_COLS = 100;
-const MINI_ROWS = 14;
+const MINI_ROWS = 24;
 
 function helperWsUrl(): string {
   if (typeof window === 'undefined') return '';
@@ -73,10 +75,14 @@ async function ensureXterm(): Promise<void> {
     cursorBlink: false,
     cursorStyle: 'bar',
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: 7,
-    lineHeight: 1.1,
+    // fontSize 5 + lineHeight 1.0 = 24 row 가 옛 14 row 와 거의 같은 height 차지
+    // (5 × 24 = 120 px). claude TUI alt-screen 24-row 표준 fit.
+    fontSize: 5,
+    lineHeight: 1.0,
     cols: MINI_COLS,
     rows: MINI_ROWS,
+    // convertEol — tmux 의 line feed (\n) 받으면 자동 \r\n 변환. cursor row 정확 follow.
+    convertEol: true,
     scrollback: 200,
     disableStdin: true,  // read-only — 키보드 차단
     allowProposedApi: true,
