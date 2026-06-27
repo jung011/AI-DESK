@@ -211,6 +211,38 @@ async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
         await _send_ack(backend_url, message_id)
 
 
+async def _handle_prompt_response(payload: dict) -> None:
+    """채팅 페이지에서 prompt-dialog 버튼 클릭 → backend → SSE → 이 handler.
+
+    payload = {agentId, tmuxSession, index}. helper 가 tmux send-keys 번호 + Enter 박음.
+    """
+    session = (payload.get("tmuxSession") or "").strip()
+    index = payload.get("index")
+    if not session or index is None:
+        log.warning("prompt-response: missing session or index — drop %r", payload)
+        return
+    if not await _tmux_has_session(session):
+        log.info("prompt-response: target session %s not on this Mac — ignored", session)
+        return
+    # claude TUI 의 option dialog 는 *번호 키* 하나 + Enter 로 선택. 다만 일부 dialog 는
+    # 번호 누르는 즉시 선택 → Enter 불필요. 안전하게 둘 다 박음 — 빈 Enter 는 dialog 닫힘 후
+    # claude prompt 의 빈 submit 이라 사고 없음.
+    try:
+        import subprocess
+        subprocess.run(
+            ["tmux", "send-keys", "-t", session, str(index)],
+            check=True, capture_output=True, timeout=2,
+        )
+        await asyncio.sleep(0.2)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", session, "Enter"],
+            check=False, capture_output=True, timeout=2,
+        )
+        log.info("prompt-response: session=%s index=%s sent", session, index)
+    except (subprocess.SubprocessError, OSError) as e:
+        log.warning("prompt-response: send-keys failed session=%s err=%s", session, e)
+
+
 async def _consume_once(backend_url: str) -> None:
     # rc20 — SSE recipient 별 filter. backend 가 현재 mac 의 tmux session 매칭 event 만 push.
     # outer loop 의 reconnect (2분 마다 ReadTimeout) 시 *현재 tmux 다시 scan* 으로 filter 자동 갱신.
@@ -261,13 +293,16 @@ async def _consume_once(backend_url: str) -> None:
                     if rescan_task.done():
                         # rescan_task 가 새 session 발견 → exception 재발사
                         rescan_task.result()
-                    if sse.event != "message.deliver":
+                    if sse.event not in ("message.deliver", "agent.prompt-response"):
                         log.debug("SSE skip event: %s", sse.event)
                         continue
                     try:
                         payload = sse.json()
                     except json.JSONDecodeError:
                         log.warning("SSE payload not JSON: %r", sse.data[:200])
+                        continue
+                    if sse.event == "agent.prompt-response":
+                        asyncio.create_task(_handle_prompt_response(payload))
                         continue
                     # 같은 tmux session 으로 가는 메시지는 직렬 처리 — race + interleave 방지.
                     # 빈 session 이면 _handle_message_deliver 가 알아서 drop 하니까 그쪽으로 직접 넘김.

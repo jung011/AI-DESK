@@ -18,6 +18,9 @@ class TmuxSessionInfo:
     windows: int
     # session 의 어떤 pane 의 자식 process tree 에 claude 살아있는지. False = claude 종료됨.
     claude_alive: bool = False
+    # helper 0.8.69+ — claude TUI 의 yes/no option dialog 검출 결과.
+    # None = dialog 없음, dict = {"options": [{"index": 1, "label": "Yes"}, ...]}.
+    prompt_dialog: dict | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -25,6 +28,7 @@ class TmuxSessionInfo:
             "attached": self.attached,
             "windows": self.windows,
             "claudeAlive": self.claude_alive,
+            "promptDialog": self.prompt_dialog,
         }
 
 
@@ -114,6 +118,8 @@ def scan_sessions() -> list[TmuxSessionInfo]:
         return []
     # ps tree 한 번 만 build — N session 의 claude detection 에 공유.
     ps_tree = _build_ps_tree()
+    # prompt_dialog detection — claude alive 인 session 만 capture-pane 시도 (cost 절약).
+    from .prompt_detector import detect_prompt_dialog
     results: list[TmuxSessionInfo] = []
     for line in proc.stdout.splitlines():
         parts = line.split("\t")
@@ -121,12 +127,14 @@ def scan_sessions() -> list[TmuxSessionInfo]:
             continue
         name, attached, windows = parts[0], parts[1], parts[2]
         try:
+            alive = _session_has_claude(name, ps_tree) if ps_tree else False
             results.append(
                 TmuxSessionInfo(
                     name=name,
                     attached=attached != "0",
                     windows=int(windows),
-                    claude_alive=_session_has_claude(name, ps_tree) if ps_tree else False,
+                    claude_alive=alive,
+                    prompt_dialog=detect_prompt_dialog(name) if alive else None,
                 )
             )
         except ValueError:

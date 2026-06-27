@@ -133,3 +133,41 @@ async def update_status(
     if not ok_:
         return fail(404, "agent not found")  # type: ignore[return-value]
     return ok(None)
+
+
+from pydantic import BaseModel  # noqa: E402
+
+from app.messages.sse import broker  # noqa: E402
+
+
+class PromptRespondRq(BaseModel):
+    index: int  # 1-based option number — helper 가 tmux send-keys 박음
+
+
+@router.post("/{agent_id}/prompt-respond", response_model=ApiEnvelope[None])
+async def prompt_respond(
+    agent_id: str,
+    body: PromptRespondRq,
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[None]:
+    """채팅 페이지의 *prompt-dialog 버튼 클릭* 처리. agent 의 tmux session 으로 send-keys
+    번호 전달 (helper sse_consumer 가 SSE event 받아 처리).
+
+    rc78+ — claude TUI 의 yes/no option dialog 가 채팅 페이지에서 응답 가능하게.
+    [[project-prompt-dialog-respond]] (TBD memory).
+    """
+    svc = AgentService(db)
+    item = svc.detail(agent_id)
+    if item is None:
+        return fail(404, "agent not found")  # type: ignore[return-value]
+    if not item.tmux_session:
+        return fail(400, "agent has no tmux session")  # type: ignore[return-value]
+    broker.publish(
+        "agent.prompt-response",
+        {
+            "agentId": agent_id,
+            "tmuxSession": item.tmux_session,
+            "index": body.index,
+        },
+    )
+    return ok(None)
