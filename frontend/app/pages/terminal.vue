@@ -26,6 +26,7 @@
       <div class="term-pane term-pane-conv">
         <WebTerminal
           ref="webTermRef"
+          :key="activePartner?.agentId || 'none'"
           :partner="activePartner"
           :show-back="true"
           @back="showTermMobile = false"
