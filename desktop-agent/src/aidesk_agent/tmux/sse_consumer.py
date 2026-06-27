@@ -214,46 +214,77 @@ async def _handle_message_deliver(payload: dict, backend_url: str) -> None:
 async def _consume_once(backend_url: str) -> None:
     # rc20 — SSE recipient 별 filter. backend 가 현재 mac 의 tmux session 매칭 event 만 push.
     # outer loop 의 reconnect (2분 마다 ReadTimeout) 시 *현재 tmux 다시 scan* 으로 filter 자동 갱신.
+    # 0.8.68 추가: connect 후 새 tmux session 생기면 즉시 reconnect — 옛엔 다음 ReadTimeout
+    # (120s idle) 까지 filter 갱신 안 돼 신규 에이전트 자동응답 못 받는 사고. 15s 주기 rescan.
     from urllib.parse import quote
     from ..tmux import scan_sessions
     try:
         sessions = scan_sessions()
-        tmux_names = sorted({s.name for s in sessions if s.name})
+        initial_names = sorted({s.name for s in sessions if s.name})
     except Exception:  # noqa: BLE001 — scan 실패 시 빈 filter (broadcast 모드 fallback)
-        tmux_names = []
+        initial_names = []
     base = f"{backend_url.rstrip('/')}/api/desktop/events"
-    if tmux_names:
-        url = base + "?filter=" + quote(",".join(tmux_names), safe="")
+    if initial_names:
+        url = base + "?filter=" + quote(",".join(initial_names), safe="")
     else:
         url = base
+    initial_set = set(initial_names)
     # VPN / 사외 LAN 환경에서 라우터가 idle TCP 를 silent 끊어도 read=None 이면
     # zombie connection 으로 영원히 wait — deliver event 누락. read timeout 으로
     # N초 event 없으면 ReadTimeout 발생 → 바깥의 consumer_loop 가 자동 reconnect.
     # 120s = VPN 일반 idle timeout (5~10분) 보다 짧아 zombie 발생 전 갱신.
     timeout = httpx.Timeout(connect=5.0, read=120.0, write=5.0, pool=5.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        async with aconnect_sse(client, "GET", url) as event_source:
-            log.info("SSE connected: %s", url)
-            mark_sse_event()  # 연결 직후 idle timer 리셋 — watchdog 의 false-positive 방지
-            async for sse in event_source.aiter_sse():
-                mark_sse_event()  # 어떤 event 든 (heartbeat comment / message.deliver) 갱신
-                if sse.event != "message.deliver":
-                    log.debug("SSE skip event: %s", sse.event)
-                    continue
-                try:
-                    payload = sse.json()
-                except json.JSONDecodeError:
-                    log.warning("SSE payload not JSON: %r", sse.data[:200])
-                    continue
-                # 같은 tmux session 으로 가는 메시지는 직렬 처리 — race + interleave 방지.
-                # 빈 session 이면 _handle_message_deliver 가 알아서 drop 하니까 그쪽으로 직접 넘김.
-                target_session = (payload.get("toTmuxSession") or "").strip()
-                if target_session:
-                    asyncio.create_task(
-                        _enqueue_for_session(target_session, payload, backend_url)
-                    )
-                else:
-                    asyncio.create_task(_handle_message_deliver(payload, backend_url))
+
+    async def _rescan_loop() -> None:
+        """15s 주기로 tmux scan — 새 session 생기면 ConnectionAbortedError 발사해
+        outer consumer_loop 의 reconnect 박음 (filter 갱신)."""
+        while True:
+            await asyncio.sleep(15)
+            try:
+                now_sessions = scan_sessions()
+                now_set = {s.name for s in now_sessions if s.name}
+            except Exception:  # noqa: BLE001
+                continue
+            new = now_set - initial_set
+            if new:
+                log.info("SSE rescan: new tmux session(s) %s — reconnect for filter", sorted(new))
+                raise ConnectionAbortedError("new tmux session — reconnect")
+
+    rescan_task = asyncio.create_task(_rescan_loop())
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with aconnect_sse(client, "GET", url) as event_source:
+                log.info("SSE connected: %s", url)
+                mark_sse_event()  # 연결 직후 idle timer 리셋 — watchdog 의 false-positive 방지
+                async for sse in event_source.aiter_sse():
+                    mark_sse_event()  # 어떤 event 든 (heartbeat comment / message.deliver) 갱신
+                    if rescan_task.done():
+                        # rescan_task 가 새 session 발견 → exception 재발사
+                        rescan_task.result()
+                    if sse.event != "message.deliver":
+                        log.debug("SSE skip event: %s", sse.event)
+                        continue
+                    try:
+                        payload = sse.json()
+                    except json.JSONDecodeError:
+                        log.warning("SSE payload not JSON: %r", sse.data[:200])
+                        continue
+                    # 같은 tmux session 으로 가는 메시지는 직렬 처리 — race + interleave 방지.
+                    # 빈 session 이면 _handle_message_deliver 가 알아서 drop 하니까 그쪽으로 직접 넘김.
+                    target_session = (payload.get("toTmuxSession") or "").strip()
+                    if target_session:
+                        asyncio.create_task(
+                            _enqueue_for_session(target_session, payload, backend_url)
+                        )
+                    else:
+                        asyncio.create_task(_handle_message_deliver(payload, backend_url))
+    finally:
+        if not rescan_task.done():
+            rescan_task.cancel()
+            try:
+                await rescan_task
+            except (asyncio.CancelledError, ConnectionAbortedError):
+                pass
 
 
 async def consumer_loop(backend_url: str) -> None:
