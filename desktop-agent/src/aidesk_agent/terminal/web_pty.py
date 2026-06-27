@@ -158,6 +158,11 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # agentName — *처음 claude 부팅* 시 identity prompt 자동 inject 용. 옛
     # start_claude_with_mode 의 _build_identity_prompt 부활.
     agent_name = request.query.get("agentName", "").strip()
+    # background=1 → mini preview (대시보드 카드) 같은 *passive client* 표식. 큰
+    # client (웹 터미널) 와 *같은 tmux session* 에 attach 시 resize-window 박지 않도록
+    # skip — 박으면 tmux grid 가 작은 100×14 으로 master 잡혀 큰 client 에 padding `·`
+    # 패딩 사고. background client 는 *큰 client 의 grid* 따라가서 read-only 표시.
+    background_mode = request.query.get("background", "").strip() == "1"
 
     log.info(
         "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s tmux=%s",
@@ -286,7 +291,9 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     # tmux session 의 cols/rows 를 client xterm size 와 동일하게 resize. mismatch 시
     # capture-pane / attach 출력의 grid 가 xterm parser 의 viewport 와 안 맞아 정렬 깨짐.
-    if tmux_session:
+    # background_mode (mini preview) 는 skip — 큰 client (웹 터미널) 의 grid 따라가야
+    # 두 client 동시 attach + 새로고침 race 차단 (점 padding 사고 근본 fix).
+    if tmux_session and not background_mode:
         try:
             subprocess.run(
                 ["tmux", "resize-window", "-t", tmux_session, "-x", str(cols), "-y", str(rows)],
