@@ -57,7 +57,10 @@ class AgentService:
         Mode:
         1) dashboard cookie 인증 호출 (caller_agent_id=None) — sameUser 안 agent
         2) mcp 의 list_agents (caller_agent_id 주어짐) — caller 의 channel 기준 권한 filter
-        3) 비인증 + caller 모름 — fallback 전체 (mcp ensureAgentId 의 cwd 매칭용)
+        3) 비인증 + caller 모름 — *빈 list*. 옛 path 는 list_all_active 였지만 frontend
+           cookie 인증 race 시점에도 같이 발화해서 sameUser 격리 위반 사고 (다른 user 의
+           agent 잠시 노출). 정상 path 면 frontend 가 middleware redirect, mcp 는
+           callerAgentId 박음. 빈 list 가 안전 default.
         """
         caller: AiAgent | None = None
         me = owner_account_sn
@@ -67,8 +70,9 @@ class AgentService:
                 me = caller.owner_account_sn
 
         if me is None:
-            rows = self.repo.list_all_active()
-        elif caller is not None:
+            # 비인증 + caller 모름 — 보안 default (옛 list_all_active 폐기, sameUser 격리 위반 차단)
+            return AgentListRs(items=[])
+        if caller is not None:
             # channel-aware filter — canCommunicate 통과한 agent 만
             all_rows = self.repo.list_all_active()
             rows = [a for a in all_rows if can_communicate(caller, a)]
