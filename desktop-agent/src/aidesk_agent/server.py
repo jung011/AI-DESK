@@ -649,6 +649,11 @@ async def _start_background_tasks(app: web.Application) -> None:
     global _LATEST_BROKER  # noqa: PLW0603
     _LATEST_BROKER = broker
     broker.start()
+    # macOS — tmux 부재 시 brew install 자동. helper 의 web 터미널 / 외부 터미널 /
+    # agent attach 등 핵심 path 가 tmux 의존 ([[project-helper-multiplexer-bundling-followup]]).
+    # async task — 1~2분 brew install 동안 helper 의 다른 path 는 정상 작동.
+    from .tmux.installer import ensure_tmux_installed
+    app["tmux_install_task"] = asyncio.create_task(ensure_tmux_installed())
     app["reporter_task"] = asyncio.create_task(reporter_loop(backend_url, interval))
     app["sse_task"] = asyncio.create_task(consumer_loop(backend_url))
     # 좀비 self-heal — SSE idle 90s+ 시 process self-kill → LaunchAgent KeepAlive 가 재기동.
@@ -674,7 +679,7 @@ async def _stop_background_tasks(app: web.Application) -> None:
             await broker.stop()
         except Exception:  # noqa: BLE001
             log.exception("broker stop failed")
-    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task", "status_history_task"):
+    for key in ("reporter_task", "sse_task", "bot_adapter_monitor_task", "status_history_task", "tmux_install_task"):
         task = app.get(key)
         if task is None:
             continue
