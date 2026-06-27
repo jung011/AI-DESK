@@ -45,6 +45,17 @@ class AgentRepository:
         """Spring selectByIdAnyOwner — caller 인증 시 owner 검증 전 lookup."""
         return self.db.execute(select(AiAgent).where(AiAgent.agent_id == agent_id)).scalar_one_or_none()
 
+    def find_human_for_account(self, account_sn: int) -> AiAgent | None:
+        """휴먼 entity (model='human') row 조회 — owner_account_sn 매칭. task push 시
+        from_agent_id 로 사용. [[project-user-entity-model]] + [[feedback-human-sender-policy-exempt]]."""
+        return self.db.execute(
+            select(AiAgent).where(
+                AiAgent.owner_account_sn == account_sn,
+                AiAgent.model == "human",
+                AiAgent.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+
     def list_by_ids_any_owner(self, agent_ids: list[str]) -> list[AiAgent]:
         """rc50 — N+1 SELECT 회피용 batch fetch. 빈 list 면 empty return.
 

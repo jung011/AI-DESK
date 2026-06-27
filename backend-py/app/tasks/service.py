@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.agents.repository import AgentRepository
 from app.messages.attachment_repository import AttachmentRepository
+from app.messages.schemas import MessageCreateRq
+from app.messages.service import MessageService
 from app.messages.sse import broker
 from app.tasks.models import AiTask
 from app.tasks.repository import AiTaskRepository
@@ -47,6 +49,8 @@ class AiTaskService:
             "agent.task.changed",
             {"event": "created", "taskId": task.task_id, "agentId": task.agent_id},
         )
+        # 자동 push — 다음 todo task 가 있고 옛 in_progress 없으면 휴먼→AI 메시지 박음.
+        self._push_next_to_agent(agent.agent_id, requester_account_sn)
         return self._to_item(task)
 
     def list_for_agent(self, agent_id: str) -> TaskListRs:
@@ -66,11 +70,16 @@ class AiTaskService:
         return ok
 
     def complete(self, task_id: str, result: str | None) -> bool:
+        task = self.repo.find_by_id(task_id)
+        if task is None:
+            return False
         n = self.repo.mark_completed(task_id, result)
         self.db.commit()
         ok = n > 0
         if ok:
             broker.publish("agent.task.changed", {"event": "completed", "taskId": task_id})
+            # 다음 todo 자동 push
+            self._push_next_to_agent(task.agent_id, task.requester_account_sn)
         return ok
 
     def cancel(self, task_id: str) -> bool:
@@ -80,6 +89,53 @@ class AiTaskService:
         if ok:
             broker.publish("agent.task.changed", {"event": "canceled", "taskId": task_id})
         return ok
+
+    def _push_next_to_agent(self, agent_id: str, requester_account_sn: int | None) -> None:
+        """다음 todo task 가 있고 옛 in_progress 가 없으면 휴먼→AI 메시지 박음.
+
+        AI 가 메시지 받음 → identity prompt 에 박힌 *task lifecycle* 안내 따라
+        task_start(task_id) mcp tool 호출 → 처리 → task_complete(task_id) 호출.
+
+        from = 휴먼 entity (model='human', owner_account_sn 매칭). 휴먼 sender 는
+        [[feedback-human-sender-policy-exempt]] 의 context 한도 차단 예외.
+        """
+        if requester_account_sn is None:
+            return
+        nxt = self.repo.list_next_todo_for_agent(agent_id)
+        if nxt is None:
+            return
+        human = self.agent_repo.find_human_for_account(requester_account_sn)
+        if human is None:
+            log.warning(
+                "task push: human entity for account_sn=%s not found — skip",
+                requester_account_sn,
+            )
+            return
+        att_rows = self.att_repo.find_by_task_id(nxt.task_id)
+        # task 메시지 의 content — task_id 메타 박힘. AI 가 추출해서 task_start 호출.
+        # 첨부는 content 메타에 GET URL 박음 — task_attachment row 와 message_attachment
+        # link 분리 (task 의 attachment 가 message 의 attachment 로 *재link* 되면 owner
+        # ambiguity 사고 우려). AI 가 content 의 URL 통해 직접 다운로드.
+        att_lines = []
+        for a in att_rows:
+            size_kb = (a.size_bytes + 1023) // 1024
+            att_lines.append(
+                f"- {a.original_filename} ({size_kb}KB) — GET /api/attachments/{a.attachment_id}"
+            )
+        content = f"[task:{nxt.task_id}]\n{nxt.content}"
+        if att_lines:
+            content += "\n\n첨부:\n" + "\n".join(att_lines)
+        body = MessageCreateRq(
+            fromAgentId=human.agent_id,
+            toAgentId=agent_id,
+            content=content,
+            attachmentIds=[],
+        )
+        try:
+            msg_svc = MessageService(self.db)
+            msg_svc.create(body)
+        except Exception as e:  # noqa: BLE001
+            log.warning("task push: MessageService.create failed task=%s err=%s", nxt.task_id, e)
 
     def _to_item(self, t: AiTask) -> TaskItem:
         agent = self.agent_repo.find_by_agent_id(t.agent_id)
