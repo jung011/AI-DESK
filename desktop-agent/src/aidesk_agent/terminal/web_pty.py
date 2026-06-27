@@ -126,23 +126,47 @@ async def _handle_background_polling(
 ) -> None:
     """background_mode (대시보드 mini preview) 전용 path — *attach 안 함, pty fork 안 함*.
 
-    tmux capture-pane 의 *마지막 N rows* dump 를 polling 으로 ws 에 send. xterm 측은
-    *작은 viewport* 에 wrap 표시 — read-only snapshot.
+    옵션 F = 원본 tmux window 의 grid (cols/rows) 를 frontend 에 JSON 으로 알려준 후
+    capture-pane 의 *마지막 N rows* dump polling. frontend 가 *원본 cols 기반* xterm
+    재박음 → wrap 사고 없음 (cursor 좌표 정확). 글자는 작아짐 (fontSize 자동 축소).
 
     근본 사고 = 두 client (mini preview + 웹 터미널) 동시 attach + 다른 grid 시 tmux
     가 *active client 의 grid* 박아 passive client 가 *큰 grid 의 일부 crop* 만
     보임. polling path = *attach 안 함* 으로 grid race 자체 회피.
     """
     log = logging.getLogger("aidesk-agent.web-pty")
+    # 원본 tmux window 의 grid (cols/rows) 알아내기 — 첫 ws message 로 frontend 에
+    # JSON send. frontend 가 xterm 의 cols 를 그 값으로 재박음.
+    src_cols, src_rows = 80, 24
     try:
-        # 초기 화면 = ANSI reset + cursor home
+        result = subprocess.run(
+            ["tmux", "display-message", "-t", tmux_session, "-p",
+             "#{window_width} #{window_height}"],
+            capture_output=True, timeout=1.0, check=False, text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            parts = result.stdout.strip().split()
+            if len(parts) == 2:
+                src_cols = int(parts[0])
+                src_rows = int(parts[1])
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        pass
+
+    log.info(
+        "ws-terminal: background polling start tmux=%s src_grid=%dx%d viewport_rows=%d",
+        tmux_session, src_cols, src_rows, rows,
+    )
+
+    try:
+        # 첫 message = 원본 grid info (TEXT JSON). frontend 가 받아 xterm resize.
+        await ws.send_str(json.dumps({"type": "info", "cols": src_cols, "rows": rows}))
+        # 그 후 binary = ANSI reset + cursor home
         await ws.send_bytes(b"\x1b[2J\x1b[H")
     except Exception:
         return
 
     last_payload: bytes = b""
     poll_rows = max(rows, 14)
-    log.info("ws-terminal: background polling start tmux=%s rows=%d", tmux_session, poll_rows)
 
     while not ws.closed:
         try:
