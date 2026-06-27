@@ -126,6 +126,10 @@ function connectWs() {
     } else if (typeof ev.data === 'string') {
       term.write(ev.data);
     }
+    // mini preview = background read-only — 사용자 scroll 의도 X. 항상 bottom 으로
+    // 강제 (활성 session 의 output 빠르게 누적 시 xterm 의 *사용자 scroll 보존* 정책
+    // 으로 viewport 옛 위치 stuck 사고 차단).
+    try { term.scrollToBottom(); } catch { /* ignore */ }
   };
   ws.onclose = () => {
     if (disposed) return;
