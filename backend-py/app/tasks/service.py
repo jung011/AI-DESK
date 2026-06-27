@@ -55,11 +55,18 @@ class AiTaskService:
 
     def list_for_agent(self, agent_id: str) -> TaskListRs:
         rows = self.repo.list_by_agent(agent_id)
-        return TaskListRs(items=[self._to_item(t) for t in rows])
+        items = [self._to_item(t) for t in rows]
+        # [[feedback-rc50-readonly-commit-n-plus-1]] — read-only endpoint 도 implicit
+        # transaction 종료 필요. autocommit=False 에서 commit 안 박으면 *idle in
+        # transaction* 누적 → pool 고갈 사고 패턴.
+        self.db.commit()
+        return TaskListRs(items=items)
 
     def list_recent(self) -> TaskListRs:
         rows = self.repo.list_recent()
-        return TaskListRs(items=[self._to_item(t) for t in rows])
+        items = [self._to_item(t) for t in rows]
+        self.db.commit()
+        return TaskListRs(items=items)
 
     def start(self, task_id: str) -> bool:
         n = self.repo.mark_started(task_id)
@@ -143,6 +150,13 @@ class AiTaskService:
             msg_svc.create(body)
         except Exception as e:  # noqa: BLE001
             log.warning("task push: MessageService.create failed task=%s err=%s", nxt.task_id, e)
+            # [[feedback-resource-cleanup-rule]] 1번 — 외부 자원 (DB) 처리 fail 시 rollback
+            # 박지 않으면 transaction failed state 가 다음 query 막음. Depends(get_db) 의
+            # session 도 명시 rollback 박는 게 안전 (옛 사고 패턴 차단).
+            try:
+                self.db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _to_item(self, t: AiTask) -> TaskItem:
         agent = self.agent_repo.find_by_agent_id(t.agent_id)
