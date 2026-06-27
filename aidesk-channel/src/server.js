@@ -228,6 +228,18 @@ async function ensureAgentId() {
       MY_AGENT_NAME = byEnv.agentName || null;
       return AGENT_ID;
     }
+    // sameUser 격리 (bepy-rc63) 로 비인증 list 호출이 빈 응답 → byEnv 못 찾음.
+    // detail endpoint 는 sameUser filter 없으므로 ENV_AGENT_ID 직접 조회로 fallback.
+    try {
+      const self = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}`);
+      if (self?.data?.agentId === ENV_AGENT_ID) {
+        AGENT_ID = ENV_AGENT_ID;
+        MY_AGENT_NAME = self.data.agentName || null;
+        return AGENT_ID;
+      }
+    } catch (e) {
+      dbg(`aidesk-channel: self detail lookup failed: ${e?.message ?? e}`);
+    }
     dbg(`aidesk-channel: AIDESK_AGENT_ID=${ENV_AGENT_ID} not in DB; falling back to cwd match`);
   }
 
