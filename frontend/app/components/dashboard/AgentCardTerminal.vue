@@ -119,22 +119,25 @@ function connectWs() {
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   let dbgWriteCount = 0;
+  // alt-screen escape 제거 — claude TUI 의 \x1b[?1049h (alt 진입) / \x1b[?1049l (alt
+  // 종료) 가 xterm 을 alt buffer 로 보내면 mini preview viewport 가 옛 content stuck
+  // + 새 write 는 alt buffer 안 누적 (보이지 않음). filter out 으로 xterm 항상
+  // normal buffer 에만 write → cursor 자동 follow + 최신 line 표시.
+  const stripAltScreen = (s: string): string =>
+    s.replace(/\x1b\[\?(1047|1049|47)[hl]/g, '');
   ws.onmessage = (ev) => {
     if (!term) return;
     if (ev.data instanceof ArrayBuffer) {
-      const bytes = new Uint8Array(ev.data);
-      term.write(bytes);
+      const text = new TextDecoder().decode(new Uint8Array(ev.data));
+      term.write(stripAltScreen(text));
     } else if (typeof ev.data === 'string') {
-      term.write(ev.data);
+      term.write(stripAltScreen(ev.data));
     }
-    // mini preview = read-only — 항상 bottom 으로 강제. 활성 session 의 write 마다
-    // viewport 가 최신 line 따라가도록.
     try { term.scrollToBottom(); } catch { /* ignore */ }
     if (++dbgWriteCount % 50 === 0) {
-      // debug log — N 번 write 마다 buffer 상태
       try {
         const buf = term.buffer?.active;
-        console.log(`[AgentCardTerminal:${props.agentId.slice(0,8)}] writes=${dbgWriteCount} viewportY=${buf?.viewportY} baseY=${buf?.baseY} length=${buf?.length}`);
+        console.log(`[AgentCardTerminal:${props.agentId.slice(0,8)}] writes=${dbgWriteCount} viewportY=${buf?.viewportY} baseY=${buf?.baseY} length=${buf?.length} bufferType=${term.buffer?.active === term.buffer?.normal ? 'normal' : 'alt'}`);
       } catch { /* ignore */ }
     }
   };
