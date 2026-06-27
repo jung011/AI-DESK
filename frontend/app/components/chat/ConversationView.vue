@@ -284,6 +284,11 @@ function scrollToBottom(): void {
 watch(() => props.messages.length, () => {
   void nextTick().then(scrollToBottom);
 });
+// partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
+// messages.length 가 같은 N 이면 위 watch 안 trigger → 옛 scroll 위치 stuck 사고 fix.
+watch(() => props.partner?.agentId, () => {
+  void nextTick().then(scrollToBottom);
+});
 
 function statusLabel(s: AgentStatus): string {
   // 3 layer 통합: 온라인 / 오프라인 / 압축중.
