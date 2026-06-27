@@ -519,7 +519,15 @@ function connectWs(): void {
       return;
     }
     const data = ev.data instanceof ArrayBuffer ? new Uint8Array(ev.data) : ev.data;
-    if (term && data) term.write(data);
+    if (term && data) {
+      // 점 10+ 연속 패딩 strip — tmux passive client 의 alt-screen wrap padding 사고.
+      // mini preview (cols=100) 와 web 터미널 (cols=200) 동시 attach 시 작은 grid 가
+      // master → 큰 client 에서 mid dot (`·`) 또는 plain dot (`.`) 패딩 표시. 화면
+      // 가독성 차단 위해 10+ 연속 만 매칭 (정상 ANSI sequence 안 dot 패턴 회피).
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(data);
+      const filtered = text.replace(/·{10,}/g, '').replace(/\.{10,}/g, '');
+      term.write(filtered);
+    }
   };
   s.onerror = () => {
     if (term) term.writeln('\r\n\x1b[38;2;248;113;113m✗ helper WS 오류\x1b[0m');
