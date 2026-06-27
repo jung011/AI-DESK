@@ -33,7 +33,7 @@
         <WebTerminal
           v-for="aid in mountedAgentIds"
           :key="aid"
-          ref="webTermRef"
+          :ref="(el) => registerWebTermRef(aid, el)"
           v-show="aid === partnerId"
           :partner="partnersById[aid] || null"
           :is-active="aid === partnerId"
@@ -200,7 +200,14 @@ async function onSelectPartner(agentId: string): Promise<void> {
 // AgentList 의 select 가 먼저 처리됨 (active partner 변경) → ref 의 pasteCommand 호출.
 // dev/macOS = Agent Teams 분할창 활성. *옛 대화 있을 때만* -c 박음
 // (없으면 `No conversation found to continue` 에러).
-const webTermRef = ref<{ pasteCommand?: (text: string) => void } | null>(null);
+// B 옵션 refactor 후 — v-for 의 WebTerminal 인스턴스가 agentId 별 → ref function 으로
+// Map<agentId, component> 등록 → 호출 시 partnerId 의 인스턴스 lookup.
+type WebTermInstance = { pasteCommand?: (text: string) => void };
+const webTermRefs = new Map<string, WebTermInstance>();
+function registerWebTermRef(aid: string, el: unknown): void {
+  if (el) webTermRefs.set(aid, el as WebTermInstance);
+  else webTermRefs.delete(aid);
+}
 async function onOpenClaude(agentId: string): Promise<void> {
   const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
   let hasPast = false;
@@ -226,7 +233,7 @@ async function onOpenClaude(agentId: string): Promise<void> {
     // Agent Teams 분할창 flag (--teammate-mode tmux) 는 ~/.claude/settings.json
     // 의 teammateMode=auto 가 *환경 자동 검출* — 명령어 안 박음.
     const cmd = `claude --dangerously-load-development-channels server:aidesk-channel${continueFlag}`;
-    webTermRef.value?.pasteCommand?.(cmd);
+    webTermRefs.get(agentId)?.pasteCommand?.(cmd);
   }, 600);
 }
 
