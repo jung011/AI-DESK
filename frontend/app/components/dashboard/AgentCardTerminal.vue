@@ -48,10 +48,6 @@ function helperWsUrl(): string {
     rows: String(MINI_ROWS),
     agentId: props.agentId,
     tmuxSession: props.tmuxSession,
-    // background=1 → helper 가 tmux resize-window + history dump skip. 같은 session 에
-    // 터미널 페이지의 큰 client + mini preview 의 작은 client 동시 attach 시 작은 cols
-    // 가 session global cols 강제 → 큰 viewport 에 padding (·) 사고 차단.
-    background: '1',
   });
   // workspaceDir 박혀있으면 cwd 전달 — helper 가 *tmux new-session 처음 만들 때*
   // 정확한 workspace 에서 claude 시작 (workspace trust dialog 회피).
@@ -110,10 +106,6 @@ async function ensureXterm(): Promise<void> {
 
 function connectWs() {
   if (disposed) return;
-  // reconnect 시 xterm 옛 grid 잔재 차단 — background mode 라 history dump skip 인데
-  // xterm reset 안 하면 옛 화면 (예: 진행 중인 conversation 의 alt-screen 잔재) 그대로
-  // 보임. WebTerminal.vue 의 connectWs 와 동일 패턴.
-  if (term) try { term.reset(); } catch { /* ignore */ }
   const url = helperWsUrl();
   if (!url) return;
   ws = new WebSocket(url);
@@ -126,10 +118,6 @@ function connectWs() {
     } else if (typeof ev.data === 'string') {
       term.write(ev.data);
     }
-    // mini preview = background read-only — 사용자 scroll 의도 X. 항상 bottom 으로
-    // 강제 (활성 session 의 output 빠르게 누적 시 xterm 의 *사용자 scroll 보존* 정책
-    // 으로 viewport 옛 위치 stuck 사고 차단).
-    try { term.scrollToBottom(); } catch { /* ignore */ }
   };
   ws.onclose = () => {
     if (disposed) return;
@@ -147,15 +135,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  // ws.close / term.dispose 비동기 (setTimeout 0) — 대시보드 의 14+ mini preview 동시
-  // unmount 시 동기 cleanup 의 누적 시간이 router navigation 을 지연시켜 *click 무반응*
-  // 사고. cleanup 은 background 에서 진행.
-  const oldWs = ws; ws = null;
-  const oldTerm = term; term = null;
-  setTimeout(() => {
-    if (oldWs) { try { oldWs.close(); } catch { /* ignore */ } }
-    if (oldTerm) { try { oldTerm.dispose(); } catch { /* ignore */ } }
-  }, 0);
+  if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
+  if (term) { try { term.dispose(); } catch { /* ignore */ } term = null; }
 });
 </script>
 
