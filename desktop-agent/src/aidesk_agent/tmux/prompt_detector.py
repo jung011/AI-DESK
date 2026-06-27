@@ -19,7 +19,10 @@ import subprocess
 
 log = logging.getLogger(__name__)
 
-_OPTION_LINE_RE = re.compile(r"^\s*(\d+)\.\s+(.+?)\s*$")
+# prefix 에 *cursor character* (`❯` / `>` / `›`) 허용 — claude TUI 가 *현재 선택 option*
+# 첫 line 에 cursor 박는 패턴. 옛 정규식은 \s 만 박아 cursor line 매칭 누락 → sequential
+# check fail → dialog 미감지 사고 fix.
+_OPTION_LINE_RE = re.compile(r"^[\s❯>›]*(\d+)\.\s+(.+?)\s*$")
 _FOOTER_INDICATORS = ("for agents", "❯")
 _FOOTER_SEARCH_DEPTH = 8  # 마지막 N line 안에서 footer anchor 찾기
 _OPTION_SEARCH_DEPTH = 12  # footer 위 N line 안에서 option list 찾기
