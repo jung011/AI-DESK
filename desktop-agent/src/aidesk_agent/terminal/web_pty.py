@@ -239,7 +239,16 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     check=False,
                 )
-                log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off + aggressive-resize on)", tmux_session, cwd)
+                # detach-on-destroy off — 사용자 페이지 reload 시 ws disconnect → SIGHUP →
+                # tmux client 끊김. 사용자 mac global tmux 의 detach-on-destroy on 이면
+                # 마지막 client 끊긴 시점 *session 자체 종료* → claude 같이 죽음. session
+                # 단위 off 박아 사용자 환경 보존 + claude 살림.
+                subprocess.run(
+                    ["tmux", "set-option", "-t", tmux_session, "detach-on-destroy", "off"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                log.info("ws-terminal: tmux new-session %s @ cwd=%s (mouse off + aggressive-resize on + detach-on-destroy off)", tmux_session, cwd)
                 # 옵션 C — identity prompt 자동 inject 는 *background polling* 으로.
                 # 사용자가 *햄버거 → 클로드 열기* + Enter 직접 → zsh 가 claude 실행 →
                 # Channels confirmation dialog → polling 이 dialog 통과 + claude prompt
@@ -263,6 +272,17 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
             except OSError as e:
                 log.warning("ws-terminal: tmux new-session failed err=%s", e)
                 tmux_session = ""  # fallback
+
+    # 기존 session attach 든 새 session 이든 detach-on-destroy off 보장 — 사용자 mac
+    # global tmux 의 'on' default 가 *마지막 client 끊기면 session 종료* → claude 같이
+    # 죽는 사고 차단. 새 session 분기에선 위에서 박았지만 *옛 session attach* case 도
+    # 같이 cover. idempotent — 이미 off 면 no-op.
+    if tmux_session:
+        subprocess.run(
+            ["tmux", "set-option", "-t", tmux_session, "detach-on-destroy", "off"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=False,
+        )
 
     # tmux session 의 cols/rows 를 client xterm size 와 동일하게 resize. mismatch 시
     # capture-pane / attach 출력의 grid 가 xterm parser 의 viewport 와 안 맞아 정렬 깨짐.
