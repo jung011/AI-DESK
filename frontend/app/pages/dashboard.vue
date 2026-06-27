@@ -15,21 +15,14 @@
       </div>
     </div>
 
-    <!-- 로컬 통합 Claude 사용량 -->
-    <LocalUsageBar />
+    <!-- 상단 통계 — 세션 사용률 + 옛 daemon 누적 + 정리 button 2열 layout (옵션 H step 4) -->
+    <div class="dashboard-top-stats">
+      <LocalUsageBar />
+      <LocalResourceBar />
+    </div>
 
-    <!-- 로컬 mac 의 리소스 누적 (재부팅 권장 모니터) — uptime + daemon %. 클릭 → /resource-cleanup -->
-    <LocalResourceBar />
-
-    <!-- 요약 카드 -->
-    <SummaryCardGrid :summary="summary" />
-
-    <!-- 필터 탭 + 이름 검색 -->
-    <FilterBar
-      :status="status"
-      :query="query"
-      @update:status="status = $event"
-      @update:query="query = $event" />
+    <!-- task 패널 — 4 행 + 더 보기 + ＋ Task 추가 모달 -->
+    <TaskPanel :agents="list" />
 
     <div v-if="error" class="error-box">
       백엔드 호출 실패: {{ error }}
@@ -117,10 +110,9 @@
 
 <script setup lang="ts">
 import { useAgents } from '~/composables/useAgents';
-import SummaryCardGrid from '~/components/dashboard/SummaryCardGrid.vue';
-import FilterBar from '~/components/dashboard/FilterBar.vue';
 import LocalUsageBar from '~/components/dashboard/LocalUsageBar.vue';
 import LocalResourceBar from '~/components/dashboard/LocalResourceBar.vue';
+import TaskPanel from '~/components/dashboard/TaskPanel.vue';
 import AgentCardGrid from '~/components/dashboard/AgentCardGrid.vue';
 import AgentWiringView from '~/components/dashboard/AgentWiringView.vue';
 
@@ -153,6 +145,8 @@ const {
   deleteAgent,
   fetchAgents
 } = useAgents();
+// task 큐 — 대시보드 상단 패널의 reactive state. SSE agent.task.changed listener.
+const { startPolling: tasksStartPolling, stopPolling: tasksStopPolling } = useTasks();
 
 const meWorkspacePath = ref('');
 const meWorkspaceDialogOpen = ref(false);
@@ -305,8 +299,10 @@ onMounted(async () => {
   await loadMeWorkspace();
   // SSE (agent.changed) 가 주 — polling 은 SSE 끊긴 동안 60s fallback.
   startPolling(60_000);
+  // task 큐 — SSE agent.task.changed + 60s polling fallback
+  tasksStartPolling(60_000);
 });
-onUnmounted(() => stopPolling());
+onUnmounted(() => { stopPolling(); tasksStopPolling(); });
 </script>
 
 <style scoped>
@@ -314,6 +310,16 @@ onUnmounted(() => stopPolling());
   padding: 28px;
   max-width: 1400px;
   margin: 0 auto;
+}
+/* 상단 통계 — 세션 사용률 + LocalResourceBar 2열 grid (옵션 H step 4) */
+.dashboard-top-stats {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.4fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+@media (max-width: 720px) {
+  .dashboard-top-stats { grid-template-columns: 1fr; }
 }
 .group_pageLocation {
   display: flex;
