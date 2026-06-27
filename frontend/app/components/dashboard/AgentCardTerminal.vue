@@ -48,6 +48,10 @@ function helperWsUrl(): string {
     rows: String(MINI_ROWS),
     agentId: props.agentId,
     tmuxSession: props.tmuxSession,
+    // background=1 → helper 가 tmux resize-window + history dump skip. 같은 session 에
+    // 터미널 페이지의 큰 client + mini preview 의 작은 client 동시 attach 시 작은 cols
+    // 가 session global cols 강제 → 큰 viewport 에 padding (·) 사고 차단.
+    background: '1',
   });
   // workspaceDir 박혀있으면 cwd 전달 — helper 가 *tmux new-session 처음 만들 때*
   // 정확한 workspace 에서 claude 시작 (workspace trust dialog 회피).
