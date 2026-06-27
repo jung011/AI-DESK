@@ -106,10 +106,13 @@ async function ensureXterm(): Promise<void> {
 
 function connectWs() {
   if (disposed) return;
+  // reconnect 시 xterm reset — 옛 화면 + 새 dump 누적 차단 + scroll 위치 top stuck 해소
+  if (term) try { term.reset(); } catch { /* ignore */ }
   const url = helperWsUrl();
   if (!url) return;
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
+  let dbgWriteCount = 0;
   ws.onmessage = (ev) => {
     if (!term) return;
     if (ev.data instanceof ArrayBuffer) {
@@ -117,6 +120,16 @@ function connectWs() {
       term.write(bytes);
     } else if (typeof ev.data === 'string') {
       term.write(ev.data);
+    }
+    // mini preview = read-only — 항상 bottom 으로 강제. 활성 session 의 write 마다
+    // viewport 가 최신 line 따라가도록.
+    try { term.scrollToBottom(); } catch { /* ignore */ }
+    if (++dbgWriteCount % 50 === 0) {
+      // debug log — N 번 write 마다 buffer 상태
+      try {
+        const buf = term.buffer?.active;
+        console.log(`[AgentCardTerminal:${props.agentId.slice(0,8)}] writes=${dbgWriteCount} viewportY=${buf?.viewportY} baseY=${buf?.baseY} length=${buf?.length}`);
+      } catch { /* ignore */ }
     }
   };
   ws.onclose = () => {
