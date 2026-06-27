@@ -14,16 +14,16 @@
       </thead>
       <tbody :class="{ scrollable: expanded }">
         <tr v-for="t in visibleTasks" :key="t.taskId" class="task-row" :class="t.status">
-          <td>
+          <td style="width:55%">
             <div class="task-content">{{ t.content }}</div>
             <div v-if="t.attachments.length > 0" class="task-att-row">
               <span v-for="a in t.attachments" :key="a.attachmentId" class="task-att-chip">📎 {{ a.originalFilename }}</span>
             </div>
           </td>
-          <td>
+          <td style="width:25%">
             <span class="task-owner">{{ t.agentName ?? t.agentId.slice(0, 8) }}</span>
           </td>
-          <td>
+          <td style="width:20%">
             <span class="task-status" :class="t.status">{{ statusLabel(t.status) }}</span>
           </td>
         </tr>
@@ -97,7 +97,7 @@ function onCreated(): void {
 .task-table thead tr { display: table-row; }
 .task-table thead th { text-align: left; font-size: 11px; color: #9CA3AF; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid #2A3950; background: rgba(30, 39, 56, 0.5); }
 .task-table tbody { display: table-row-group; }
-.task-table tbody.scrollable { display: block; max-height: 240px; overflow-y: auto; }
+.task-table tbody.scrollable { display: block; max-height: 240px; overflow-y: auto; scrollbar-gutter: stable; }
 .task-table tbody tr { display: table; width: 100%; table-layout: fixed; }
 .task-table tbody td { padding: 8px 10px; font-size: 12px; border-bottom: 1px solid #1E2738; vertical-align: top; }
 .task-row.done td { color: #6B7280; }
