@@ -70,3 +70,32 @@ class AttachmentRepository:
         )
         result = self.db.execute(stmt)
         return result.rowcount or 0
+
+    def list_by_task_id(self, task_id: str) -> list[MessageAttachment]:
+        return list(
+            self.db.execute(
+                select(MessageAttachment)
+                .where(MessageAttachment.task_id == task_id)
+                .order_by(MessageAttachment.created_at)
+            ).scalars()
+        )
+
+    def find_by_task_id(self, task_id: str) -> list[MessageAttachment]:
+        # alias for symmetry with messages domain
+        return self.list_by_task_id(task_id)
+
+    def link_to_task(self, attachment_ids: list[str], task_id: str) -> int:
+        """task 박힐 때 attachment row 들의 task_id 갱신. message_id is NULL 인 row 만."""
+        if not attachment_ids:
+            return 0
+        stmt = (
+            update(MessageAttachment)
+            .where(
+                MessageAttachment.attachment_id.in_(attachment_ids),
+                MessageAttachment.message_id.is_(None),
+                MessageAttachment.task_id.is_(None),
+            )
+            .values(task_id=task_id)
+        )
+        result = self.db.execute(stmt)
+        return result.rowcount or 0
