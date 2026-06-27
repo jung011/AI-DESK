@@ -158,19 +158,6 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # agentName — *처음 claude 부팅* 시 identity prompt 자동 inject 용. 옛
     # start_claude_with_mode 의 _build_identity_prompt 부활.
     agent_name = request.query.get("agentName", "").strip()
-    # background ws (dashboard mini preview 등) — read-only 라 tmux session 의 *global
-    # cols/rows 강제 X* + *history dump skip*. 같은 session 에 *터미널 페이지의 큰 client +
-    # mini preview 의 작은 client* 동시 attach 시 *mini 의 작은 cols 가 winner* → 터미널
-    # 탭의 큰 viewport 에 작은 cols line + padding (·) 가득 사고 차단. aggressive-resize
-    # on 가 client 별 grid 분리하지만 capture-pane / resize-window 는 session global.
-    #
-    # 자동 분류 = 명시 background=1 query 또는 *작은 cols (< 150)* — 사용자 view (보통
-    # 150+ cols) 와 mini preview (100 cols) 자동 구별. frontend code 손 안 대고 cols
-    # 만으로 자동 path 분기.
-    background_mode = (
-        request.query.get("background", "").strip() == "1"
-        or cols < 150
-    )
 
     log.info(
         "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s tmux=%s",
@@ -299,9 +286,7 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     # tmux session 의 cols/rows 를 client xterm size 와 동일하게 resize. mismatch 시
     # capture-pane / attach 출력의 grid 가 xterm parser 의 viewport 와 안 맞아 정렬 깨짐.
-    # background ws (mini preview) 는 resize 박지 않음 — 작은 cols 가 session global
-    # cols 강제 → 다른 큰 client 의 viewport 에 padding (·) 사고 차단.
-    if tmux_session and not background_mode:
+    if tmux_session:
         try:
             subprocess.run(
                 ["tmux", "resize-window", "-t", tmux_session, "-x", str(cols), "-y", str(rows)],
@@ -313,10 +298,8 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     # tmux attach 직전 — history 한 번 dump 해서 ws 로 직접 보냄. attach 가 *현재
     # 화면만* 전송 (옛 출력 X). capture-pane -S -3000 으로 scrollback 3000 라인 보냄.
-    # background mode = mini preview 라 dump skip (대용량 history 가 mini xterm 에 누적
-    # 사고 차단). attach 후 *현재 화면 만* 자연 fill.
     history_dump: bytes | None = None
-    if tmux_session and not background_mode:
+    if tmux_session:
         try:
             # -e 제거 — escape cursor-move 가 옛 cols 좌표 기반이라 새 cols 의 xterm 에서
             # 계단식 정렬 사고. plain text 만 dump (과거 색상 손실, 정렬은 OK).

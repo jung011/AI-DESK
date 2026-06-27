@@ -38,10 +38,8 @@ let disposed = false;
 // attach 시 *작은 client 의 grid 가 master* 라 *큰 화면 client* 의 wrap 영향.
 // helper web_pty 의 tmux session 에 aggressive-resize=on 자동 박혀있어야 *각
 // client 별 grid 분리* — wrap 영향 작아짐.
-// claude TUI alt-screen 의 24-row 표준 정합 — 14 row 시 cursor 가 viewport 밖
-// stuck (alt buffer = scrollback X). fontSize 줄여 같은 viewport 안에 24 row fit.
 const MINI_COLS = 100;
-const MINI_ROWS = 24;
+const MINI_ROWS = 14;
 
 function helperWsUrl(): string {
   if (typeof window === 'undefined') return '';
@@ -75,14 +73,10 @@ async function ensureXterm(): Promise<void> {
     cursorBlink: false,
     cursorStyle: 'bar',
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    // fontSize 5 + lineHeight 1.0 = 24 row 가 옛 14 row 와 거의 같은 height 차지
-    // (5 × 24 = 120 px). claude TUI alt-screen 24-row 표준 fit.
-    fontSize: 5,
-    lineHeight: 1.0,
+    fontSize: 7,
+    lineHeight: 1.1,
     cols: MINI_COLS,
     rows: MINI_ROWS,
-    // convertEol — tmux 의 line feed (\n) 받으면 자동 \r\n 변환. cursor row 정확 follow.
-    convertEol: true,
     scrollback: 200,
     disableStdin: true,  // read-only — 키보드 차단
     allowProposedApi: true,
@@ -112,33 +106,17 @@ async function ensureXterm(): Promise<void> {
 
 function connectWs() {
   if (disposed) return;
-  // reconnect 시 xterm reset — 옛 화면 + 새 dump 누적 차단 + scroll 위치 top stuck 해소
-  if (term) try { term.reset(); } catch { /* ignore */ }
   const url = helperWsUrl();
   if (!url) return;
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
-  let dbgWriteCount = 0;
-  // alt-screen escape 제거 — claude TUI 의 \x1b[?1049h (alt 진입) / \x1b[?1049l (alt
-  // 종료) 가 xterm 을 alt buffer 로 보내면 mini preview viewport 가 옛 content stuck
-  // + 새 write 는 alt buffer 안 누적 (보이지 않음). filter out 으로 xterm 항상
-  // normal buffer 에만 write → cursor 자동 follow + 최신 line 표시.
-  const stripAltScreen = (s: string): string =>
-    s.replace(/\x1b\[\?(1047|1049|47)[hl]/g, '');
   ws.onmessage = (ev) => {
     if (!term) return;
     if (ev.data instanceof ArrayBuffer) {
-      const text = new TextDecoder().decode(new Uint8Array(ev.data));
-      term.write(stripAltScreen(text));
+      const bytes = new Uint8Array(ev.data);
+      term.write(bytes);
     } else if (typeof ev.data === 'string') {
-      term.write(stripAltScreen(ev.data));
-    }
-    try { term.scrollToBottom(); } catch { /* ignore */ }
-    if (++dbgWriteCount % 50 === 0) {
-      try {
-        const buf = term.buffer?.active;
-        console.log(`[AgentCardTerminal:${props.agentId.slice(0,8)}] writes=${dbgWriteCount} viewportY=${buf?.viewportY} baseY=${buf?.baseY} length=${buf?.length} bufferType=${term.buffer?.active === term.buffer?.normal ? 'normal' : 'alt'}`);
-      } catch { /* ignore */ }
+      term.write(ev.data);
     }
   };
   ws.onclose = () => {
