@@ -281,11 +281,13 @@ function scrollToBottom(): void {
   bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
 }
 
-watch(() => props.messages.length, () => {
+// 마지막 메시지 ID watch — length 대신. fetchMessages 가 array 새로 박을 때 limit=100
+// 초과 conversation 에서 옛 1 빠지고 새 1 추가되면 length 변화 없어 옛 watch 미발화 사고 fix.
+watch(() => props.messages[props.messages.length - 1]?.messageId, () => {
   void nextTick().then(scrollToBottom);
 });
 // partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
-// messages.length 가 같은 N 이면 위 watch 안 trigger → 옛 scroll 위치 stuck 사고 fix.
+// 새 partner 의 마지막 메시지 ID 도 위 watch 가 잡지만, 빈 conversation 같은 edge 도 cover.
 watch(() => props.partner?.agentId, () => {
   void nextTick().then(scrollToBottom);
 });
