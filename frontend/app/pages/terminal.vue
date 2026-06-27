@@ -24,13 +24,25 @@
         />
       </div>
       <div class="term-pane term-pane-conv">
+        <!-- B 옵션 — partner 별 WebTerminal 인스턴스 영구 살림. xterm scrollback / ws /
+             lastSentInput 모두 partner-scoped 라 옛 partner 로 다시 돌아오면 *명령
+             history scroll up* 가능 + textarea/pty sync 정확.
+             v-for + v-show: 한 번이라도 active 된 partner 는 mountedIds 에 추가, 이후
+             v-show 만 토글. 옛 partner mount 안 됨 → ws connection N 개 안 누적
+             (사용자가 쓴 만큼만). -->
         <WebTerminal
+          v-for="aid in mountedAgentIds"
+          :key="aid"
           ref="webTermRef"
-          :key="activePartner?.agentId || 'none'"
-          :partner="activePartner"
+          v-show="aid === partnerId"
+          :partner="partnersById[aid] || null"
+          :is-active="aid === partnerId"
           :show-back="true"
           @back="showTermMobile = false"
         />
+        <div v-if="!mountedAgentIds.length" class="term-empty-hint">
+          왼쪽에서 에이전트를 선택하세요
+        </div>
       </div>
     </div>
 
@@ -120,6 +132,21 @@ const partners = computed(() => {
 const activePartner = computed(() =>
   partners.value.find((a) => a.agentId === partnerId.value) ?? null
 );
+
+// B 옵션 — partner 별 WebTerminal 인스턴스 영구 살림.
+// mountedAgentIds = 한 번이라도 선택된 partner. v-for + v-show 토글로 xterm /
+// ws / scrollback / lastSentInput 모두 보존.
+const mountedAgentIds = ref<string[]>([]);
+const partnersById = computed(() => {
+  const map: Record<string, AgentItem> = {};
+  for (const p of partners.value) map[p.agentId] = p;
+  return map;
+});
+watch(partnerId, (id) => {
+  if (id && !mountedAgentIds.value.includes(id)) {
+    mountedAgentIds.value.push(id);
+  }
+});
 
 // 추가 모달
 const showAddModal = ref(false);

@@ -86,6 +86,8 @@ import { useInputDrafts } from '~/composables/useInputDrafts';
 const props = defineProps<{
   partner: AgentItem | null;
   showBack: boolean;
+  // B 옵션 — terminal.vue 가 partner 별 인스턴스 v-show 토글. visible 시에만 fit 호출.
+  isActive?: boolean;
 }>();
 
 defineEmits<{ (e: 'back'): void }>();
@@ -625,6 +627,17 @@ watch(() => props.partner?.agentId, async (id) => {
   if (!term) await ensureXterm();
   disconnectWs();
   resetAndConnect();
+});
+
+// B 옵션 — v-show 로 hidden 됐다가 다시 active 시 fitAddon 재측정 (display:none →
+// display:block 전환은 ResizeObserver 자동 발화 X 라 명시 호출).
+watch(() => props.isActive, (active) => {
+  if (active && term && fitAddon) {
+    nextTick(() => {
+      try { fitAddon.fit(); } catch { /* ignore — viewport 미준비 */ }
+      inputRef.value?.focus();
+    });
+  }
 });
 
 function statusLabel(s: AgentStatus): string {
