@@ -163,7 +163,14 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # mini preview 의 작은 client* 동시 attach 시 *mini 의 작은 cols 가 winner* → 터미널
     # 탭의 큰 viewport 에 작은 cols line + padding (·) 가득 사고 차단. aggressive-resize
     # on 가 client 별 grid 분리하지만 capture-pane / resize-window 는 session global.
-    background_mode = request.query.get("background", "").strip() == "1"
+    #
+    # 자동 분류 = 명시 background=1 query 또는 *작은 cols (< 150)* — 사용자 view (보통
+    # 150+ cols) 와 mini preview (100 cols) 자동 구별. frontend code 손 안 대고 cols
+    # 만으로 자동 path 분기.
+    background_mode = (
+        request.query.get("background", "").strip() == "1"
+        or cols < 150
+    )
 
     log.info(
         "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s tmux=%s",
