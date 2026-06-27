@@ -264,7 +264,10 @@ function renderBufferToOutput(): void {
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 // 마지막으로 ws 에 전송한 input 의 *전체 string*. diff 계산용.
-let lastSentInput = '';
+// store 복원 시 textarea 와 *같은 값* 으로 init — partner 다시 돌아오면 *옛 보낸 상태
+// 그대로* 라 추가 송신 X. ''로 init 시 사용자 첫 키 → curr.startsWith('') 항상 true →
+// pty 에 textarea 전체 재송신 사고.
+let lastSentInput = inputDraft.value;
 
 function wsSendBytes(data: string): void {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
