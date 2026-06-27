@@ -110,6 +110,10 @@ async function ensureXterm(): Promise<void> {
 
 function connectWs() {
   if (disposed) return;
+  // reconnect 시 xterm 옛 grid 잔재 차단 — background mode 라 history dump skip 인데
+  // xterm reset 안 하면 옛 화면 (예: 진행 중인 conversation 의 alt-screen 잔재) 그대로
+  // 보임. WebTerminal.vue 의 connectWs 와 동일 패턴.
+  if (term) try { term.reset(); } catch { /* ignore */ }
   const url = helperWsUrl();
   if (!url) return;
   ws = new WebSocket(url);
