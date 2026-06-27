@@ -50,8 +50,33 @@ async def _try_brew_install_tmux() -> str | None:
             tail = stdout.decode("utf-8", errors="replace")[-400:]
             log.warning("brew install tmux 실패 (rc=%s):\n%s", proc.returncode, tail)
             return None
-        log.info("tmux 설치 완료")
-        return shutil.which("tmux")
+        # post-install verification — brew 가 rc=0 보고해도 *link fail* / *PATH cache* /
+        # *Apple Silicon vs Intel brew prefix* 같은 사유로 binary 못 찾는 case 있음.
+        # which 안 되면 *tmux -V 직접 호출* 한 번 더 시도 (PATH 무관).
+        verified = shutil.which("tmux")
+        if verified:
+            log.info("tmux 설치 완료: %s", verified)
+            return verified
+        try:
+            check = await asyncio.create_subprocess_exec(
+                "tmux", "-V",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            check_out, _ = await asyncio.wait_for(check.communicate(), timeout=3.0)
+            if check.returncode == 0:
+                ver = check_out.decode("utf-8", errors="replace").strip()
+                log.info("tmux 설치 완료 (PATH cache 우회): %s", ver)
+                return "tmux"  # PATH 잡힌 spawn 으로 호출 가능
+        except (OSError, asyncio.TimeoutError):
+            pass
+        # rc=0 인데 binary 실 부재 — 사용자 수동 fix 필요
+        log.warning(
+            "brew install tmux rc=0 이지만 tmux binary 부재 (link fail or PATH cache). "
+            "사용자 수동 fix 필요: 1) `brew install tmux` 직접 실행  "
+            "2) `which tmux` 확인  3) helper restart"
+        )
+        return None
     except OSError as e:
         log.warning("brew install tmux 실행 실패: %s", e)
         return None
