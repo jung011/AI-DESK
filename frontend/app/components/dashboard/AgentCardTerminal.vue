@@ -117,6 +117,23 @@ function connectWs() {
       const bytes = new Uint8Array(ev.data);
       term.write(bytes);
     } else if (typeof ev.data === 'string') {
+      // 옵션 F = helper 의 background polling path 의 첫 message = JSON
+      // {type:'info', cols, rows} — 원본 tmux grid 의 cols. xterm 의 cols 를 그
+      // 값으로 재박음 + fontSize 자동 축소 (카드 width 안 fit). wrap 사고 차단.
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg && msg.type === 'info' && typeof msg.cols === 'number') {
+          const newCols = Math.max(20, Math.min(500, msg.cols));
+          term.resize(newCols, MINI_ROWS);
+          // fontSize 자동 축소 — 카드 width 측정 후 cols 에 fit. cell ratio ≈ 0.6.
+          if (hostRef.value) {
+            const w = hostRef.value.clientWidth - 8;
+            const fit = Math.max(2, Math.floor(w / (newCols * 0.6)));
+            try { term.options.fontSize = fit; } catch { /* ignore */ }
+          }
+          return;
+        }
+      } catch { /* JSON 아니면 그냥 write */ }
       term.write(ev.data);
     }
   };
