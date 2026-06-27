@@ -250,23 +250,25 @@ function onDelete(): void {
   emit('delete', props.agent);
 }
 
+// 3 layer 통합 — 온라인은 단일 색 (working). compacting = waiting (별도 톤 유지).
 const statusClass = computed(() => ({
   active: 'working',
-  waiting: 'waiting',
-  idle: 'idle',
+  waiting: 'working',
+  idle: 'working',
   offline: 'offline',
   compacting: 'waiting',
   error: 'error'
-}[props.agent.status] ?? 'idle'));
+}[props.agent.status] ?? 'working'));
 
+// 3 layer 통합: 온라인 (active/waiting/idle) / 오프라인 / 압축중.
 const statusLabel = computed(() => ({
-  active: '작업중',
-  waiting: '응답 대기',
-  idle: '대기중',
+  active: '온라인',
+  waiting: '온라인',
+  idle: '온라인',
   offline: '오프라인',
-  compacting: '압축 중',
+  compacting: '압축중',
   error: '오류'
-}[props.agent.status] ?? '대기중'));
+}[props.agent.status] ?? '온라인'));
 
 const badgeClass = computed(() => ({
   active: 'type_v5',

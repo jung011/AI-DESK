@@ -36,20 +36,27 @@ export function useAgents(initialStatus: string = 'all') {
     }, 300);
   }
 
-  /** 검색어를 추가로 적용한 클라이언트 측 필터 결과 */
+  // 3 layer 통합 — frontend 의 'online' tab 은 backend status 가 아니라서 client-side filter.
+  // 'online' = active + waiting + idle 통합. backend 호출엔 status param 안 박음.
+  const ONLINE_BACKEND_STATUSES = new Set(['active', 'waiting', 'idle']);
+
+  /** 검색어 + status 통합 client-side 필터. */
   const filteredList = computed<AgentItem[]>(() => {
     const q = query.value.trim().toLowerCase();
-    if (!q) return list.value;
-    return list.value.filter(a => a.agentName.toLowerCase().includes(q));
+    const st = status.value;
+    return list.value.filter(a => {
+      if (q && !a.agentName.toLowerCase().includes(q)) return false;
+      if (st === 'all' || !st) return true;
+      if (st === 'online') return ONLINE_BACKEND_STATUSES.has(a.status);
+      return a.status === st;
+    });
   });
 
   async function fetchAgents(): Promise<void> {
     loading.value = true;
     try {
-      const params: Record<string, string> = {};
-      if (status.value && status.value !== 'all') params.status = status.value;
-
-      const env = await $api<ApiEnvelope<AgentListResponse>>('/api/agents', { params });
+      // status param 안 박음 — client-side filter 에서 처리 (3 layer 통합 대응).
+      const env = await $api<ApiEnvelope<AgentListResponse>>('/api/agents');
       // 휴먼(model='human') 은 사용자 본인 entity. 대시보드는 AI 만 보여주므로 제외.
       // 외부 AI (type='external') 는 helper-환경이 아니라서 internal 카드 grid 가 아닌
       // 사내 동료 섹션에 표시. 메인 그리드에선 제외.

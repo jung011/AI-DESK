@@ -286,7 +286,8 @@ watch(() => props.messages.length, () => {
 });
 
 function statusLabel(s: AgentStatus): string {
-  return { active: '작업중', waiting: '응답 대기', idle: '대기중', offline: '오프라인', compacting: '압축 중', error: '오류' }[s] ?? s;
+  // 3 layer 통합: 온라인 / 오프라인 / 압축중.
+  return { active: '온라인', waiting: '온라인', idle: '온라인', offline: '오프라인', compacting: '압축중', error: '오류' }[s] ?? s;
 }
 function avatar(s: AgentStatus): string {
   return { active: '🤖', waiting: '🙋', idle: '📝', error: '⚠️' }[s] ?? '📝';

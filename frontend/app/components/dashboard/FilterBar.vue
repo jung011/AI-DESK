@@ -38,12 +38,14 @@ const emit = defineEmits<{
   (e: 'update:query',  v: string): void;
 }>();
 
+// 3 layer 통합 filter — 온라인 (active/waiting/idle) / 오프라인 / 압축중 / 오류.
+// 'online' 은 frontend-only 가상 value — useAgents.ts 의 filter 로직이 처리.
 const tabs = [
-  { label: '전체',      value: 'all' },
-  { label: '작업중',    value: 'active' },
-  { label: '응답 대기', value: 'waiting' },
-  { label: '대기중',    value: 'idle' },
-  { label: '오류',      value: 'error' }
+  { label: '전체',     value: 'all' },
+  { label: '온라인',   value: 'online' },
+  { label: '오프라인', value: 'offline' },
+  { label: '압축중',   value: 'compacting' },
+  { label: '오류',     value: 'error' }
 ] as const;
 </script>
 
