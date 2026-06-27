@@ -43,7 +43,6 @@ const MINI_ROWS = 14;
 
 function helperWsUrl(): string {
   if (typeof window === 'undefined') return '';
-  const port = import.meta.dev ? 30084 : 30083;
   const params = new URLSearchParams({
     cols: String(MINI_COLS),
     rows: String(MINI_ROWS),
@@ -54,7 +53,13 @@ function helperWsUrl(): string {
   // 정확한 workspace 에서 claude 시작 (workspace trust dialog 회피).
   if (props.workspaceDir) params.set('cwd', props.workspaceDir);
   if (props.agentName) params.set('agentName', props.agentName);
-  return `ws://${window.location.hostname}:${port}/ws/terminal?${params.toString()}`;
+  // prod = 사용자 mac local helper 직접 (127.0.0.1:30083). frontend hostname
+  // 가리키면 ingress 30083 listen 안 해서 fail. WebTerminal.vue 와 동일 분기.
+  // dev = wifi IP / localhost frontend 모두 호환 위해 hostname 기반.
+  const wsBase = import.meta.dev
+    ? `ws://${window.location.hostname}:30084`
+    : 'ws://127.0.0.1:30083';
+  return `${wsBase}/ws/terminal?${params.toString()}`;
 }
 
 async function ensureXterm(): Promise<void> {
