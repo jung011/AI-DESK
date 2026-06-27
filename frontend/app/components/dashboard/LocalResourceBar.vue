@@ -1,16 +1,6 @@
 <template>
   <div class="local-resource" :class="{ critical: anyHigh }">
     <div class="row">
-      <div class="metric" :title="uptimeTip">
-        <div class="metric-label">
-          macOS uptime
-          <span class="tag tag-restart">재부팅만 해결</span>
-        </div>
-        <div class="metric-bar">
-          <div class="metric-fill" :class="levelOf(uptimePct)" :style="{ width: barWidth(uptimePct) }" />
-        </div>
-        <div class="metric-pct" :class="levelOf(uptimePct)">{{ pctLabel(uptimePct) }}</div>
-      </div>
       <div class="metric" :title="daemonTip">
         <div class="metric-label">
           옛 mcp daemon 누적
@@ -49,9 +39,6 @@
           ⚠️ 현재 작업 중인 claude code 의 자식 mcp daemon 도 같이 종료될 수 있어요.
           정상 path 에선 claude code 가 자동 재spawn 합니다.
         </p>
-        <p class="modal-hint">
-          참고 — macOS uptime % 는 cleanup 으로 줄지 않습니다. <b>재부팅만 해결</b>.
-        </p>
         <div class="modal-actions">
           <button class="btn-ghost" @click="confirmOpen = false">취소</button>
           <button class="btn-primary" @click="runCleanup">정리 실행</button>
@@ -63,10 +50,11 @@
 
 <script setup lang="ts">
 /**
- * 리소스 누적 모니터 + 정리 도구 — 대시보드 단일 위치.
+ * 옛 mcp daemon 누적 모니터 + 정리 도구 — 대시보드 단일 위치.
  *
- * uptime% = kernel state 누적 지표. cleanup 으로 *안 줄어듦* → 재부팅만 답.
- * daemon% = process 잔재 지표. cleanup 으로 즉시 0% 가능.
+ * 옛엔 macOS uptime% 게이지도 같이 있었으나 helper proxy 패턴 ([[project-helper-proxy-pattern]])
+ * 적용 후 *uptime 누적 사고 가능성 현저히 적어* daily UX 의 *과한 권고 차단* 제거.
+ * 진단 필요 시 resource-cleanup 페이지에서 uptime + 추이 그래프 그대로 확인.
  *
  * helper /api/system/status + /api/cleanup 사용.
  */
@@ -87,7 +75,6 @@ interface CleanupResult {
   status: SystemStatus;
 }
 
-const UPTIME_FULL_DAYS = 14;
 const DAEMON_FULL_COUNT = 10;
 
 const status = ref<SystemStatus | null>(null);
@@ -95,27 +82,17 @@ const loading = ref(false);
 const confirmOpen = ref(false);
 const result = ref<CleanupResult | null>(null);
 
-const uptimePct = computed(() => {
-  const d = status.value?.uptimeDays;
-  if (d == null) return -1;
-  return Math.round(Math.min(100, (d / UPTIME_FULL_DAYS) * 100));
-});
 const daemonPct = computed(() => {
   const c = status.value?.staleDaemonCount;
   if (c == null) return -1;
   return Math.round(Math.min(100, (c / DAEMON_FULL_COUNT) * 100));
-});
-const uptimeTip = computed(() => {
-  const d = status.value?.uptimeDays;
-  if (d == null) return 'uptime 확인 불가';
-  return `재부팅 후 ${d.toFixed(1)}일 경과. ${UPTIME_FULL_DAYS}일 = 100%`;
 });
 const daemonTip = computed(() => {
   const c = status.value?.staleDaemonCount;
   if (c == null) return 'daemon 갯수 확인 불가';
   return `옛 mcp daemon ${c}개. ${DAEMON_FULL_COUNT}개 = 100%`;
 });
-const anyHigh = computed(() => uptimePct.value >= 80 || daemonPct.value >= 80);
+const anyHigh = computed(() => daemonPct.value >= 80);
 
 const resultMessage = computed(() => {
   if (!result.value) return '';
@@ -195,7 +172,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 .row {
   display: grid; gap: 18px; align-items: end;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: 1fr auto;
 }
 .metric { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .metric-label {
