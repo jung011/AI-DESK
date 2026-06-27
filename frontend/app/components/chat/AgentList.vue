@@ -43,6 +43,9 @@
         <button class="al-menu-item" @click="onOpenClaude(menuOpenId)">
           <span class="al-menu-ico">▶</span>클로드 열기
         </button>
+        <button class="al-menu-item" @click="onOpenTelegram(menuOpenId)">
+          <span class="al-menu-ico">💬</span>텔레그램으로 열기
+        </button>
       </div>
     </Teleport>
   </aside>
@@ -64,6 +67,7 @@ const emit = defineEmits<{
   (e: 'select', agentId: string): void;
   (e: 'delete', agentId: string): void;
   (e: 'open-claude', agentId: string): void;
+  (e: 'open-telegram', agentId: string): void;
 }>();
 
 // 햄버거 dropdown — Teleport to body + fixed position 으로 .al-list overflow 회피.
@@ -88,6 +92,12 @@ function onOpenClaude(agentId: string): void {
   menuPos.value = null;
   emit('select', agentId);
   emit('open-claude', agentId);
+}
+function onOpenTelegram(agentId: string): void {
+  menuOpenId.value = null;
+  menuPos.value = null;
+  emit('select', agentId);
+  emit('open-telegram', agentId);
 }
 
 function handleClickOutside(): void {
