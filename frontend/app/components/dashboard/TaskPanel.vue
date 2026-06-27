@@ -93,9 +93,12 @@ function onCreated(): void {
 .task-add-btn { background: #2A4A8E; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; font-weight: 600; }
 .task-add-btn:hover { background: #3A5A9E; }
 .task-table { width: 100%; border-collapse: collapse; }
-.task-table thead th { text-align: left; font-size: 10px; color: #6B7280; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 10px; border-bottom: 1px solid #1E2738; }
+.task-table thead { display: table; width: 100%; table-layout: fixed; }
+.task-table thead tr { display: table-row; }
+.task-table thead th { text-align: left; font-size: 11px; color: #9CA3AF; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid #2A3950; background: rgba(30, 39, 56, 0.5); }
+.task-table tbody { display: table-row-group; }
 .task-table tbody.scrollable { display: block; max-height: 240px; overflow-y: auto; }
-.task-table thead, .task-table tbody tr { display: table; width: 100%; table-layout: fixed; }
+.task-table tbody tr { display: table; width: 100%; table-layout: fixed; }
 .task-table tbody td { padding: 8px 10px; font-size: 12px; border-bottom: 1px solid #1E2738; vertical-align: top; }
 .task-row.done td { color: #6B7280; }
 .task-row.done .task-content { text-decoration: line-through; }
