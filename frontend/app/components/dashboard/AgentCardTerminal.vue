@@ -48,6 +48,7 @@ function helperWsUrl(): string {
     rows: String(MINI_ROWS),
     agentId: props.agentId,
     tmuxSession: props.tmuxSession,
+    background: '1',
   });
   // workspaceDir 박혀있으면 cwd 전달 — helper 가 *tmux new-session 처음 만들 때*
   // 정확한 workspace 에서 claude 시작 (workspace trust dialog 회피).
