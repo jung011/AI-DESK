@@ -629,14 +629,11 @@ watch(() => props.partner?.agentId, async (id) => {
   resetAndConnect();
 });
 
-// B 옵션 — v-show 로 hidden 됐다가 다시 active 시 fitAddon 재측정 (display:none →
-// display:block 전환은 ResizeObserver 자동 발화 X 라 명시 호출).
+// B 옵션 — visibility:hidden 패턴이라 layout 유지. background 시에도 viewport
+// size 측정 정상 → cols/rows 안 흔들림. active 화 시 focus 만.
 watch(() => props.isActive, (active) => {
-  if (active && term && fitAddon) {
-    nextTick(() => {
-      try { fitAddon.fit(); } catch { /* ignore — viewport 미준비 */ }
-      inputRef.value?.focus();
-    });
+  if (active) {
+    nextTick(() => { inputRef.value?.focus(); });
   }
 });
 

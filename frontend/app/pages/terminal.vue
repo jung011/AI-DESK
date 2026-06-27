@@ -24,17 +24,14 @@
         />
       </div>
       <div class="term-pane term-pane-conv">
-        <!-- B 옵션 — partner 별 WebTerminal 인스턴스 영구 살림. xterm scrollback / ws /
-             lastSentInput 모두 partner-scoped 라 옛 partner 로 다시 돌아오면 *명령
-             history scroll up* 가능 + textarea/pty sync 정확.
-             v-for + v-show: 한 번이라도 active 된 partner 는 mountedIds 에 추가, 이후
-             v-show 만 토글. 옛 partner mount 안 됨 → ws connection N 개 안 누적
-             (사용자가 쓴 만큼만). -->
+        <!-- B 옵션 — partner 별 WebTerminal 인스턴스 영구 살림. v-show 의 display:none
+             은 xterm viewport size 0x0 → claude TUI 와 cols mismatch → 화면 깨짐.
+             :class 토글 + visibility/position 로 *layout 유지* 하면서 hide. -->
         <WebTerminal
           v-for="aid in mountedAgentIds"
           :key="aid"
           :ref="(el) => registerWebTermRef(aid, el)"
-          v-show="aid === partnerId"
+          :class="{ 'wt-hidden': aid !== partnerId }"
           :partner="partnersById[aid] || null"
           :is-active="aid === partnerId"
           :show-back="true"
@@ -302,6 +299,14 @@ onBeforeUnmount(() => {
   grid-template-columns: 36px 1fr;
 }
 .term-pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+
+/* B 옵션 — partner 별 WebTerminal 인스턴스 stack. parent 가 position:relative,
+ * 각 인스턴스가 *absolute fill*. background 인스턴스는 layout 유지하며 hide
+ * (display:none 가 xterm viewport 0x0 사고 차단). */
+.term-pane-conv { position: relative; }
+.term-pane-conv > * { position: absolute; inset: 0; }
+.term-pane-conv > .term-empty-hint { display: flex; align-items: center; justify-content: center; color: #6B7785; font-size: 14px; }
+.wt-hidden { visibility: hidden; pointer-events: none; }
 
 /* 접기 버튼 — 대화상대 박스 좌측 상단 (펼친 / 접힌 상태 둘 다 visible) */
 .term-pane-list { position: relative; }
