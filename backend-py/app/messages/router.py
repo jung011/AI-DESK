@@ -91,13 +91,14 @@ async def audit(
 
 
 @router.get("/events")
-async def events() -> StreamingResponse:
+async def events(catchupSince: float | None = None) -> StreamingResponse:  # noqa: N803
     """SSE stream — frontend / helper 가 subscribe. broadcast PoC.
 
     `event: message.created` / `event: connected` / `: keepalive` (15초).
+    `catchupSince` (epoch sec) 박으면 broker 의 7s buffer 의 replay 박음.
     """
     return StreamingResponse(
-        broker.event_stream(),
+        broker.event_stream(catchup_since_sec=catchupSince),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

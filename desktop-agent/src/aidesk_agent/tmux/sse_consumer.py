@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 import httpx
 from httpx_sse import aconnect_sse
@@ -15,6 +16,19 @@ from httpx_sse import aconnect_sse
 from ..watchdog import mark_sse_event
 
 log = logging.getLogger(__name__)
+
+# 0.8.76 catchup — 마지막 SSE event 수신 시각 (epoch sec). reconnect 시 backend 의
+# `?catchupSince=<epoch>` 박아 7s buffer 의 분실 event replay. None 이면 catchup X.
+_last_sse_epoch: float | None = None
+
+
+def _get_last_sse_epoch() -> float | None:
+    return _last_sse_epoch
+
+
+def _set_last_sse_epoch(epoch: float) -> None:
+    global _last_sse_epoch
+    _last_sse_epoch = epoch
 
 # 백엔드 TmuxLastMileAdapter 와 동일한 렌더 포맷 (adesk_cli.md 와 정합).
 # ANSI: \x1b[100;97m...\x1b[0m = 회색 background + 흰 글자 (수신 메시지 highlight).
@@ -216,6 +230,8 @@ async def _consume_once(backend_url: str) -> None:
     # outer loop 의 reconnect (2분 마다 ReadTimeout) 시 *현재 tmux 다시 scan* 으로 filter 자동 갱신.
     # 0.8.68 추가: connect 후 새 tmux session 생기면 즉시 reconnect — 옛엔 다음 ReadTimeout
     # (120s idle) 까지 filter 갱신 안 돼 신규 에이전트 자동응답 못 받는 사고. 15s 주기 rescan.
+    # 0.8.76 추가: catchupSince 박음 — reconnect 시 backend 의 7s buffer 에서 분실 event
+    # 자동 replay. proxy 502 / SSE 끊김 동안 sent=0 박혀 분실된 메시지 복구.
     from urllib.parse import quote
     from ..tmux import scan_sessions
     try:
@@ -224,10 +240,13 @@ async def _consume_once(backend_url: str) -> None:
     except Exception:  # noqa: BLE001 — scan 실패 시 빈 filter (broadcast 모드 fallback)
         initial_names = []
     base = f"{backend_url.rstrip('/')}/api/desktop/events"
+    params: list[str] = []
     if initial_names:
-        url = base + "?filter=" + quote(",".join(initial_names), safe="")
-    else:
-        url = base
+        params.append("filter=" + quote(",".join(initial_names), safe=""))
+    last_epoch = _get_last_sse_epoch()
+    if last_epoch is not None:
+        params.append(f"catchupSince={last_epoch:.3f}")
+    url = base + ("?" + "&".join(params) if params else "")
     initial_set = set(initial_names)
     # VPN / 사외 LAN 환경에서 라우터가 idle TCP 를 silent 끊어도 read=None 이면
     # zombie connection 으로 영원히 wait — deliver event 누락. read timeout 으로
@@ -258,6 +277,7 @@ async def _consume_once(backend_url: str) -> None:
                 mark_sse_event()  # 연결 직후 idle timer 리셋 — watchdog 의 false-positive 방지
                 async for sse in event_source.aiter_sse():
                     mark_sse_event()  # 어떤 event 든 (heartbeat comment / message.deliver) 갱신
+                    _set_last_sse_epoch(time.time())  # catchup 용 마지막 성공 시각
                     if rescan_task.done():
                         # rescan_task 가 새 session 발견 → exception 재발사
                         rescan_task.result()
