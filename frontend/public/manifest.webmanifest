@@ -6,12 +6,12 @@
   "scope": "__BASE_URL__",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#FFFFFF",
-  "theme_color": "#3B5BDB",
+  "background_color": "#0F1729",
+  "theme_color": "#6BB6FF",
   "icons": [
     {
       "src": "__BASE_URL__favicon.ico",
-      "sizes": "any",
+      "sizes": "32x32",
       "type": "image/x-icon"
     }
   ]
