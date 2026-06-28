@@ -54,7 +54,13 @@
               class="cv-sender">
               {{ m.fromAgentName }}
             </div>
-            <div v-if="m.content && m.content.trim()" class="cv-content">{{ m.content }}</div>
+            <!-- 채팅 메시지 markdown 렌더 — table / code / list / strong 등 시각 요소.
+                 marked + dompurify 로 sanitize. XSS 차단 + 표 같은 풍부한 표현. -->
+            <div
+              v-if="m.content && m.content.trim()"
+              class="cv-content cv-md"
+              v-html="renderMd(m.content)"
+            ></div>
             <!--
               첨부 chip — 카카오톡 스타일. 파일명/크기 + 다운로드 아이콘.
               backend = permitAll (cookie auth 없음) 이라 단순 <a download> 로 충분.
@@ -171,6 +177,9 @@
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
 import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
+import { renderMarkdown } from '~/utils/renderMarkdown';
+
+const renderMd = renderMarkdown;
 
 const props = defineProps<{
   partner: AgentItem | null;
@@ -494,6 +503,90 @@ function formatSize(bytes: number): string {
   margin-bottom: 3px;
 }
 .cv-content { font-size: 13px; line-height: 1.55; }
+
+/* markdown 요소 — 다크 정합 + 채팅 bubble 안 가독성 */
+.cv-md p { margin: 0 0 6px; }
+.cv-md p:last-child { margin: 0; }
+.cv-md strong { font-weight: 700; color: #FFFFFF; }
+.cv-md em { font-style: italic; }
+.cv-md del, .cv-md s { text-decoration: line-through; opacity: 0.7; }
+.cv-md code {
+  background: rgba(107, 182, 255, 0.15);
+  color: #B0DBFF;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.92em;
+}
+.cv-md pre {
+  background: #0B1220;
+  border: 1px solid #2A3950;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  overflow-x: auto;
+}
+.cv-md pre code {
+  background: transparent;
+  padding: 0;
+  color: #E5EBF5;
+  font-size: 12px;
+  white-space: pre;
+}
+.cv-md ul, .cv-md ol { margin: 4px 0 6px; padding-left: 22px; }
+.cv-md li { margin: 2px 0; }
+.cv-md blockquote {
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-left: 3px solid #6BB6FF;
+  background: rgba(107, 182, 255, 0.06);
+  color: #B0BCD0;
+}
+.cv-md h1, .cv-md h2, .cv-md h3, .cv-md h4 {
+  margin: 8px 0 4px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+.cv-md h1 { font-size: 1.2em; }
+.cv-md h2 { font-size: 1.1em; }
+.cv-md h3 { font-size: 1.05em; }
+.cv-md h4 { font-size: 1em; }
+.cv-md a { color: #93C5FD; text-decoration: underline; }
+.cv-md a:hover { color: #BFDBFE; }
+.cv-md hr {
+  border: none;
+  border-top: 1px solid #2A3950;
+  margin: 8px 0;
+}
+
+/* table — 채팅 안 깔끔 비교 표 */
+.cv-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+  background: #0B1220;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #2A3950;
+}
+.cv-md thead {
+  background: linear-gradient(135deg, rgba(107, 182, 255, 0.2), rgba(184, 154, 255, 0.2));
+}
+.cv-md th {
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 700;
+  color: #E5EBF5;
+  border-bottom: 1px solid #2A3950;
+}
+.cv-md td {
+  padding: 6px 10px;
+  border-top: 1px solid #2A3950;
+  color: #B0BCD0;
+  vertical-align: top;
+}
+.cv-md tbody tr:hover { background: rgba(107, 182, 255, 0.05); }
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
 
 /* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
