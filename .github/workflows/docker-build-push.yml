@@ -8,8 +8,12 @@ on:
       - 'fe-*'      # frontend image tag
       - 'bepy-*'    # backend-py (FastAPI) image tag
 
+# concurrency = tag 별 group. fe-rc91 과 bepy-rc86 은 *다른 group* 박혀
+# 서로 안 cancel. 같은 tag 재push (retag) 만 옛 run 자동 cancel.
+# 옛 패턴 `deploy-pipeline` (단일 group) = fe + bepy 동시 push 시 나중 것이
+# 먼저 것을 false-positive cancel — 이번 사고 path.
 concurrency:
-  group: deploy-pipeline
+  group: deploy-pipeline-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
