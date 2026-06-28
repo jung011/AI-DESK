@@ -7,11 +7,11 @@ on:
 
 # fe / be 통합 group — 둘 다 Helm/values.yaml 의 helm bump auto commit 박아 동시 진행 시
 # *non-fast-forward + rebase conflict* 사고 빈번 (fe-rc75/76/77 cycle 3번 fail). 단일
-# lock 박아 직렬 — 다른 workflow 끝날 때까지 대기. cancel-in-progress: false 로 *옛
+# lock 박아 직렬 — 다른 workflow 끝날 때까지 대기. cancel-in-progress: true 로 *옛
 # in-progress fail* 시 다음 run 자동 retry.
 concurrency:
   group: deploy-pipeline
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-and-push:

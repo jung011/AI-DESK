@@ -9,7 +9,7 @@ on:
 # 한 쪽이 'fetch first' 로 rejected 됨. 같은 group 으로 묶어 순차 실행 강제.
 concurrency:
   group: deploy-pipeline
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-and-push:
