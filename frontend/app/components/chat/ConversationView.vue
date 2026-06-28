@@ -30,7 +30,7 @@
       <div v-else-if="messages.length === 0" class="cv-empty">아직 메시지 없음 — 첫 대화를 시작해보세요</div>
       <ul v-else class="cv-msgs">
         <li
-          v-for="m in messages"
+          v-for="m in visibleMessages"
           :key="m.messageId"
           class="cv-msg"
           :class="{
@@ -200,6 +200,21 @@ const uploadingFiles = ref(false);
 const settingsOpen = ref(false);
 
 /**
+ * 채팅 vs task 큐 분리 — task 메시지 (`[task:UUID]` 시작) 는 대시보드 TaskPanel
+ * 의 책임. 채팅 페이지에서는 제외 = 두 path 가 시각적으로 안 섞임.
+ *
+ * mark_read 도 task 메시지의 readAt 패치 받지만 chip 계산에선 task 메시지 무시.
+ * → 채팅창 chip = *채팅에서 보낸 메시지의 읽음* 만 trigger. task 의 lifecycle 은
+ * 대시보드의 TaskPanel 배지 (in_progress / done) 가 책임.
+ */
+const visibleMessages = computed<MessageItem[]>(() => {
+  return props.messages.filter((m) => {
+    const c = (m.content || '').trimStart();
+    return !c.startsWith('[task:');
+  });
+});
+
+/**
  * AI 가 책상에서 작업중 chip 박을 messageId.
  *
  * 조건:
@@ -208,10 +223,12 @@ const settingsOpen = ref(false);
  *  - 그 뒤로 partner 의 답신 (fromAgentId === partner) 메시지가 *아직* 없음
  *
  * 답신 오면 chip 자동 사라짐. hover 시 stage popover (CSS only — Vue state X).
+ *
+ * visibleMessages 기반 — task 메시지 무시 (chat vs task 분리 정합).
  */
 const workingOnMessageId = computed<string | null>(() => {
   if (!props.partner) return null;
-  const list = props.messages;
+  const list = visibleMessages.value;
   // 최신 → 옛 순으로 뒤에서부터 — partner 답신 있으면 chip 표시 X
   for (let i = list.length - 1; i >= 0; i--) {
     const m = list[i] as MessageItem;
