@@ -82,32 +82,16 @@
                 {{ statusBadge(m.status) }}
               </span>
             </div>
-            <!-- AI 가 mark_read mcp tool 호출 → readAt 박힘. 그게 마지막 *내* 발신
-                 메시지면 = AI 가 읽고 처리중 → 책상 작업중 chip 표시.
-                 hover 시 chip 위에 inline stage popover (모달 X). -->
-            <div
-              v-if="m.messageId === workingOnMessageId && partner"
-              class="cv-working-row">
-              <div class="cv-working-wrap">
-                <WorkingDeskChip :agent-name="partner.agentName" />
-                <div class="cv-working-popover">
-                  <WorkingDeskStage :agent-name="partner.agentName" />
-                </div>
-              </div>
-            </div>
           </div>
         </li>
-        <!-- AI 답신 작성중 placeholder bubble — workingOnMessageId 살아있는 동안 AI
-             측 (좌측) 에 *답신 작성중* 표시. 답신 도착 시 workingOnMessageId null
-             → bubble 사라짐 + 실제 메시지 표시. 점 plain X = "답신 작성중" 텍스트 +
-             scanner 같은 progress bar. -->
+        <!-- AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 AI 측
+             (좌측) 에 *책상 stage* 박힘. 답신 도착 시 workingOnMessageId null →
+             stage 사라짐 + 실제 메시지 표시. chip + hover popover path 폐기 —
+             모바일/접근성 호환 + 항상 노출. -->
         <li v-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
-          <div class="cv-bubble">
+          <div class="cv-bubble cv-bubble-stage">
             <div class="cv-sender">{{ partner.agentName }}</div>
-            <div class="cv-typing">
-              <span class="cv-typing-text">답신 작성중</span>
-              <span class="cv-typing-scanner"></span>
-            </div>
+            <WorkingDeskStage :agent-name="partner.agentName" />
           </div>
         </li>
       </ul>
@@ -186,7 +170,6 @@
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
-import WorkingDeskChip from '~/components/chat/WorkingDeskChip.vue';
 import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
 
 const props = defineProps<{
@@ -512,68 +495,23 @@ function formatSize(bytes: number): string {
 }
 .cv-content { font-size: 13px; line-height: 1.55; }
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
-.cv-working-row { margin-top: 6px; display: flex; justify-content: flex-end; }
-/* 본인 (mine) 박는 메시지 = 우측 정렬. cv-msg.theirs 면 좌측. WorkingDeskChip
-   은 *내가 보낸 메시지의 아래* 박히므로 우측 정렬 박음. */
 
-/* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안. answer 도착 시 사라짐. */
+/* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
+   답신 도착 시 자동 사라짐 + 실제 메시지로 교체. */
 .cv-msg.typing-placeholder { animation: tpFade .25s ease; }
 @keyframes tpFade {
   0% { opacity: 0; transform: translateY(4px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-.cv-typing {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #B0BCD0;
+/* stage bubble — 옛 text bubble 스타일과 다름. stage 자체가 내부 background +
+   border 박혀있으니 wrapper 의 padding/background 최소화. sender 만 위에 박음. */
+.cv-bubble-stage {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
 }
-.cv-typing-text {
-  font-style: italic;
-}
-/* progress bar — *흔한 dots 애니메이션* 회피. 좌→우 scanner stripe. */
-.cv-typing-scanner {
-  position: relative;
-  width: 56px;
-  height: 4px;
-  background: rgba(107, 182, 255, 0.15);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.cv-typing-scanner::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -20px;
-  width: 20px;
-  height: 100%;
-  background: linear-gradient(90deg, transparent 0%, #6BB6FF 50%, transparent 100%);
-  animation: tpScan 1.4s linear infinite;
-}
-@keyframes tpScan {
-  0%   { left: -20px; }
-  100% { left: 56px; }
-}
-
-/* hover popover — chip 위에 inline stage 박음. 모달 X. */
-.cv-working-wrap { position: relative; display: inline-block; }
-.cv-working-popover {
-  position: absolute;
-  bottom: calc(100% + 6px);   /* chip 위에 박힘 */
-  right: 0;                    /* 우측 정렬 chip 와 일치 */
-  z-index: 50;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(4px) scale(0.96);
-  transform-origin: bottom right;
-  transition: opacity .15s ease, transform .15s ease;
-}
-.cv-working-wrap:hover .cv-working-popover,
-.cv-working-wrap:focus-within .cv-working-popover {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0) scale(1);
+.cv-bubble-stage .cv-sender {
+  padding: 0 4px 4px 4px;
 }
 .cv-status.sent     { color: #6B7785; }
 .cv-status.delivered{ color: #6BB6FF; }
