@@ -29,7 +29,10 @@ jobs:
 
       - name: Check if tag is from master
         run: |
-          git fetch origin master
+          # `git fetch origin master` 만 박으면 FETCH_HEAD 만 갱신되고 *origin/master*
+          # remote-tracking ref 는 옛 hash 그대로 → ancestor check fail 사고 (fe-rc75/76/79).
+          # `master:refs/remotes/origin/master` 명시해서 두 ref 동시 갱신.
+          git fetch origin master:refs/remotes/origin/master
           # tag commit (github.sha) 이 master 의 ancestor 인지 = master 안에 *포함* 되는지.
           # 인자 순서 반대로 박으면 master HEAD 가 tag commit 의 ancestor 여야 통과 → master 가
           # 진행되는 순간 (helm bump commit 등) 무조건 fail → re-run 영영 fail. 인자 순서 주의.
