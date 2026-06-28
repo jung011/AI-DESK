@@ -125,10 +125,14 @@ class MessageService:
         # B Phase 7 — render 책임 backend 이관. helper sse_consumer 의 _HEADER_TEMPLATE
         # 대체. ANSI: \x1b[100;97m...\x1b[0m = 회색 bg + 흰 글자. 형식 변경 시 backend
         # rebuild 만 — helper 안 만짐.
+        # render 의 trailer 에 mark_read protocol 명시. AI 가 server instructions
+        # 안 봐도 메시지마다 *읽었으면 mark_read 먼저* 안내 박힘. 채팅 페이지의
+        # 책상 작업중 chip 이 trigger 받으려면 AI 가 mark_read 호출 필수.
         payload["renderedContent"] = (
             f"\x1b[100;97m[aidesk · FROM:{sender.agent_name} | MSG:{msg.message_id}]"
             f"\x1b[0m {body.content}"
-            f"  ↳ 응답: adesk reply {msg.message_id} '<답변>'"
+            f"  ↳ 메시지를 읽었으면 mcp `mark_read(\"{msg.message_id}\")` 호출 후 작업 진행하세요. "
+            f"답신: adesk reply {msg.message_id} '<답변>'"
         )
         broker.publish("message.deliver", payload)
         # WS payload — mcp aidesk-channel 의 ws client 가 evt.type === 'message.deliver' +
