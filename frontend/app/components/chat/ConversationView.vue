@@ -82,10 +82,23 @@
                 {{ statusBadge(m.status) }}
               </span>
             </div>
+            <!-- AI 가 mark_read mcp tool 호출 → readAt 박힘. 그게 마지막 *내* 발신
+                 메시지면 = AI 가 읽고 처리중 → 책상 작업중 chip 표시. -->
+            <div
+              v-if="m.messageId === workingOnMessageId && partner"
+              class="cv-working-row">
+              <WorkingDeskChip
+                :agent-name="partner.agentName"
+                @expand="onExpandStage" />
+            </div>
           </div>
         </li>
       </ul>
     </div>
+    <WorkingDeskStage
+      v-if="stageOpen && partner"
+      :agent-name="partner.agentName"
+      @close="stageOpen = false" />
 
     <!-- 폰트 크기 모달 — iTerm 스타일 숫자 조절. 바깥 클릭 / X / Esc 로 닫기. -->
     <Teleport to="body">
@@ -160,6 +173,8 @@
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
+import WorkingDeskChip from '~/components/chat/WorkingDeskChip.vue';
+import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
 
 const props = defineProps<{
   partner: AgentItem | null;
@@ -183,6 +198,46 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 const pendingAttachments = ref<AttachmentRef[]>([]);
 const uploadingFiles = ref(false);
 const settingsOpen = ref(false);
+const stageOpen = ref(false);
+
+/**
+ * AI 가 책상에서 작업중 chip 박을 messageId.
+ *
+ * 조건:
+ *  - 마지막 내 발신 메시지 (fromAgentId === meId, toAgentId === partner)
+ *  - readAt 이 박혀있음 (AI 가 mark_read mcp tool 호출 완료)
+ *  - 그 뒤로 partner 의 답신 (fromAgentId === partner) 메시지가 *아직* 없음
+ *
+ * 답신 오면 chip 자동 사라짐.
+ */
+const workingOnMessageId = computed<string | null>(() => {
+  if (!props.partner) return null;
+  const list = props.messages;
+  // 최신 → 옛 순으로 뒤에서부터 — partner 답신 있으면 chip 표시 X
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i] as MessageItem;
+    if (!m) continue;
+    if (m.fromAgentId === props.partner.agentId && m.toAgentId === props.meId) {
+      // partner → me 메시지가 더 최신 → 이미 답신 옴
+      return null;
+    }
+    if (m.fromAgentId === props.meId && m.toAgentId === props.partner.agentId) {
+      // 마지막 내 발신 메시지
+      return m.readAt ? m.messageId : null;
+    }
+  }
+  return null;
+});
+
+// chip 사라지면 stage 도 자동 닫힘 (mount 된 컴포넌트 자체가 unmount 됨이 아니라
+// stageOpen 만 토글하면 됨 — workingOnMessageId null 되면 chip 안 보임, stage 도 닫음).
+watch(workingOnMessageId, (newId) => {
+  if (newId === null) stageOpen.value = false;
+});
+
+function onExpandStage(): void {
+  stageOpen.value = true;
+}
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
 const FONT_MAX_PX = 24;
@@ -433,6 +488,9 @@ function formatSize(bytes: number): string {
 }
 .cv-content { font-size: 13px; line-height: 1.55; }
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
+.cv-working-row { margin-top: 6px; display: flex; justify-content: flex-end; }
+/* 본인 (mine) 박는 메시지 = 우측 정렬. cv-msg.theirs 면 좌측. WorkingDeskChip
+   은 *내가 보낸 메시지의 아래* 박히므로 우측 정렬 박음. */
 .cv-status.sent     { color: #6B7785; }
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }

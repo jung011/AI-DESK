@@ -174,6 +174,18 @@ export function useChat() {
           if (evt?.type === 'message.deliver') {
             // 어떤 partner 와 관여된 메시지든 일단 fetchMessages 가 contact-centric 으로 필터.
             void fetchMessages();
+          } else if (evt?.type === 'message.read') {
+            // AI 가 mark_read mcp tool 호출 → backend SSE broadcast.
+            // 해당 message 의 readAt 만 patch (다시 fetch 하지 않음 — 가벼움).
+            const payload = evt.payload ?? evt;
+            const mid = payload?.messageId;
+            const rat = payload?.readAt;
+            if (mid && rat) {
+              const idx = messages.value.findIndex((m) => m.messageId === mid);
+              if (idx >= 0) {
+                messages.value[idx] = { ...messages.value[idx], readAt: rat } as MessageItem;
+              }
+            }
           }
         } catch { /* malformed payload — ignore */ }
       });

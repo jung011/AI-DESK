@@ -148,6 +148,20 @@ const TOOLS = [
       },
       required: ['task_id']
     }
+  },
+  {
+    name: 'mark_read',
+    description:
+      '받은 메시지의 *읽음* 신호. 사용자가 채팅 페이지에서 답신 기다리는 동안 ' +
+      '*AI 가 책상에서 작업중* 애니메이션을 위해 사용. 메시지를 *실제로 읽기 시작할 때* 호출. ' +
+      '메시지마다 한 번만 (반복 호출은 멱등 무시).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message_id: { type: 'string', description: '도착 메시지의 task_id / message_id' }
+      },
+      required: ['message_id']
+    }
   }
 ];
 
@@ -406,6 +420,26 @@ async function taskComplete({ task_id, result } = {}) {
   return { ok: true, taskId: task_id, status: 'done' };
 }
 
+async function markRead({ message_id } = {}) {
+  if (!message_id) throw new Error('message_id required');
+  const me = await ensureAgentId();
+  // PATCH /api/messages/{id}/read?agentId=<self> — repeated call 은 *already read* 로 404
+  // 받지만 mark_read 의 의도는 멱등 신호이므로 404 도 ok 로 처리.
+  try {
+    await api(
+      `/api/messages/${encodeURIComponent(message_id)}/read?agentId=${encodeURIComponent(me)}`,
+      { method: 'PATCH' }
+    );
+    return { ok: true, messageId: message_id, readAt: new Date().toISOString() };
+  } catch (err) {
+    const msg = String(err?.message ?? err);
+    if (msg.includes('already read') || msg.includes('not found')) {
+      return { ok: true, messageId: message_id, alreadyRead: true };
+    }
+    throw err;
+  }
+}
+
 async function checkInbox({ unread_only = true, limit = 10 } = {}) {
   const me = await ensureAgentId();
   const url = `/api/messages?agentId=${encodeURIComponent(me)}&direction=inbox&limit=${encodeURIComponent(
@@ -446,7 +480,10 @@ const server = new Server(
       '답변 시 <channel> 태그의 task_id 를 message_id 로 그대로 전달하세요.' +
       '\n\n[task 큐] 사용자가 대시보드 task 패널에서 박은 task 가 *task_id 메타* 동봉된 메시지로 ' +
       '도착합니다. 처리 시작 시 task_start(task_id) 호출, 완료 시 task_complete(task_id, result) ' +
-      '호출하세요. mcp tool 호출 안 하면 backend 가 stuck 상태로 인식.'
+      '호출하세요. mcp tool 호출 안 하면 backend 가 stuck 상태로 인식.' +
+      '\n\n[읽음 신호] 메시지를 *실제로 읽기 시작할 때* mark_read(message_id) 호출. 사용자 채팅 ' +
+      '페이지에 *AI 가 책상에서 작업중* 애니메이션이 표시됩니다. 메시지 받자마자 한 번씩. ' +
+      'task 메시지면 mark_read 먼저 + task_start 뒤이어 호출.'
   }
 );
 
@@ -463,6 +500,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'list_agents': result = await listAgents(); break;
       case 'task_start':  result = await taskStart(args); break;
       case 'task_complete': result = await taskComplete(args); break;
+      case 'mark_read':   result = await markRead(args); break;
       default: throw new Error(`Unknown tool: ${name}`);
     }
     return {

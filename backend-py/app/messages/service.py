@@ -230,7 +230,25 @@ class MessageService:
     # ---- mark read / ack ----
 
     def mark_read(self, message_id: str, agent_id: str) -> bool:
+        """to_agent_id == agent_id 일 때만 read_at 박음 + SSE message.read broadcast.
+
+        SSE 는 sender (from_agent_id) 의 채팅 페이지 가 *읽음 신호* 받아 책상
+        애니메이션 박는 path.
+        """
         n = self.repo.mark_read(message_id, agent_id)
+        if n > 0:
+            # row 마킹 성공 → from_agent_id 알아내서 SSE broadcast
+            msg = self.repo.find_by_id(message_id)
+            if msg is not None:
+                broker.publish(
+                    "message.read",
+                    {
+                        "messageId": message_id,
+                        "fromAgentId": msg.from_agent_id,
+                        "toAgentId": msg.to_agent_id,
+                        "readAt": (msg.read_at or datetime.now(tz=timezone.utc)).isoformat(),
+                    },
+                )
         self.db.commit()
         return n > 0
 
