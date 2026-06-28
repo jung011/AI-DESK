@@ -1,0 +1,139 @@
+name: Docker Build and Push (unified)
+
+# 옛엔 fe / be workflow 2 분리 (docker-build-push-fe.yml + docker-build-push-bepy.yml).
+# helm bump race + retag cycle 의 부산물 사고 누적 → 통합 path 박음.
+on:
+  push:
+    tags:
+      - 'fe-*'      # frontend image tag
+      - 'bepy-*'    # backend-py (FastAPI) image tag
+
+concurrency:
+  group: deploy-pipeline
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Identify tag prefix (fe vs be)
+        id: tag
+        run: |
+          REF="${GITHUB_REF#refs/tags/}"
+          if [[ "$REF" == fe-* ]]; then
+            KIND=fe
+            IMAGE_TAG="${REF#fe-}"
+          elif [[ "$REF" == bepy-* ]]; then
+            KIND=be
+            IMAGE_TAG="${REF#bepy-}"
+          else
+            echo "::error::Unknown tag prefix: $REF"
+            exit 1
+          fi
+          echo "kind=$KIND" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Tag detected: kind=$KIND image_tag=$IMAGE_TAG"
+
+      - name: Check if tag is from master
+        run: |
+          # FETCH_HEAD 만 갱신되는 사고 차단 — refs/remotes/origin/master 명시 갱신.
+          git fetch origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/master; then
+            echo "::error::This tag is not from master. Failing the build."
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # === Frontend path ===
+      - name: Build and push arm64 frontend image
+        if: steps.tag.outputs.kind == 'fe'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: jsh125/aidesk-frontend:${{ steps.tag.outputs.image_tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      # === Backend-py path ===
+      - name: Set up Bun (aidesk-channel mcp standalone binary)
+        if: steps.tag.outputs.kind == 'be'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Build mcp standalone binaries
+        if: steps.tag.outputs.kind == 'be'
+        run: |
+          set -e
+          cd aidesk-channel
+          bun install
+          mkdir -p ../backend-py/static/mcp
+          bun build --compile --target=bun-darwin-arm64 src/server.js --outfile ../backend-py/static/mcp/aidesk-channel-mcp-darwin-arm64
+          bun build --compile --target=bun-linux-x64    src/server.js --outfile ../backend-py/static/mcp/aidesk-channel-mcp-linux-x64
+          bun build --compile --target=bun-linux-arm64  src/server.js --outfile ../backend-py/static/mcp/aidesk-channel-mcp-linux-arm64
+          ls -la ../backend-py/static/mcp/
+
+      - name: Build and push arm64 backend-py image
+        if: steps.tag.outputs.kind == 'be'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend-py
+          file: ./backend-py/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: jsh125/aidesk-backend-py:${{ steps.tag.outputs.image_tag }}
+          cache-from: type=gha,scope=backend-py
+          cache-to: type=gha,scope=backend-py,mode=max
+
+      # === Helm values.yaml bump — 공통 path ===
+      - name: Helm values.yaml — image tag bump (with retry)
+        run: |
+          set -e
+          KIND="${{ steps.tag.outputs.kind }}"
+          IMAGE_TAG="${{ steps.tag.outputs.image_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin master
+            git switch -C master origin/master
+            if [[ "$KIND" == "fe" ]]; then
+              sed -i 's|tag: "1\.30\.[0-9]\+-rc[0-9]\+"|tag: "'"$IMAGE_TAG"'"|' Helm/values.yaml
+              COMMIT_MSG="chore(helm): bump frontend image tag to ${IMAGE_TAG}"
+            else
+              sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "'"$IMAGE_TAG"'"|' Helm/values.yaml
+              COMMIT_MSG="deploy(be): helm bump ${IMAGE_TAG} (auto from GHA)"
+            fi
+            if git diff --quiet Helm/values.yaml; then
+              echo "values.yaml unchanged — already on $IMAGE_TAG (skip)"
+              exit 0
+            fi
+            git add Helm/values.yaml
+            git commit -m "$COMMIT_MSG"
+            if git push origin master 2>&1; then
+              echo "helm bump push success on attempt $attempt"
+              exit 0
+            fi
+            echo "push race on attempt $attempt — fetch + retry in $((attempt * 3))s"
+            sleep $((attempt * 3))
+          done
+          echo "::error::push failed after retries"
+          exit 1
