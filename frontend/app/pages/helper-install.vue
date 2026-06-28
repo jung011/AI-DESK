@@ -158,37 +158,48 @@ async function recheck(): Promise<void> {
 <style scoped>
 .install-page {
   min-height: 100vh;
-  background: #F4F6FB;
+  background: linear-gradient(135deg, #0B0F19 0%, #0F1729 100%);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 60px 20px;
 }
 .install-box {
   width: 640px; max-width: 100%;
   background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
   padding: 36px 40px;
 }
 .install-head h2 {
   margin: 0 0 8px;
-  font-size: 22px; font-weight: 700; color: #101010;
+  font-size: 22px; font-weight: 700;
+  background: linear-gradient(90deg, #6BB6FF, #B89AFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .install-head .sub {
   margin: 0 0 28px;
-  font-size: 13px; color: #64748b;
+  font-size: 13px; color: #94A3B8;
 }
+.install-head .sub strong { color: var(--text); }
 .node-req {
   margin: 0 0 24px;
   padding: 16px 18px;
-  background: #FFF1F0;
-  border: 1.5px solid #FF7875;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1.5px solid rgba(248, 113, 113, 0.5);
   border-radius: 8px;
 }
 .node-req-title {
-  font-size: 15px; font-weight: 800; color: #CF1322; margin-bottom: 6px;
+  font-size: 15px; font-weight: 800; color: #FCA5A5; margin-bottom: 6px;
 }
-.node-req p { margin: 0; font-size: 13px; color: #7A1A12; line-height: 1.6; }
-.node-req a { color: #CF1322; font-weight: 700; }
+.node-req p { margin: 0; font-size: 13px; color: #FCA5A5; line-height: 1.6; }
+.node-req p strong { color: #FECACA; }
+.node-req a { color: #FCA5A5; font-weight: 700; }
+.node-req code {
+  background: rgba(248, 113, 113, 0.18); padding: 1px 5px; border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, monospace; color: #FECACA;
+}
 .steps {
   list-style: none; padding: 0; margin: 0;
   display: flex; flex-direction: column; gap: 24px;
@@ -200,43 +211,50 @@ async function recheck(): Promise<void> {
   flex-shrink: 0;
   width: 32px; height: 32px;
   border-radius: 50%;
-  background: #0062ff; color: #fff;
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 700;
+  box-shadow: 0 2px 8px rgba(107, 182, 255, 0.35);
 }
 .step-body {
   flex: 1;
 }
 .step-body h3 {
   margin: 4px 0 8px;
-  font-size: 15px; font-weight: 700; color: #101010;
+  font-size: 15px; font-weight: 700; color: var(--text);
 }
 .step-desc {
   margin: 0 0 12px;
-  font-size: 13px; color: #475569; line-height: 1.6;
+  font-size: 13px; color: #B0BCD0; line-height: 1.6;
 }
-.step-desc.small { font-size: 12px; color: #64748b; }
+.step-desc strong { color: var(--text); }
+.step-desc.small { font-size: 12px; color: #94A3B8; }
 .step-desc code, .check-failed code {
-  background: #F4F6FB; padding: 1px 6px; border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px;
+  background: var(--bg-input); padding: 1px 6px; border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; color: #93C5FD;
 }
 .btn-primary {
   display: inline-block;
   height: 38px; padding: 0 18px;
   line-height: 38px;
-  background: #0062ff; color: #fff;
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF); color: #fff;
   border: none; border-radius: 6px;
   font-size: 13px; font-weight: 600;
   cursor: pointer;
   text-decoration: none;
+  box-shadow: 0 2px 8px rgba(107, 182, 255, 0.35);
+  transition: transform .15s, box-shadow .15s;
 }
-.btn-primary:hover:not(:disabled) { background: #0052d4; }
-.btn-primary:disabled { background: #94A3B8; cursor: not-allowed; }
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(107, 182, 255, 0.5);
+}
+.btn-primary:disabled { background: #475569; cursor: not-allowed; box-shadow: none; }
 .check-failed {
   margin: 12px 0 0;
   padding: 10px 12px;
-  background: #FFF7E6; border: 1px solid #FFD591;
+  background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.4);
   border-radius: 6px;
-  font-size: 12px; color: #8B5A1A; line-height: 1.5;
+  font-size: 12px; color: #FCD34D; line-height: 1.5;
 }
 </style>
