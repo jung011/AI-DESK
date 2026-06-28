@@ -375,6 +375,11 @@ watch(() => props.messages[props.messages.length - 1]?.messageId, scrollToBottom
 // partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
 // 새 partner 의 마지막 메시지 ID 도 위 watch 가 잡지만, 빈 conversation 같은 edge 도 cover.
 watch(() => props.partner?.agentId, scrollToBottomDeferred);
+// AI 답신 작성중 placeholder bubble 이 추가 / 제거되면 scroll 도 따라옴. 옛에는
+// workingOnMessageId 가 새로 set 되도 messages array 자체는 안 변해 위 messageId
+// watch 미발화 → 사용자가 *placeholder 안 보임* 사고. visibleMessages 의 마지막
+// messageId 외 *workingOnMessageId 변화* 도 scroll trigger 박음.
+watch(workingOnMessageId, scrollToBottomDeferred);
 
 function statusLabel(s: AgentStatus): string {
   // 3 layer 통합: 온라인 / 오프라인 / 압축중.
