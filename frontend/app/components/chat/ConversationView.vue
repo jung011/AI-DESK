@@ -865,7 +865,7 @@ function formatSize(bytes: number): string {
   width: 100%;
   border-collapse: collapse;
   margin: 12px 0;
-  font-size: 12px;
+  font-size: 14px;
   background: #050810;
   border: 3px solid #6BB6FF;
 }
