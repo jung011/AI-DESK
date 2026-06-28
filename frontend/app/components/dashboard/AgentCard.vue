@@ -353,10 +353,12 @@ function formatTime(iso: string, status: string): string {
   content: ''; position: absolute; top: 0; left: 0; right: 0;
   height: 3px; border-radius: 6px 6px 0 0;
 }
-.ai-card.working::before { background: #00C853; }
-.ai-card.waiting::before { background: #0062FF; }
-.ai-card.idle::before    { background: #FFB300; }
-.ai-card.error::before   { background: #E53935; }
+/* 상단 3px line — 온라인 (working) = 초록, 압축중 = 파랑, 에러 = 빨강. offline = 없음 */
+.ai-card.working::before { background: #10B981; }
+.ai-card.waiting::before { background: #6BB6FF; }
+.ai-card.idle::before    { background: #10B981; }
+.ai-card.error::before   { background: #F87171; }
+.ai-card.offline::before { background: transparent; }
 
 .ai-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .ai-card-name-wrap { display: flex; align-items: center; gap: 10px; }
@@ -442,11 +444,16 @@ function formatTime(iso: string, status: string): string {
   padding: 4px 10px; border-radius: 20px;
   font-size: 11px; font-weight: 600;
 }
-.ico_badge.type_v5  { background: #E8F5E9; color: #2E7D32; }
-.ico_badge.type_v8  { background: #FFF8E1; color: #E65100; }
-.ico_badge.type_v9  { background: #F3E8FF; color: #6A1B9A; }
-.ico_badge.type_v10 { background: #E3F2FD; color: #0D47A1; }
-.ico_badge.type_v11 { background: #FFEBEE; color: #B71C1C; }
+/* 다크 정합 + 사용자 spec 통일 (옛 옅은 light → alpha 다크):
+   - 온라인 (active/waiting/idle → type_v5) = 초록
+   - 오프라인 (type_v8) = 회색 (옛 노랑 → 회색 통일)
+   - 압축중 (type_v10) = 파랑
+   - 에러 (type_v11) = 빨강 */
+.ico_badge.type_v5  { background: rgba(16, 185, 129, 0.18); color: #34D399; }
+.ico_badge.type_v8  { background: rgba(107, 114, 128, 0.22); color: #9CA3AF; }
+.ico_badge.type_v9  { background: rgba(168, 85, 247, 0.18); color: #C084FC; }
+.ico_badge.type_v10 { background: rgba(107, 182, 255, 0.18); color: #6BB6FF; }
+.ico_badge.type_v11 { background: rgba(248, 113, 113, 0.18); color: #F87171; }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .ico_badge.type_v5  .badge-dot { background: #00C853; }
 .ico_badge.type_v8  .badge-dot { background: #FFB300; }

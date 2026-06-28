@@ -280,13 +280,17 @@ const onlineCount = computed(() =>
 }
 .colleague-card {
   position: relative;
-  background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: 6px;
+  /* 모든 카드 통일 — 알바 (external) 카드 의 alpha 색. online/offline 차이는 *online-dot* 만 */
+  background: rgba(107, 182, 255, 0.08);
+  border: 1px solid rgba(107, 182, 255, 0.4);
+  border-radius: 6px;
   padding: 12px 14px;
   text-align: left;
   font-family: inherit;
   display: flex; flex-direction: column; gap: 4px;
 }
-.colleague-card.offline { background: rgba(15, 23, 41, 0.4); }
+/* offline 카드 도 같은 배경 — 색 통일 (요청 spec) */
+.colleague-card.offline { background: rgba(107, 182, 255, 0.08); }
 .colleague-card.me-unset { opacity: 0.7; }
 .colleague-card .online-dot {
   position: absolute; top: 12px; right: 12px;
@@ -303,13 +307,13 @@ const onlineCount = computed(() =>
   font-size: 11px; color: var(--text-muted);
 }
 
-/* 외부 AI 카드 — service 형태라 다른 색상 / 배지로 구분. */
+/* 외부 AI 카드 — 옛엔 별 색 박혔는데 사용자 정정으로 모든 카드 통일.
+   external-tag 만 *외부 AI* 구분 표시. */
 .colleague-card.external {
-  border-color: rgba(107, 182, 255, 0.4);
-  background: rgba(107, 182, 255, 0.08);
+  /* base .colleague-card 와 동일 — override 안 함 */
 }
 .colleague-card.external.offline {
-  background: rgba(107, 182, 255, 0.05);
+  /* base .colleague-card.offline 와 동일 */
 }
 .external-tag {
   font-size: 10px; font-weight: 600; color: var(--link);
