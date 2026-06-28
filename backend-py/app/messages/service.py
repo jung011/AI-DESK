@@ -70,8 +70,12 @@ class MessageService:
 
     # ---- send (create) ----
 
-    def create(self, body: MessageCreateRq) -> MessageItem:
-        """1:1 메시지 송신. 정책 위반 시 status='failed' + error_reason 로 row 보존 (audit)."""
+    def create(self, body: MessageCreateRq, caller_account_sn: int | None = None) -> MessageItem:
+        """1:1 메시지 송신. 정책 위반 시 status='failed' + error_reason 로 row 보존 (audit).
+
+        sameUser 격리 — caller_account_sn 박으면 fromAgentId 의 owner 가 caller 매칭
+        검증. 다른 user 명의로 spoofing 차단.
+        """
         from_id = body.from_agent_id
         to_id = body.to_agent_id
         if from_id == to_id:
@@ -80,6 +84,8 @@ class MessageService:
         sender = self.agent_repo.find_by_agent_id_any_owner(from_id)
         if sender is None:
             return self._save_failed(body, "발신 agent 없음")
+        if caller_account_sn is not None and sender.owner_account_sn != caller_account_sn:
+            return self._save_failed(body, "fromAgent owner != caller — spoofing 차단")
         receiver = self.agent_repo.find_by_agent_id_any_owner(to_id)
         if receiver is None:
             return self._save_failed(body, "수신 agent 없음")
@@ -125,14 +131,13 @@ class MessageService:
         # B Phase 7 — render 책임 backend 이관. helper sse_consumer 의 _HEADER_TEMPLATE
         # 대체. ANSI: \x1b[100;97m...\x1b[0m = 회색 bg + 흰 글자. 형식 변경 시 backend
         # rebuild 만 — helper 안 만짐.
-        # render 의 trailer 에 mark_read protocol 명시. AI 가 server instructions
-        # 안 봐도 메시지마다 *읽었으면 mark_read 먼저* 안내 박힘. 채팅 페이지의
-        # 책상 작업중 chip 이 trigger 받으려면 AI 가 mark_read 호출 필수.
+        # mark_read 안내를 *content 앞* 으로 옮김 — AI 가 메시지 *읽는 순간 첫 줄* 부터
+        # 박혀있어 skip 못함. 옛 trailer (뒤쪽 위치) 가 무시되던 사고 fix.
         payload["renderedContent"] = (
-            f"\x1b[100;97m[aidesk · FROM:{sender.agent_name} | MSG:{msg.message_id}]"
-            f"\x1b[0m {body.content}"
-            f"  ↳ 메시지를 읽었으면 mcp `mark_read(\"{msg.message_id}\")` 호출 후 작업 진행하세요. "
-            f"답신: adesk reply {msg.message_id} '<답변>'"
+            f"\x1b[100;97m[aidesk · FROM:{sender.agent_name} | MSG:{msg.message_id}]\x1b[0m "
+            f"⚠ 먼저 mcp `mark_read(\"{msg.message_id}\")` 호출 후 처리 — "
+            f"{body.content}"
+            f"  ↳ 답신: adesk reply {msg.message_id} '<답변>'"
         )
         broker.publish("message.deliver", payload)
         # WS payload — mcp aidesk-channel 의 ws client 가 evt.type === 'message.deliver' +
@@ -286,14 +291,17 @@ class MessageService:
 
     # ---- broadcast ----
 
-    def broadcast(self, body: MessageBroadcastRq) -> MessageBroadcastRs:
+    def broadcast(self, body: MessageBroadcastRq, caller_account_sn: int | None = None) -> MessageBroadcastRs:
         """fan-out 발신 — 각 수신자에게 create() 동일 흐름 적용.
 
-        Spring MessageService.broadcast 와 1:1.
+        Spring MessageService.broadcast 와 1:1. sameUser 격리 — caller_account_sn 박으면
+        fromAgentId owner 가 caller 매칭 검증 (spoofing 차단).
         """
         sender = self.agent_repo.find_by_agent_id_any_owner(body.from_agent_id)
         if sender is None:
             # Spring: 404. 여기선 빈 결과 + notFound 카운트.
+            return MessageBroadcastRs(items=[], total_attempted=0, succeeded=0, failed=0, not_found=len(body.to_agent_ids))
+        if caller_account_sn is not None and sender.owner_account_sn != caller_account_sn:
             return MessageBroadcastRs(items=[], total_attempted=0, succeeded=0, failed=0, not_found=len(body.to_agent_ids))
 
         # 자기 자신 + 중복 제거

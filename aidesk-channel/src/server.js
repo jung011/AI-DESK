@@ -406,15 +406,15 @@ async function replyToMessage({ message_id, content }) {
 
 async function taskStart({ task_id } = {}) {
   if (!task_id) throw new Error('task_id required');
-  await ensureAgentId();
-  await api(`/api/tasks/${encodeURIComponent(task_id)}/start`, { method: 'POST', body: '{}' });
+  const me = await ensureAgentId();
+  await api(`/api/tasks/${encodeURIComponent(task_id)}/start?callerAgentId=${encodeURIComponent(me)}`, { method: 'POST', body: '{}' });
   return { ok: true, taskId: task_id, status: 'in_progress' };
 }
 
 async function taskComplete({ task_id, result } = {}) {
   if (!task_id) throw new Error('task_id required');
-  await ensureAgentId();
-  await api(`/api/tasks/${encodeURIComponent(task_id)}/complete`, {
+  const me = await ensureAgentId();
+  await api(`/api/tasks/${encodeURIComponent(task_id)}/complete?callerAgentId=${encodeURIComponent(me)}`, {
     method: 'POST',
     body: JSON.stringify({ result: result ?? null }),
   });

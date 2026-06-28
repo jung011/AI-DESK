@@ -35,9 +35,19 @@ async def health() -> dict[str, str]:
 # ---- collection endpoints (literal path first) ----
 
 @router.post("", response_model=ApiEnvelope[MessageItem])
-async def create(body: MessageCreateRq, db: Session = Depends(get_db)) -> ApiEnvelope[MessageItem]:
+async def create(
+    body: MessageCreateRq,
+    user: AuthenticatedUser | None = Depends(optional_user),
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[MessageItem]:
+    """1:1 메시지 발신. caller = cookie user 또는 fromAgentId 의 owner.
+
+    spoofing 차단 — 다른 user 의 agent 명의로 발송 시 status='failed' + error_reason.
+    mcp daemon 은 fromAgentId=me 박으니 owner 매칭으로 통과.
+    """
+    caller_sn = resolve_caller_account_sn(db, user, body.from_agent_id)
     svc = MessageService(db)
-    item = svc.create(body)
+    item = svc.create(body, caller_account_sn=caller_sn)
     return ok(item)
 
 
@@ -81,10 +91,14 @@ async def unread_count(
 
 @router.post("/broadcast", response_model=ApiEnvelope[MessageBroadcastRs])
 async def broadcast(
-    body: MessageBroadcastRq, db: Session = Depends(get_db)
+    body: MessageBroadcastRq,
+    user: AuthenticatedUser | None = Depends(optional_user),
+    db: Session = Depends(get_db),
 ) -> ApiEnvelope[MessageBroadcastRs]:
+    """fan-out 발신 — caller 가 fromAgentId 소유. spoofing 차단."""
+    caller_sn = resolve_caller_account_sn(db, user, body.from_agent_id)
     svc = MessageService(db)
-    return ok(svc.broadcast(body))
+    return ok(svc.broadcast(body, caller_account_sn=caller_sn))
 
 
 @router.get("/conversations", response_model=ApiEnvelope[list[ConversationItem]])

@@ -68,7 +68,12 @@ class AiTaskService:
         self.db.commit()
         return TaskListRs(items=items)
 
-    def start(self, task_id: str) -> bool:
+    def start(self, task_id: str, caller_account_sn: int | None = None) -> bool:
+        """sameUser 격리 — caller_account_sn 박으면 task 의 requester 매칭 검증."""
+        if caller_account_sn is not None:
+            task = self.repo.find_by_id(task_id)
+            if task is None or task.requester_account_sn != caller_account_sn:
+                return False
         n = self.repo.mark_started(task_id)
         self.db.commit()
         ok = n > 0
@@ -76,9 +81,11 @@ class AiTaskService:
             broker.publish("agent.task.changed", {"event": "started", "taskId": task_id})
         return ok
 
-    def complete(self, task_id: str, result: str | None) -> bool:
+    def complete(self, task_id: str, result: str | None, caller_account_sn: int | None = None) -> bool:
         task = self.repo.find_by_id(task_id)
         if task is None:
+            return False
+        if caller_account_sn is not None and task.requester_account_sn != caller_account_sn:
             return False
         n = self.repo.mark_completed(task_id, result)
         self.db.commit()
@@ -89,7 +96,11 @@ class AiTaskService:
             self._push_next_to_agent(task.agent_id, task.requester_account_sn)
         return ok
 
-    def cancel(self, task_id: str) -> bool:
+    def cancel(self, task_id: str, caller_account_sn: int | None = None) -> bool:
+        if caller_account_sn is not None:
+            task = self.repo.find_by_id(task_id)
+            if task is None or task.requester_account_sn != caller_account_sn:
+                return False
         n = self.repo.mark_status(task_id, "canceled")
         self.db.commit()
         ok = n > 0

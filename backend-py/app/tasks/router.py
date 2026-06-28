@@ -3,13 +3,14 @@
 `/api/agents/{id}/tasks` GET/POST 는 옛 agents 도메인의 path 와 정합 — agent 별 task list.
 `/api/tasks/*` 는 task lifecycle (start / complete / cancel / list_recent).
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.deps import current_user, optional_user
 from app.auth.schemas import AuthenticatedUser
 from app.common.response import ApiEnvelope, fail, ok
 from app.core.database import get_db
+from app.messages.caller import resolve_caller_account_sn
 from app.tasks.schemas import TaskCompleteRq, TaskCreateRq, TaskItem, TaskListRs
 from app.tasks.service import AiTaskService
 
@@ -47,14 +48,16 @@ async def create_task(
 @router.post("/{task_id}/start", response_model=ApiEnvelope[None])
 async def start_task(
     task_id: str,
+    callerAgentId: str | None = Query(default=None),  # noqa: N803
+    user: AuthenticatedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[None]:
-    """mcp tool task_start 가 backend 에 보내는 endpoint. cookie-less (permitAll).
-
-    AI 가 *task 받음 + 처리 시작* 시 호출. backend 가 status='in_progress' 마킹.
+    """mcp tool task_start. caller = cookie user 또는 callerAgentId 의 owner.
+    sameUser 격리 — task 의 requester != caller 면 404. spoofing 차단.
     """
+    caller_sn = resolve_caller_account_sn(db, user, callerAgentId)
     svc = AiTaskService(db)
-    ok_ = svc.start(task_id)
+    ok_ = svc.start(task_id, caller_account_sn=caller_sn)
     if not ok_:
         return fail(404, "task not found")  # type: ignore[return-value]
     return ok(None)
@@ -64,14 +67,14 @@ async def start_task(
 async def complete_task(
     task_id: str,
     body: TaskCompleteRq,
+    callerAgentId: str | None = Query(default=None),  # noqa: N803
+    user: AuthenticatedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[None]:
-    """mcp tool task_complete 가 호출. status='done' + result 박힘.
-
-    backend 가 *다음 todo task* 자동 push (helper sse_consumer 통해).
-    """
+    """mcp tool task_complete. sameUser 격리 — task requester == caller 매칭."""
+    caller_sn = resolve_caller_account_sn(db, user, callerAgentId)
     svc = AiTaskService(db)
-    ok_ = svc.complete(task_id, body.result)
+    ok_ = svc.complete(task_id, body.result, caller_account_sn=caller_sn)
     if not ok_:
         return fail(404, "task not found")  # type: ignore[return-value]
     return ok(None)
@@ -83,10 +86,9 @@ async def cancel_task(
     user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[None]:
-    """사용자가 *수동 cancel* — Kanban UI 의 ✕ button."""
-    _ = user  # 인증만 — 권한 filter 추가 후속
+    """사용자 수동 cancel. sameUser 격리 — caller user.account_sn == requester."""
     svc = AiTaskService(db)
-    ok_ = svc.cancel(task_id)
+    ok_ = svc.cancel(task_id, caller_account_sn=user.account_sn)
     if not ok_:
         return fail(404, "task not found")  # type: ignore[return-value]
     return ok(None)
