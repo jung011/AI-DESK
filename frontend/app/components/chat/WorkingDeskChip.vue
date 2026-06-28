@@ -1,9 +1,8 @@
 <template>
-  <button
+  <span
     class="wd-chip"
-    type="button"
-    :title="`${agentName} 가 책상에서 작업중 — 클릭하면 자세히 보기`"
-    @click.stop="$emit('expand')"
+    tabindex="0"
+    :title="`${agentName} 가 책상에서 작업중 — 호버하면 자세히 보기`"
   >
     <span class="wd-mini">
       <span class="wd-monitor"><span class="wd-cursor"></span></span>
@@ -11,12 +10,11 @@
       <span class="wd-head"></span>
     </span>
     <span class="wd-label">{{ agentName }} 가 책상에서 작업중</span>
-  </button>
+  </span>
 </template>
 
 <script setup lang="ts">
 defineProps<{ agentName: string }>();
-defineEmits<{ (e: 'expand'): void }>();
 </script>
 
 <style scoped>
@@ -28,16 +26,17 @@ defineEmits<{ (e: 'expand'): void }>();
   background: rgba(107, 182, 255, 0.12);
   border: 1px solid rgba(107, 182, 255, 0.25);
   border-radius: 14px;
-  cursor: pointer;
+  cursor: default;
   font-size: 11px;
   color: #6BB6FF;
-  transition: background .15s, border-color .15s, transform .15s;
+  transition: background .15s, border-color .15s;
   font-family: inherit;
+  outline: none;
 }
-.wd-chip:hover {
+.wd-chip:hover,
+.wd-chip:focus {
   background: rgba(107, 182, 255, 0.2);
   border-color: rgba(107, 182, 255, 0.5);
-  transform: translateY(-1px);
 }
 .wd-mini {
   position: relative;

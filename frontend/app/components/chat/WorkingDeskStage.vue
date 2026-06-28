@@ -1,204 +1,123 @@
 <template>
-  <Teleport to="body">
-    <div class="wds-overlay" @click="$emit('close')">
-      <div class="wds-panel" @click.stop>
-        <header class="wds-head">
-          <div class="wds-title">
-            <span class="wds-avatar">🤖</span>
-            <span>
-              <div class="wds-name">{{ agentName }}</div>
-              <div class="wds-sub">메시지를 받아 작업을 진행하고 있어요</div>
-            </span>
-          </div>
-          <button class="wds-x" type="button" aria-label="닫기" @click="$emit('close')">✕</button>
-        </header>
-        <div class="wds-stage">
-          <div class="wds-desk">
-            <div class="wds-monitor">
-              <div class="wds-screen">
-                <div class="wds-codelines">
-                  <div class="wds-line c1"></div>
-                  <div class="wds-line c2"></div>
-                  <div class="wds-line c3"></div>
-                  <div class="wds-line c4"></div>
-                  <div class="wds-line c5"></div>
-                  <div class="wds-line c1"></div>
-                  <div class="wds-line c2"></div>
-                  <div class="wds-line c3"></div>
-                </div>
-              </div>
-            </div>
-            <div class="wds-desk-top"></div>
-            <div class="wds-leg left"></div>
-            <div class="wds-leg right"></div>
-            <div class="wds-keyboard"></div>
-            <div class="wds-chair"></div>
-            <div class="wds-character">
-              <div class="wds-head-c"><div class="wds-hair"></div></div>
-              <div class="wds-body">
-                <div class="wds-arm left"></div>
-                <div class="wds-arm right"></div>
-              </div>
+  <div class="wds-inline" role="status" :aria-label="`${agentName} 가 책상에서 작업중`">
+    <div class="wds-stage">
+      <div class="wds-desk">
+        <div class="wds-monitor">
+          <div class="wds-screen">
+            <div class="wds-codelines">
+              <div class="wds-line c1"></div>
+              <div class="wds-line c2"></div>
+              <div class="wds-line c3"></div>
+              <div class="wds-line c4"></div>
+              <div class="wds-line c5"></div>
+              <div class="wds-line c1"></div>
+              <div class="wds-line c2"></div>
+              <div class="wds-line c3"></div>
             </div>
           </div>
-          <div class="wds-floor"></div>
         </div>
-        <div class="wds-foot">
-          <span class="wds-dot"></span>
-          답신이 오면 이 화면은 자동으로 닫혀요
+        <div class="wds-desk-top"></div>
+        <div class="wds-leg left"></div>
+        <div class="wds-leg right"></div>
+        <div class="wds-keyboard"></div>
+        <div class="wds-chair"></div>
+        <div class="wds-character">
+          <div class="wds-head-c"><div class="wds-hair"></div></div>
+          <div class="wds-body">
+            <div class="wds-arm left"></div>
+            <div class="wds-arm right"></div>
+          </div>
         </div>
       </div>
+      <div class="wds-floor"></div>
     </div>
-  </Teleport>
+    <div class="wds-caption">
+      <span class="wds-dot"></span>
+      <span><strong>{{ agentName }}</strong> 가 책상에서 작업중</span>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 defineProps<{ agentName: string }>();
-defineEmits<{ (e: 'close'): void }>();
-
-onMounted(() => {
-  if (typeof document !== 'undefined') {
-    document.addEventListener('keydown', onEsc);
-  }
-});
-onBeforeUnmount(() => {
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('keydown', onEsc);
-  }
-});
-function onEsc(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    (document.activeElement as HTMLElement)?.blur();
-    // emit via DOM event
-    const evt = new CustomEvent('wds-close');
-    document.dispatchEvent(evt);
-  }
-}
 </script>
 
 <style scoped>
-.wds-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9000;
-  backdrop-filter: blur(4px);
-}
-.wds-panel {
-  width: 420px;
-  max-width: 92vw;
-  background: #1E2738;
+.wds-inline {
+  width: 240px;
   border: 1px solid #2A3950;
-  border-radius: 14px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  border-radius: 10px;
   overflow: hidden;
+  background: #1E2738;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
-.wds-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid #2A3950;
-}
-.wds-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.wds-avatar {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #6BB6FF, #B89AFF);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 18px;
-}
-.wds-name {
-  font-size: 14px; font-weight: 700; color: #E5EBF5;
-}
-.wds-sub {
-  font-size: 11px; color: #94A3B8; margin-top: 2px;
-}
-.wds-x {
-  width: 28px; height: 28px;
-  background: transparent;
-  border: 1px solid #2A3950;
-  border-radius: 6px;
-  color: #94A3B8;
-  cursor: pointer;
-  font-size: 14px;
-}
-.wds-x:hover { color: #E5EBF5; border-color: #475569; }
-
 .wds-stage {
   position: relative;
-  height: 240px;
+  height: 160px;
   background: linear-gradient(180deg, #0B1220 0%, #0F1729 100%);
   display: flex; align-items: flex-end; justify-content: center;
   overflow: hidden;
 }
 .wds-floor {
   position: absolute; bottom: 0; left: 0; right: 0;
-  height: 28px;
+  height: 20px;
   background: linear-gradient(180deg, transparent 0%, rgba(107,182,255,0.06) 100%);
   border-top: 1px solid rgba(107,182,255,0.18);
 }
 
 .wds-desk {
   position: relative;
-  width: 220px;
-  height: 180px;
+  width: 160px;
+  height: 130px;
 }
 .wds-desk-top {
-  position: absolute; bottom: 36px; left: 14px; right: 14px;
-  height: 7px;
+  position: absolute; bottom: 26px; left: 10px; right: 10px;
+  height: 5px;
   background: linear-gradient(90deg, #2A3950, #4A5A78, #2A3950);
   border-radius: 2px;
 }
 .wds-leg {
-  position: absolute; bottom: 0; width: 5px; height: 36px;
+  position: absolute; bottom: 0; width: 4px; height: 26px;
   background: #2A3950;
 }
-.wds-leg.left { left: 34px; }
-.wds-leg.right { right: 34px; }
+.wds-leg.left { left: 26px; }
+.wds-leg.right { right: 26px; }
 
 .wds-monitor {
   position: absolute;
-  bottom: 43px; left: 48px;
-  width: 130px; height: 85px;
+  bottom: 31px; left: 34px;
+  width: 96px; height: 62px;
   background: #050810;
-  border: 3px solid #4A5A78;
-  border-radius: 6px;
+  border: 2.5px solid #4A5A78;
+  border-radius: 5px;
   overflow: hidden;
-  box-shadow: 0 0 24px rgba(107,182,255,0.25);
+  box-shadow: 0 0 18px rgba(107,182,255,0.25);
 }
 .wds-monitor::after {
   content: '';
-  position: absolute; bottom: -12px; left: 50%;
+  position: absolute; bottom: -9px; left: 50%;
   transform: translateX(-50%);
-  width: 34px; height: 10px;
+  width: 26px; height: 7px;
   background: #4A5A78;
-  border-radius: 0 0 4px 4px;
+  border-radius: 0 0 3px 3px;
 }
 .wds-screen {
   position: absolute; inset: 0;
   background:
-    repeating-linear-gradient(0deg, transparent 0px, transparent 5px, rgba(107,182,255,0.06) 5px, rgba(107,182,255,0.06) 6px),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 4px, rgba(107,182,255,0.06) 4px, rgba(107,182,255,0.06) 5px),
     linear-gradient(180deg, #061025 0%, #0B1A35 100%);
 }
 .wds-codelines {
-  position: absolute; inset: 8px;
+  position: absolute; inset: 6px;
   animation: wds-scroll 4s linear infinite;
 }
 @keyframes wds-scroll {
-  0% { transform: translateY(70px); }
+  0% { transform: translateY(50px); }
   100% { transform: translateY(-100%); }
 }
 .wds-line {
-  height: 6px;
-  margin-bottom: 4px;
+  height: 4px;
+  margin-bottom: 3px;
   border-radius: 1px;
 }
 .wds-line.c1 { width: 70%; background: #6BB6FF; opacity: 0.7; }
@@ -208,20 +127,20 @@ function onEsc(e: KeyboardEvent) {
 .wds-line.c5 { width: 65%; background: #6BB6FF; opacity: 0.7; }
 
 .wds-keyboard {
-  position: absolute; bottom: 38px; left: 56px;
-  width: 110px; height: 5px;
+  position: absolute; bottom: 28px; left: 40px;
+  width: 80px; height: 4px;
   background: #4A5A78;
   border-radius: 2px;
 }
 .wds-chair {
-  position: absolute; bottom: 24px; right: 22px;
-  width: 24px; height: 32px;
+  position: absolute; bottom: 16px; right: 16px;
+  width: 18px; height: 24px;
   background: #2A3950;
-  border-radius: 4px 4px 0 0;
+  border-radius: 3px 3px 0 0;
 }
 .wds-character {
-  position: absolute; bottom: 56px; right: 30px;
-  width: 32px;
+  position: absolute; bottom: 42px; right: 22px;
+  width: 24px;
   animation: wds-bob 1.7s ease-in-out infinite;
 }
 @keyframes wds-bob {
@@ -229,7 +148,7 @@ function onEsc(e: KeyboardEvent) {
   50% { transform: translateY(-2px); }
 }
 .wds-head-c {
-  width: 20px; height: 20px;
+  width: 16px; height: 16px;
   border-radius: 50%;
   background: linear-gradient(135deg, #FBD38D, #F6AD55);
   margin: 0 auto;
@@ -237,32 +156,32 @@ function onEsc(e: KeyboardEvent) {
 }
 .wds-hair {
   position: absolute;
-  top: -2px; left: 1px;
-  width: 18px; height: 9px;
+  top: -1px; left: 1px;
+  width: 14px; height: 7px;
   background: linear-gradient(180deg, #4A3520, #2D1810);
-  border-radius: 9px 9px 4px 4px;
+  border-radius: 7px 7px 3px 3px;
 }
 .wds-body {
-  width: 28px; height: 20px;
+  width: 22px; height: 16px;
   background: linear-gradient(180deg, #6BB6FF, #4A8FCF);
-  border-radius: 6px 6px 2px 2px;
+  border-radius: 5px 5px 2px 2px;
   margin: -2px auto 0;
   position: relative;
 }
 .wds-arm {
   position: absolute;
-  width: 5px; height: 15px;
+  width: 4px; height: 12px;
   background: linear-gradient(180deg, #6BB6FF, #4A8FCF);
-  border-radius: 3px;
-  top: 4px;
+  border-radius: 2px;
+  top: 3px;
 }
 .wds-arm.left {
-  left: -3px;
+  left: -2px;
   transform-origin: top center;
   animation: wds-arm-l 0.4s ease-in-out infinite;
 }
 .wds-arm.right {
-  right: -3px;
+  right: -2px;
   transform-origin: top center;
   animation: wds-arm-r 0.4s ease-in-out infinite;
   animation-delay: 0.2s;
@@ -276,14 +195,18 @@ function onEsc(e: KeyboardEvent) {
   50% { transform: rotate(-32deg); }
 }
 
-.wds-foot {
-  padding: 12px 16px;
-  border-top: 1px solid #2A3950;
+.wds-caption {
+  padding: 8px 12px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 11px;
   color: #94A3B8;
+  border-top: 1px solid #2A3950;
+}
+.wds-caption strong {
+  color: #6BB6FF;
+  font-weight: 600;
 }
 .wds-dot {
   width: 6px; height: 6px;
@@ -291,6 +214,7 @@ function onEsc(e: KeyboardEvent) {
   background: #22C55E;
   box-shadow: 0 0 6px #22C55E;
   animation: wds-dot 1.4s ease-in-out infinite;
+  flex-shrink: 0;
 }
 @keyframes wds-dot {
   0%, 100% { opacity: 1; }
