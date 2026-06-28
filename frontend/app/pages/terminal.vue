@@ -23,6 +23,7 @@
           @delete="onDeleteLocal"
           @open-claude="onOpenClaude"
           @open-telegram="onOpenTelegram"
+          @open-skip="onOpenSkip"
         />
       </div>
       <div class="term-pane term-pane-conv">
@@ -220,6 +221,19 @@ async function onOpenTelegram(agentId: string): Promise<void> {
   setTimeout(() => {
     const continueFlag = hasPast ? ' -c' : '';
     const cmd = `claude --dangerously-load-development-channels server:aidesk-channel --channels plugin:telegram@claude-plugins-official${continueFlag}`;
+    webTermRef.value?.pasteCommand?.(cmd);
+  }, 600);
+}
+
+// 햄버거 메뉴 → 퍼미션 스킵 모드 — 클로드 열기 + `--dangerously-skip-permissions`.
+// claude 의 yes/no 확인 dialog 자동 통과 박는 path. 옵션 -c 옛 클로드 열기와 동일 gate.
+async function onOpenSkip(agentId: string): Promise<void> {
+  const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
+  const hasPast = await _hasPastSession(agent?.workspaceDir);
+  await nextTick();
+  setTimeout(() => {
+    const continueFlag = hasPast ? ' -c' : '';
+    const cmd = `claude --dangerously-load-development-channels server:aidesk-channel --dangerously-skip-permissions${continueFlag}`;
     webTermRef.value?.pasteCommand?.(cmd);
   }, 600);
 }
