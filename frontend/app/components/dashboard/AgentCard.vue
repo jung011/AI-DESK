@@ -270,10 +270,13 @@ const statusLabel = computed(() => ({
   error: '오류'
 }[props.agent.status] ?? '온라인'));
 
+// 온라인 3 상태 (active/waiting/idle) = 모두 초록 type_v5. 옛 idle→type_v8 (gray) 사고
+// 가 *온라인이지만 회색* 박힘으로 offline 과 구분 안가. 통일 = statusLabel 의 *온라인 묶음*
+// 과 정합.
 const badgeClass = computed(() => ({
   active: 'type_v5',
-  waiting: 'type_v10',
-  idle: 'type_v8',
+  waiting: 'type_v5',
+  idle: 'type_v5',
   offline: 'type_v8',
   compacting: 'type_v10',
   error: 'type_v11'
