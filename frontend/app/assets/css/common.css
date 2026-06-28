@@ -1,9 +1,38 @@
 @charset "UTF-8";
 
-/* CSS Variables */
+/* CSS Variables — 다크모드 통일 palette (옵션 P).
+ * 옛 라이트 모드 (#F4F6FB base) 폐기, 채팅/터미널 색감 정합.
+ * 컴포넌트 scoped style 안 var(--...) 접근 가능 (root 변수는 전역).
+ * 라이트 토글 도입 시 [data-theme="light"] 박아 override path. */
 :root{
   --popup-width:700px;
+
+  /* 다크 palette */
+  --bg-page:      #0F1729;
+  --bg-panel:     rgba(15, 23, 41, 0.6);
+  --bg-card:      #1E2738;
+  --bg-input:     #0B1220;
+  --bg-hover:     #2A3950;
+  --border:       #2A3950;
+  --border-soft:  #1E2738;
+  --text:         #E5EBF5;
+  --text-muted:   #8B95A5;
+  --text-dim:     #6B7280;
+  --accent:       #FBBF24;
+  --primary:      #2A4A8E;
+  --primary-h:    #3A5A9E;
+  --link:         #93C5FD;
+  --success:      #10B981;
+  --warn:         #FBBF24;
+  --danger:       #F87171;
 }
+
+/* 전역 body / html — 라이트 잔재 차단 */
+body, html {
+  background: var(--bg-page);
+  color: var(--text);
+}
+
 
 /* Space */
 .section{position:relative;width:100%;zoom:1}
