@@ -250,8 +250,9 @@ async function ensureAgentId() {
     }
     AGENT_ID = ENV_AGENT_ID;
     // 본인 이름 backend lookup — Bearer 인증으로 본인 row 만 조회 가능.
+    // callerAgentId = ENV_AGENT_ID (자기 자신) — backend 의 detail sameUser 검증 통과.
     try {
-      const env = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}`);
+      const env = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}?callerAgentId=${encodeURIComponent(ENV_AGENT_ID)}`);
       MY_AGENT_NAME = env.data?.agentName || null;
     } catch (e) {
       dbg(`aidesk-channel: name lookup failed: ${e?.message ?? e}`);
@@ -272,7 +273,7 @@ async function ensureAgentId() {
     // sameUser 격리 (bepy-rc63) 로 비인증 list 호출이 빈 응답 → byEnv 못 찾음.
     // detail endpoint 는 sameUser filter 없으므로 ENV_AGENT_ID 직접 조회로 fallback.
     try {
-      const self = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}`);
+      const self = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}?callerAgentId=${encodeURIComponent(ENV_AGENT_ID)}`);
       if (self?.data?.agentId === ENV_AGENT_ID) {
         AGENT_ID = ENV_AGENT_ID;
         MY_AGENT_NAME = self.data.agentName || null;
@@ -335,7 +336,7 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   // 발생하는 무응답 silence 또는 압축 중 자연 지연을 caller LLM 이 즉시 인지하게.
   let preWarning = null;
   try {
-    const probe = await api(`/api/agents/${encodeURIComponent(toAgentId)}`);
+    const probe = await api(`/api/agents/${encodeURIComponent(toAgentId)}?callerAgentId=${encodeURIComponent(me)}`);
     const s = probe.data?.status;
     const name = probe.data?.agentName || target_agent;
     if (s === 'offline' || s === 'error') {
@@ -361,7 +362,7 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   if (finalStatus === 'sent' && message?.messageId) {
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      const check = await api(`/api/messages/${encodeURIComponent(message.messageId)}`);
+      const check = await api(`/api/messages/${encodeURIComponent(message.messageId)}?callerAgentId=${encodeURIComponent(me)}`);
       const after = check.data;
       if (after) {
         finalStatus = after.status ?? finalStatus;
@@ -390,7 +391,7 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
 async function replyToMessage({ message_id, content }) {
   if (!message_id || !content) throw new Error('message_id and content are required');
   const me = await ensureAgentId();
-  const env = await api(`/api/messages/${encodeURIComponent(message_id)}`);
+  const env = await api(`/api/messages/${encodeURIComponent(message_id)}?callerAgentId=${encodeURIComponent(me)}`);
   const orig = env.data;
   if (!orig) throw new Error(`Original message not found: ${message_id}`);
   if (orig.toAgentId !== me) {
