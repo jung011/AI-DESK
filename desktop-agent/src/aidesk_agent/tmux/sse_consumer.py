@@ -111,10 +111,8 @@ _BUSY_PATTERNS = (
 )
 _IDLE_PROMPT = "for agents"  # claude TUI footer indicator — idle 시 박힘
 
-_BUSY_POLL_INTERVAL_SEC = 1.0
-# 0.8.73 — 옛 120s wait 가 사용자 *메시지 도달 너무 느림* 인지. 30s 박아 *짧은 race 만*
-# 차단 + force send 후 claude TUI queue 박힘 (자동 다음 turn 처리). 사용자 wait 줄임.
-_BUSY_MAX_WAIT_SEC = 30.0
+_BUSY_POLL_INTERVAL_SEC = 2.0
+_BUSY_MAX_WAIT_SEC = 120.0  # 2 분 — 그 후 idle 못 잡아도 강제 send-keys
 
 
 async def _is_claude_busy(session: str) -> bool:
