@@ -337,15 +337,15 @@ function formatTime(iso: string, status: string): string {
 
 <style scoped>
 .ai-card {
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
-  padding: 20px; box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .12);
+  background: rgba(15, 23, 41, 0.6); border: 1px solid var(--border-soft); border-radius: 12px;
+  padding: 20px; box-shadow: none;
   position: relative;
   cursor: pointer;
-  transition: border-color .15s, box-shadow .15s, transform .08s;
+  transition: border-color .15s, transform .15s;
 }
-.ai-card:hover { border-color: #0062ff; box-shadow: 0 6px 18px rgba(0, 98, 255, .15); }
+.ai-card:hover { border-color: #6BB6FF; transform: translateY(-2px); }
 .ai-card:active { transform: scale(.995); }
-.ai-card:focus-visible { outline: 2px solid #0062ff; outline-offset: 2px; }
+.ai-card:focus-visible { outline: 2px solid #6BB6FF; outline-offset: 2px; }
 /* 메뉴 열렸을 때 — 드롭다운이 다음 행 카드 뒤에 깔리지 않도록 카드 자체를 위로 끌어올림.
  * (.ai-card 가 position:relative + z-index:auto 라 형제 카드와 DOM 순서로 쌓이는 문제 보정) */
 .ai-card.menu-open { z-index: 100; }
@@ -365,13 +365,13 @@ function formatTime(iso: string, status: string): string {
   display: flex; align-items: center; justify-content: center;
   font-size: 18px; flex-shrink: 0;
 }
-.ai-avatar.working { background: #E8F5E9; }
-.ai-avatar.waiting { background: #E3F2FD; }
-.ai-avatar.idle    { background: #FFF8E1; }
-.ai-avatar.error   { background: #FFEBEE; }
+.ai-avatar.working { background: rgba(16, 185, 129, 0.2); }
+.ai-avatar.waiting { background: rgba(107, 182, 255, 0.2); }
+.ai-avatar.idle    { background: rgba(251, 191, 36, 0.2); }
+.ai-avatar.error   { background: rgba(239, 68, 68, 0.2); }
 
 .ai-name {
-  font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
+  font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -.02em;
   display: inline-flex; align-items: center; gap: 6px;
 }
 /* 컨텍스트 사용량 — 5h 사용량과 달리 agent 별 별도값. */
@@ -380,11 +380,11 @@ function formatTime(iso: string, status: string): string {
   margin: 4px 0 12px;
 }
 .ctx-label {
-  font-size: 11px; color: #94A3B8; flex-shrink: 0;
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
 }
 .ctx-bar {
   flex: 1; height: 6px; border-radius: 3px;
-  background: #F1F5F9; overflow: hidden;
+  background: var(--border-soft); overflow: hidden;
 }
 .ctx-fill { height: 100%; transition: width .2s ease; }
 .ctx-fill.level-low  { background: #10B981; }

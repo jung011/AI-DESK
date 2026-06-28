@@ -54,11 +54,19 @@ body, html {
 .wrap_width_170{width:170px}
 .wrap_width_200{width:200px}
 
-/* Title */
-[class^='tit']{font-weight:600;color:#101010}
-.tit_h2{padding-bottom:24px;font-size:22px;font-weight:700;letter-spacing:-.44px;line-height:1}
-.tit_h3{font-size:16px;color:#444;letter-spacing:-.34px}
-.tit_h3 > .tit_h3_subtext{margin-left:8px;font-size:13px;color:#666;font-weight:400}
+/* Title — demo-agent-terminal-preview 의 gradient 정합 (옵션 P) */
+[class^='tit']{font-weight:600;color:var(--text)}
+.tit_h2{
+  padding-bottom:24px;font-size:22px;font-weight:700;letter-spacing:-.44px;line-height:1;
+  background: linear-gradient(90deg, #6BB6FF, #B89AFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  display: inline-block;
+}
+.tit_h3{font-size:16px;color:var(--text-muted);letter-spacing:-.34px}
+.tit_h3 > .tit_h3_subtext{margin-left:8px;font-size:13px;color:var(--text-dim);font-weight:400}
 
 /* Icon */
 .ico{display:inline-block;overflow:hidden;text-indent:-999em;background-repeat:no-repeat;background-size:cover}

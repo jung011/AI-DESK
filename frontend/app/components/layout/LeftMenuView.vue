@@ -105,7 +105,10 @@ const route = useRoute();
 .side-menu-link:hover { background: #334155; color: #E2E8F0; }
 .side-menu-link:hover .menu-icon { opacity: 1; }
 .side-menu-item.active .side-menu-link {
-  background: #0062ff; color: #fff; font-weight: 600;
+  background: linear-gradient(90deg, rgba(107, 182, 255, 0.18), rgba(184, 154, 255, 0.18));
+  color: #B89AFF; font-weight: 700;
+  border-left: 3px solid #6BB6FF;
+  padding-left: calc(16px - 3px);
 }
 .side-menu-item.active .side-menu-link .menu-icon { opacity: 1; }
 .side-menu-divider {
