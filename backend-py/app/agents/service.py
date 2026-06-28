@@ -82,10 +82,14 @@ class AgentService:
         items = [_to_item(r) for r in rows]
         return AgentListRs(items=items)
 
-    def get_realtime(self) -> list[AgentRealtimeItem]:
-        """외부 시각화 BE 가 소비하는 5필드 응답. partners 는 최근 대화 partner agent_id."""
+    def get_realtime(self, account_sn: int | None = None) -> list[AgentRealtimeItem]:
+        """외부 시각화 BE 가 소비하는 5필드 응답. partners 는 최근 대화 partner agent_id.
+        sameUser 격리 — account_sn 박으면 그 owner 의 agent 만.
+        """
         msg_repo = MessageRepository(self.db)
         rows = self.repo.list_all_active()
+        if account_sn is not None:
+            rows = [r for r in rows if r.owner_account_sn == account_sn]
         result: list[AgentRealtimeItem] = []
         for r in rows:
             state = _map_status_to_state(r.status)

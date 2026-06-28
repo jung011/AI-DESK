@@ -10,16 +10,20 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.agents.repository import AgentRepository
+from app.auth.deps import optional_user
+from app.auth.schemas import AuthenticatedUser
 from app.common.response import ApiEnvelope, fail, ok
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
 from app.messages.attachment_models import MessageAttachment
 from app.messages.attachment_repository import AttachmentRepository
+from app.messages.caller import resolve_caller_account_sn
+from app.messages.repository import MessageRepository
 from app.messages.schemas import AttachmentUploadRs
 
 log = logging.getLogger(__name__)
@@ -92,21 +96,54 @@ async def upload(
 
 
 @router.get("/{attachment_id}")
-async def download(attachment_id: str) -> StreamingResponse:
-    """rc47 fix — Depends(get_db) 대신 명시 `with SessionLocal()`.
+async def download(
+    attachment_id: str,
+    callerAgentId: str | None = Query(default=None),  # noqa: N803
+    user: AuthenticatedUser | None = Depends(optional_user),
+) -> StreamingResponse:
+    """파일 다운로드 — sameUser 격리.
 
-    옛: db: Session = Depends(get_db) + StreamingResponse 반환 — FastAPI 의 dependency
-    cleanup 은 *response body 완전 전송 후* 실행. slow client / 큰 파일 + 트래픽 누적 시
-    response lifetime 동안 session 점유 + transaction commit 안 됨 → idle in transaction
-    누적 → DB pool 고갈. rc46 audit 가 못 잡은 leak path.
+    caller 검증 — cookie user 또는 callerAgentId query 의 owner_account_sn 으로 식별.
+    pass 조건:
+      1. attachment 의 owner_agent (업로더) owner 가 caller 매칭, 또는
+      2. attachment 가 link 된 message 의 from/to 가 caller 소유.
 
-    fix: with-block 으로 *attachment 데이터 메모리 load 후 session close* → StreamingResponse
-    body 전송 동안 DB pool 안전 (io.BytesIO 는 메모리 stream).
+    rc47 fix — Depends(get_db) 대신 명시 `with SessionLocal()`. response body 전송
+    동안 DB pool 안전 (io.BytesIO 는 메모리 stream).
     """
     with SessionLocal() as db:
+        # 1. caller 식별
+        caller_sn = resolve_caller_account_sn(db, user, callerAgentId)
+        if caller_sn is None:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(  # type: ignore[return-value]
+                status_code=401,
+                content={"code": "NA", "message": "unauthorized"},
+            )
         repo = AttachmentRepository(db)
         att = repo.find_by_id(attachment_id)
         if att is None:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(  # type: ignore[return-value]
+                status_code=404,
+                content={"code": "NA", "message": "attachment not found"},
+            )
+        # 2. ownership 검증
+        agent_repo = AgentRepository(db)
+        owner = agent_repo.find_by_agent_id_any_owner(att.owner_agent_id)
+        authorized = owner is not None and owner.owner_account_sn == caller_sn
+        if not authorized and att.message_id:
+            # message link → from/to 가 caller 소유면 OK
+            msg_repo = MessageRepository(db)
+            msg = msg_repo.find_by_id(att.message_id)
+            if msg is not None:
+                sender = agent_repo.find_by_agent_id_any_owner(msg.from_agent_id)
+                receiver = agent_repo.find_by_agent_id_any_owner(msg.to_agent_id)
+                if (sender and sender.owner_account_sn == caller_sn) or (
+                    receiver and receiver.owner_account_sn == caller_sn
+                ):
+                    authorized = True
+        if not authorized:
             from fastapi.responses import JSONResponse
             return JSONResponse(  # type: ignore[return-value]
                 status_code=404,
