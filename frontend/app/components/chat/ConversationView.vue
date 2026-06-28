@@ -503,93 +503,8 @@ function formatSize(bytes: number): string {
   margin-bottom: 3px;
 }
 .cv-content { font-size: 13px; line-height: 1.55; }
-
-/* markdown 요소 — 다크 정합 + 채팅 bubble 안 가독성. 텍스트 white + 선 명확. */
-.cv-md, .cv-md * { color: #FFFFFF; }
-.cv-md p { margin: 0 0 6px; }
-.cv-md p:last-child { margin: 0; }
-.cv-md strong { font-weight: 800; color: #FFFFFF; }
-.cv-md em { font-style: italic; color: #FFFFFF; }
-.cv-md del, .cv-md s { text-decoration: line-through; opacity: 0.7; }
-.cv-md code {
-  background: rgba(107, 182, 255, 0.22);
-  color: #E0EFFF;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.92em;
-  border: 1px solid rgba(107, 182, 255, 0.35);
-}
-.cv-md pre {
-  background: #050810;
-  border: 2px solid #6BB6FF;
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin: 8px 0;
-  overflow-x: auto;
-}
-.cv-md pre code {
-  background: transparent;
-  padding: 0;
-  border: none;
-  color: #FFFFFF;
-  font-size: 12px;
-  white-space: pre;
-}
-.cv-md ul, .cv-md ol { margin: 4px 0 6px; padding-left: 22px; color: #FFFFFF; }
-.cv-md li { margin: 2px 0; color: #FFFFFF; }
-.cv-md blockquote {
-  margin: 8px 0;
-  padding: 6px 12px;
-  border-left: 4px solid #6BB6FF;
-  background: rgba(107, 182, 255, 0.1);
-  color: #FFFFFF;
-}
-.cv-md h1, .cv-md h2, .cv-md h3, .cv-md h4 {
-  margin: 12px 0 8px;
-  font-weight: 800;
-  color: #FFFFFF;
-  border-bottom: 2px solid #6BB6FF;
-  padding-bottom: 6px;
-}
-.cv-md h1 { font-size: 1.3em; }
-.cv-md h2 { font-size: 1.18em; }
-.cv-md h3 { font-size: 1.1em; }
-.cv-md h4 { font-size: 1em; border-bottom: 2px solid #4A5A78; }
-.cv-md a { color: #93C5FD; text-decoration: underline; }
-.cv-md a:hover { color: #BFDBFE; }
-.cv-md hr {
-  border: none;
-  border-top: 2px solid #6BB6FF;
-  margin: 12px 0;
-}
-
-/* table — 굵은 파란 외곽 + 모든 cell 사방 굵은 실선 (눈에 띄게). */
-.cv-md table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 12px 0;
-  font-size: 12px;
-  background: #050810;
-  border: 3px solid #6BB6FF;
-}
-.cv-md thead {
-  background: linear-gradient(135deg, rgba(107, 182, 255, 0.4), rgba(184, 154, 255, 0.4));
-}
-.cv-md th {
-  padding: 10px 12px;
-  text-align: left;
-  font-weight: 800;
-  color: #FFFFFF;
-  border: 2px solid #6BB6FF;
-}
-.cv-md td {
-  padding: 10px 12px;
-  border: 2px solid #6BB6FF;
-  color: #FFFFFF;
-  vertical-align: top;
-}
-.cv-md tbody tr:hover { background: rgba(107, 182, 255, 0.15); }
+/* markdown 규칙은 별 non-scoped <style> 블록 (파일 끝). v-html injected content 는
+   Vue 의 scoped data attribute 안 박혀 .cv-md table {...} (scoped) 미적용 사고 fix. */
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
 
 /* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
@@ -880,4 +795,95 @@ function formatSize(bytes: number): string {
   .cv-back { display: block; }
   .cv-att-name { max-width: 160px; }
 }
+</style>
+
+<!--
+  markdown 렌더 규칙은 *non-scoped* 박음. v-html 로 injected HTML 은 Vue 의 scoped
+  data-v-xxx attribute 안 박혀, 위의 <style scoped> 안 .cv-md table {...} 규칙이
+  적용 안 되는 사고. non-scoped 로 글로벌 박아 v-html 자식 element 도 정상 매칭.
+-->
+<style>
+.cv-md, .cv-md * { color: #FFFFFF; }
+.cv-md p { margin: 0 0 6px; }
+.cv-md p:last-child { margin: 0; }
+.cv-md strong { font-weight: 800; color: #FFFFFF; }
+.cv-md em { font-style: italic; color: #FFFFFF; }
+.cv-md del, .cv-md s { text-decoration: line-through; opacity: 0.7; }
+.cv-md code {
+  background: rgba(107, 182, 255, 0.22);
+  color: #E0EFFF;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.92em;
+  border: 1px solid rgba(107, 182, 255, 0.35);
+}
+.cv-md pre {
+  background: #050810;
+  border: 2px solid #6BB6FF;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.cv-md pre code {
+  background: transparent;
+  padding: 0;
+  border: none;
+  color: #FFFFFF;
+  font-size: 12px;
+  white-space: pre;
+}
+.cv-md ul, .cv-md ol { margin: 4px 0 6px; padding-left: 22px; color: #FFFFFF; }
+.cv-md li { margin: 2px 0; color: #FFFFFF; }
+.cv-md blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 4px solid #6BB6FF;
+  background: rgba(107, 182, 255, 0.1);
+  color: #FFFFFF;
+}
+.cv-md h1, .cv-md h2, .cv-md h3, .cv-md h4 {
+  margin: 12px 0 8px;
+  font-weight: 800;
+  color: #FFFFFF;
+  border-bottom: 2px solid #6BB6FF;
+  padding-bottom: 6px;
+}
+.cv-md h1 { font-size: 1.3em; }
+.cv-md h2 { font-size: 1.18em; }
+.cv-md h3 { font-size: 1.1em; }
+.cv-md h4 { font-size: 1em; border-bottom: 2px solid #4A5A78; }
+.cv-md a { color: #93C5FD; text-decoration: underline; }
+.cv-md a:hover { color: #BFDBFE; }
+.cv-md hr {
+  border: none;
+  border-top: 2px solid #6BB6FF;
+  margin: 12px 0;
+}
+.cv-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 12px;
+  background: #050810;
+  border: 3px solid #6BB6FF;
+}
+.cv-md thead {
+  background: linear-gradient(135deg, rgba(107, 182, 255, 0.4), rgba(184, 154, 255, 0.4));
+}
+.cv-md th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 800;
+  color: #FFFFFF;
+  border: 2px solid #6BB6FF;
+}
+.cv-md td {
+  padding: 10px 12px;
+  border: 2px solid #6BB6FF;
+  color: #FFFFFF;
+  vertical-align: top;
+}
+.cv-md tbody tr:hover { background: rgba(107, 182, 255, 0.15); }
 </style>
