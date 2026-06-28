@@ -187,10 +187,20 @@ class MessageService:
 
     # ---- detail ----
 
-    def detail(self, message_id: str) -> MessageItem | None:
+    def detail(self, message_id: str, caller_account_sn: int | None = None) -> MessageItem | None:
+        """sameUser 격리 — caller_account_sn 박으면 from/to 중 *하나라도* caller 소유면
+        통과. 둘 다 다른 user 면 None (404 응답).
+        """
         msg = self.repo.find_by_id(message_id)
         if msg is None:
             return None
+        if caller_account_sn is not None:
+            sender = self.agent_repo.find_by_agent_id_any_owner(msg.from_agent_id)
+            receiver = self.agent_repo.find_by_agent_id_any_owner(msg.to_agent_id)
+            sender_owner = sender.owner_account_sn if sender else None
+            receiver_owner = receiver.owner_account_sn if receiver else None
+            if sender_owner != caller_account_sn and receiver_owner != caller_account_sn:
+                return None
         return self._enrich(msg)
 
     # ---- list ----
@@ -202,7 +212,15 @@ class MessageService:
         with_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
+        caller_account_sn: int | None = None,
     ) -> MessageListRs:
+        """sameUser 격리 — caller_account_sn 박으면 *agent_id 의 owner != caller* 면 빈
+        list 반환. 옛 *agentId 알면 누구나 메시지 봄* 사고 fix.
+        """
+        if caller_account_sn is not None:
+            agent = self.agent_repo.find_by_agent_id_any_owner(agent_id)
+            if agent is None or agent.owner_account_sn != caller_account_sn:
+                return MessageListRs(items=[], has_more=False)
         rows, has_more = self.repo.list_for_agent(agent_id, direction, with_id, status, limit)
         attachments_by_msg = self.attachment_repo.list_by_message_ids([r.message_id for r in rows])
         items = [self._enrich(r, attachments=attachments_by_msg.get(r.message_id, [])) for r in rows]
@@ -210,10 +228,16 @@ class MessageService:
 
     # ---- unread count ----
 
-    def get_unread_count(self, agent_id: str | None) -> UnreadCountRs:
-        """rc50 — N+1 → batch IN, response 직전 commit (idle in transaction 차단)."""
+    def get_unread_count(self, agent_id: str | None, caller_account_sn: int | None = None) -> UnreadCountRs:
+        """rc50 — N+1 → batch IN, response 직전 commit (idle in transaction 차단).
+        sameUser 격리 — caller_account_sn 박으면 agent_id owner 매칭 검증.
+        """
         if not agent_id:
             return UnreadCountRs(total_unread=0, by_agent=[])
+        if caller_account_sn is not None:
+            agent = self.agent_repo.find_by_agent_id_any_owner(agent_id)
+            if agent is None or agent.owner_account_sn != caller_account_sn:
+                return UnreadCountRs(total_unread=0, by_agent=[])
         total = self.repo.count_unread_for_to(agent_id)
         by_from = self.repo.list_unread_by_from(agent_id)
         # batch fetch — N SELECT → 1 SELECT WHERE IN
@@ -316,12 +340,17 @@ class MessageService:
 
     # ---- conversations ----
 
-    def get_conversations(self, agent_id: str) -> list[ConversationItem]:
+    def get_conversations(self, agent_id: str, caller_account_sn: int | None = None) -> list[ConversationItem]:
         """대화 partner 별 최근 활동 — Spring MessageService.getConversations.
 
         rc50 — N+1 SELECT (매 partner_id 별 find_by_agent_id) → batch IN.
-        15 agent 의 dashboard polling 시점 idle in transaction 15 burst 사고 fix.
+        sameUser 격리 — caller_account_sn 박으면 agent_id owner 매칭 검증, 미일치 시 빈 list.
         """
+        if caller_account_sn is not None:
+            agent = self.agent_repo.find_by_agent_id_any_owner(agent_id)
+            if agent is None or agent.owner_account_sn != caller_account_sn:
+                self.db.commit()
+                return []
         partner_rows = self.repo.list_conversations_for(agent_id)
         # batch fetch — N SELECT → 1 SELECT WHERE IN
         partner_ids = [r[0] for r in partner_rows]
@@ -356,9 +385,20 @@ class MessageService:
         to_agent_id: str | None,
         q: str | None,
         limit: int = 100,
+        caller_account_sn: int | None = None,
     ) -> MessageListRs:
+        """audit — caller_account_sn 박으면 *caller 의 own agent 가 from 또는 to 인 메시지만* 반환.
+        옛 = 인증 없이 전체 검색 사고 fix.
+        """
         safe_limit = max(1, min(limit, 1000))
         rows, has_more = self.repo.select_audit(status, from_agent_id, to_agent_id, q, safe_limit)
+        if caller_account_sn is not None:
+            from app.agents.models import Agent
+            from sqlalchemy import select as _sel
+            owned_ids = {r[0] for r in self.db.execute(
+                _sel(Agent.agent_id).where(Agent.owner_account_sn == caller_account_sn)
+            ).all()}
+            rows = [r for r in rows if r.from_agent_id in owned_ids or r.to_agent_id in owned_ids]
         items = [self._enrich(r) for r in rows]
         return MessageListRs(items=items, has_more=has_more)
 

@@ -30,20 +30,17 @@ async def health() -> dict[str, str]:
 @router.get("/wiring", response_model=ApiEnvelope[dict])
 async def wiring(
     windowMin: int = 30,  # noqa: N803 — frontend query param 유지
+    user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[dict]:
-    """대시보드 wiring view — 최근 windowMin 분 의 agent pair 대화 통계.
+    """대시보드 wiring view — *호출 user 의 agent 만* 의 pair 대화 통계.
 
-    응답:
-      {
-        "links": [{"fromAgentId", "toAgentId", "count", "lastAt"}, ...],
-        "windowMin": int,
-      }
-    intensity 는 frontend 가 count max 대비 정규화.
+    옛 = 인증 없음 + filter 없음 → 다른 user 의 agent 대화 graph 노출 사고.
+    fix = current_user + account_sn 의 own agent 만.
     """
     from app.messages.repository import MessageRepository
     repo = MessageRepository(db)
-    rows = repo.aggregate_wiring(window_min=windowMin)
+    rows = repo.aggregate_wiring(window_min=windowMin, account_sn=user.account_sn)
     return ok({
         "links": [
             {"fromAgentId": f, "toAgentId": t, "count": c, "lastAt": last.isoformat()}
@@ -82,12 +79,33 @@ async def realtime(
 @router.get("/{agent_id}", response_model=ApiEnvelope[AgentItem])
 async def detail(
     agent_id: str,
-    _user: AuthenticatedUser | None = Depends(optional_user),
+    callerAgentId: str | None = None,  # noqa: N803 — mcp 가 sameUser 검증용 query
+    user: AuthenticatedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[AgentItem]:
+    """agent detail — caller 의 own user 의 agent 만.
+
+    옛 = 인증 optional + filter 없음 → 다른 user agent 노출 사고.
+    fix = caller 가 owner 이면 OK, mcp 의 callerAgentId 도 owner 매칭 검증.
+    list_agents 의 동일 패턴 정합.
+    """
     svc = AgentService(db)
     item = svc.detail(agent_id)
     if item is None:
+        return fail(404, "agent not found")  # type: ignore[return-value]
+    # sameUser 검증
+    from app.agents.repository import AgentRepository
+    agent_repo = AgentRepository(db)
+    target = agent_repo.find_by_agent_id_any_owner(agent_id)
+    target_owner = target.owner_account_sn if target else None
+    caller_sn: int | None = None
+    if user is not None:
+        caller_sn = user.account_sn
+    elif callerAgentId:
+        caller = agent_repo.find_by_agent_id_any_owner(callerAgentId)
+        if caller is not None:
+            caller_sn = caller.owner_account_sn
+    if caller_sn is None or target_owner != caller_sn:
         return fail(404, "agent not found")  # type: ignore[return-value]
     return ok(item)
 
