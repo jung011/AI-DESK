@@ -1,0 +1,88 @@
+name: Docker Build and Push (frontend)
+
+# fe-* tag push 시 frontend image build + helm bump.
+on:
+  push:
+    tags:
+      - 'fe-*'
+
+# tag 별 concurrency group — 같은 tag retag 시만 옛 run cancel.
+# bepy workflow 와 별개 group (deploy-fe vs deploy-bepy) 라 fe + bepy 동시 push 안 충돌.
+concurrency:
+  group: deploy-fe-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve image tag (strip fe- prefix)
+        id: tag
+        run: |
+          REF="${GITHUB_REF#refs/tags/}"
+          IMAGE_TAG="${REF#fe-}"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Tag detected: $REF → image_tag=$IMAGE_TAG"
+
+      - name: Check if tag is from master
+        run: |
+          # FETCH_HEAD 만 갱신되는 사고 차단 — refs/remotes/origin/master 명시 갱신.
+          git fetch origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/master; then
+            echo "::error::This tag is not from master. Failing the build."
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push arm64 frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: jsh125/aidesk-frontend:${{ steps.tag.outputs.image_tag }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+      - name: Helm values.yaml — image tag bump (with retry)
+        run: |
+          set -e
+          IMAGE_TAG="${{ steps.tag.outputs.image_tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin master
+            git switch -C master origin/master
+            sed -i 's|tag: "1\.30\.[0-9]\+-rc[0-9]\+"|tag: "'"$IMAGE_TAG"'"|' Helm/values.yaml
+            if git diff --quiet Helm/values.yaml; then
+              echo "values.yaml unchanged — already on $IMAGE_TAG (skip)"
+              exit 0
+            fi
+            git add Helm/values.yaml
+            git commit -m "chore(helm): bump frontend image tag to ${IMAGE_TAG}"
+            if git push origin master 2>&1; then
+              echo "helm bump push success on attempt $attempt"
+              exit 0
+            fi
+            echo "push race on attempt $attempt — fetch + retry in $((attempt * 3))s"
+            sleep $((attempt * 3))
+          done
+          echo "::error::push failed after retries"
+          exit 1
