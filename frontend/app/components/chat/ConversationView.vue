@@ -97,6 +97,19 @@
             </div>
           </div>
         </li>
+        <!-- AI 답신 작성중 placeholder bubble — workingOnMessageId 살아있는 동안 AI
+             측 (좌측) 에 *답신 작성중* 표시. 답신 도착 시 workingOnMessageId null
+             → bubble 사라짐 + 실제 메시지 표시. 점 plain X = "답신 작성중" 텍스트 +
+             scanner 같은 progress bar. -->
+        <li v-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
+          <div class="cv-bubble">
+            <div class="cv-sender">{{ partner.agentName }}</div>
+            <div class="cv-typing">
+              <span class="cv-typing-text">답신 작성중</span>
+              <span class="cv-typing-scanner"></span>
+            </div>
+          </div>
+        </li>
       </ul>
     </div>
 
@@ -497,6 +510,46 @@ function formatSize(bytes: number): string {
 .cv-working-row { margin-top: 6px; display: flex; justify-content: flex-end; }
 /* 본인 (mine) 박는 메시지 = 우측 정렬. cv-msg.theirs 면 좌측. WorkingDeskChip
    은 *내가 보낸 메시지의 아래* 박히므로 우측 정렬 박음. */
+
+/* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안. answer 도착 시 사라짐. */
+.cv-msg.typing-placeholder { animation: tpFade .25s ease; }
+@keyframes tpFade {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.cv-typing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #B0BCD0;
+}
+.cv-typing-text {
+  font-style: italic;
+}
+/* progress bar — *흔한 dots 애니메이션* 회피. 좌→우 scanner stripe. */
+.cv-typing-scanner {
+  position: relative;
+  width: 56px;
+  height: 4px;
+  background: rgba(107, 182, 255, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.cv-typing-scanner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -20px;
+  width: 20px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, #6BB6FF 50%, transparent 100%);
+  animation: tpScan 1.4s linear infinite;
+}
+@keyframes tpScan {
+  0%   { left: -20px; }
+  100% { left: 56px; }
+}
 
 /* hover popover — chip 위에 inline stage 박음. 모달 X. */
 .cv-working-wrap { position: relative; display: inline-block; }
