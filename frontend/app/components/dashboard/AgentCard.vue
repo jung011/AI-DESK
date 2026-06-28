@@ -455,11 +455,12 @@ function formatTime(iso: string, status: string): string {
 .ico_badge.type_v10 { background: rgba(107, 182, 255, 0.18); color: #6BB6FF; }
 .ico_badge.type_v11 { background: rgba(248, 113, 113, 0.18); color: #F87171; }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.ico_badge.type_v5  .badge-dot { background: #00C853; }
-.ico_badge.type_v8  .badge-dot { background: #FFB300; }
-.ico_badge.type_v9  .badge-dot { background: #9C27B0; }
-.ico_badge.type_v10 .badge-dot { background: #0062FF; }
-.ico_badge.type_v11 .badge-dot { background: #E53935; }
+/* 점등 — 온라인 만 초록. 오프라인 (type_v8) 은 점등 X (display:none). */
+.ico_badge.type_v5  .badge-dot { background: #10B981; box-shadow: 0 0 4px rgba(16,185,129,0.6); }
+.ico_badge.type_v8  .badge-dot { display: none; }
+.ico_badge.type_v9  .badge-dot { background: #C084FC; }
+.ico_badge.type_v10 .badge-dot { background: #6BB6FF; }
+.ico_badge.type_v11 .badge-dot { background: #F87171; }
 
 .ai-model-tag {
   display: inline-block; padding: 2px 8px;
