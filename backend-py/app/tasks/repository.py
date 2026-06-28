@@ -31,11 +31,17 @@ class AiTaskRepository:
             ).scalars()
         )
 
-    def list_recent(self, limit: int = 100) -> list[AiTask]:
-        """대시보드 상단 패널 — 모든 agent 의 최근 task."""
+    def list_recent_for_account(self, account_sn: int, limit: int = 100) -> list[AiTask]:
+        """대시보드 상단 패널 — *내가 박은* 최근 task. cross-user 노출 차단.
+
+        sameUser 격리 — requester_account_sn 매칭만. 다른 user (예: 리키2) 의
+        task 는 절대 안 보임. [[feedback-agents-list-sameuser-isolation-regression]]
+        과 동일 보안 패턴.
+        """
         return list(
             self.db.execute(
                 select(AiTask)
+                .where(AiTask.requester_account_sn == account_sn)
                 .order_by(AiTask.created_at.desc())
                 .limit(limit)
             ).scalars()

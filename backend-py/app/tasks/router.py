@@ -18,12 +18,17 @@ router = APIRouter()
 
 @router.get("/recent", response_model=ApiEnvelope[TaskListRs])
 async def list_recent(
-    _user: AuthenticatedUser | None = Depends(optional_user),
+    user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[TaskListRs]:
-    """대시보드 상단 패널 — 모든 agent 의 최근 task."""
+    """대시보드 상단 패널 — *호출 user 가 박은* 최근 task.
+
+    sameUser 격리 — 다른 user (리키2 등) 의 task 는 안 보임. 옛 optional_user +
+    필터 없는 list_recent 가 *모든 user task 노출* 보안 사고 fix. agents/list 의
+    sameUser 격리 패턴 정합.
+    """
     svc = AiTaskService(db)
-    return ok(svc.list_recent())
+    return ok(svc.list_recent(user.account_sn))
 
 
 @router.post("", response_model=ApiEnvelope[TaskItem])

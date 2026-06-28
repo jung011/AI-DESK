@@ -62,8 +62,8 @@ class AiTaskService:
         self.db.commit()
         return TaskListRs(items=items)
 
-    def list_recent(self) -> TaskListRs:
-        rows = self.repo.list_recent()
+    def list_recent(self, account_sn: int) -> TaskListRs:
+        rows = self.repo.list_recent_for_account(account_sn)
         items = [self._to_item(t) for t in rows]
         self.db.commit()
         return TaskListRs(items=items)
