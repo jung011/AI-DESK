@@ -105,7 +105,7 @@ input::placeholder, textarea::placeholder { color: var(--text-dim); }
 
 .btn, .ico_badge{display:inline-flex;justify-content:center;align-items:center;flex-shrink:0;padding:0 22px;letter-spacing:-.28px}
 .btn.normal{min-width:84px;height:40px;border-radius:6px}
-.ico_badge.small{height:32px;padding:12px;font-size:14px;font-weight:500;line-height:1;border-radius:4px}
+.ico_badge.small{height:32px;padding:0 14px;font-size:14px;font-weight:500;line-height:1;border-radius:16px;gap:6px}
 
 .btn.type_v1, .ico_badge.type_v1{background:var(--primary);color:#fff}
 .btn.type_v2, .ico_badge.type_v2{background:none;border:1px solid var(--border);color:#666}

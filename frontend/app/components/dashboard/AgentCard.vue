@@ -454,14 +454,14 @@ function formatTime(iso: string, status: string): string {
 .ico_badge.type_v9  { background: rgba(168, 85, 247, 0.18); color: #C084FC; }
 .ico_badge.type_v10 { background: rgba(107, 182, 255, 0.18); color: #6BB6FF; }
 .ico_badge.type_v11 { background: rgba(248, 113, 113, 0.18); color: #F87171; }
-.badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.badge-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 /* 점등 — 온라인 (type_v5) 만 초록 glow ON. 오프라인 (type_v8) = 점등 OFF (display:none).
-   압축중 / 에러 도 같은 초록 dot (옛 통일 spec 유지). */
-.ico_badge.type_v5  .badge-dot { background: #10B981; box-shadow: 0 0 4px rgba(16,185,129,0.6); }
+   압축중 / 에러 도 같은 초록 dot (옛 통일 spec 유지). 8px 크기 + strong glow 박아 visible. */
+.ico_badge.type_v5  .badge-dot { background: #22C55E; box-shadow: 0 0 6px #22C55E, 0 0 2px rgba(34,197,94,0.8); }
 .ico_badge.type_v8  .badge-dot { display: none; }
-.ico_badge.type_v9  .badge-dot { background: #10B981; }
-.ico_badge.type_v10 .badge-dot { background: #10B981; }
-.ico_badge.type_v11 .badge-dot { background: #10B981; }
+.ico_badge.type_v9  .badge-dot { background: #22C55E; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+.ico_badge.type_v10 .badge-dot { background: #22C55E; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+.ico_badge.type_v11 .badge-dot { background: #22C55E; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
 
 .ai-model-tag {
   display: inline-block; padding: 2px 8px;
