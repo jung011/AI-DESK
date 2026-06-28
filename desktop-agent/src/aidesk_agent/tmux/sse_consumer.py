@@ -104,58 +104,8 @@ async def _tmux_has_session(session: str) -> bool:
         return False
 
 
-_BUSY_PATTERNS = (
-    "Sautéed for", "Crunched for", "Brewed for", "Churned for", "Smooshing",
-    "Reticulating", "Contemplating", "Cooking", "Whisking", "Baked for",
-    "Calling ", "Running…", "Running...",
-)
-_IDLE_PROMPT = "for agents"  # claude TUI footer indicator — idle 시 박힘
-
-_BUSY_POLL_INTERVAL_SEC = 2.0
-_BUSY_MAX_WAIT_SEC = 120.0  # 2 분 — 그 후 idle 못 잡아도 강제 send-keys
-
-
-async def _is_claude_busy(session: str) -> bool:
-    """tmux capture-pane 의 마지막 ~15 line 안 busy spinner 패턴 검색.
-
-    True = busy (claude 처리 중) — send-keys 박지 말고 wait.
-    False = idle 또는 미인지 — send-keys 박음.
-    """
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "tmux", "capture-pane", "-p", "-t", session, "-S", "-15",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await proc.communicate()
-        screen = (stdout or b"").decode("utf-8", errors="replace")
-    except (OSError, asyncio.TimeoutError):
-        return False  # 검출 실패 시 conservative — 즉시 send
-    if _IDLE_PROMPT not in screen:
-        return False  # claude TUI 가 아닐 수도 — 그냥 send
-    return any(pat in screen for pat in _BUSY_PATTERNS)
-
-
-async def _wait_for_idle(session: str, max_wait: float = _BUSY_MAX_WAIT_SEC) -> None:
-    """claude TUI 가 idle 진입할 때까지 poll. timeout 후 그냥 진행 (best-effort gate)."""
-    elapsed = 0.0
-    while elapsed < max_wait:
-        if not await _is_claude_busy(session):
-            return
-        await asyncio.sleep(_BUSY_POLL_INTERVAL_SEC)
-        elapsed += _BUSY_POLL_INTERVAL_SEC
-    log.info("[busy-gate] timeout — proceeding to send-keys session=%s", session)
-
-
 async def _tmux_send(session: str, text: str) -> bool:
-    """`tmux send-keys -l` 로 텍스트 + 짧은 지연 + 별도 Enter — 백엔드와 동일 패턴.
-
-    0.8.72+ — send-keys 박기 전 *busy detect gate* 박음. claude TUI 가 옛 turn 처리
-    중이면 *idle 진입까지 wait* — 사용자 메시지 묻힘 사고 차단. timeout 후 강제 send.
-    [[feedback-message-merge-on-busy]] 의 race fix.
-    """
-    # busy gate — 옛 turn 처리 중이면 wait
-    await _wait_for_idle(session)
+    """`tmux send-keys -l` 로 텍스트 + 짧은 지연 + 별도 Enter — 백엔드와 동일 패턴."""
     try:
         p1 = await asyncio.create_subprocess_exec(
             "tmux", "send-keys", "-l", "-t", session, text,
