@@ -522,7 +522,7 @@ function formatSize(bytes: number): string {
 }
 .cv-md pre {
   background: #050810;
-  border: 1.5px solid #4A5A78;
+  border: 2px solid #6BB6FF;
   border-radius: 6px;
   padding: 10px 12px;
   margin: 8px 0;
@@ -546,52 +546,50 @@ function formatSize(bytes: number): string {
   color: #FFFFFF;
 }
 .cv-md h1, .cv-md h2, .cv-md h3, .cv-md h4 {
-  margin: 10px 0 6px;
+  margin: 12px 0 8px;
   font-weight: 800;
   color: #FFFFFF;
-  border-bottom: 1.5px solid #4A5A78;
-  padding-bottom: 4px;
+  border-bottom: 2px solid #6BB6FF;
+  padding-bottom: 6px;
 }
-.cv-md h1 { font-size: 1.25em; }
-.cv-md h2 { font-size: 1.15em; }
-.cv-md h3 { font-size: 1.08em; }
-.cv-md h4 { font-size: 1em; border-bottom: 1px solid #2A3950; }
+.cv-md h1 { font-size: 1.3em; }
+.cv-md h2 { font-size: 1.18em; }
+.cv-md h3 { font-size: 1.1em; }
+.cv-md h4 { font-size: 1em; border-bottom: 2px solid #4A5A78; }
 .cv-md a { color: #93C5FD; text-decoration: underline; }
 .cv-md a:hover { color: #BFDBFE; }
 .cv-md hr {
   border: none;
-  border-top: 1.5px solid #4A5A78;
-  margin: 10px 0;
+  border-top: 2px solid #6BB6FF;
+  margin: 12px 0;
 }
 
-/* table — 채팅 안 깔끔 비교 표. 모든 cell 사방 1.5px solid 선 + white text. */
+/* table — 굵은 파란 외곽 + 모든 cell 사방 굵은 실선 (눈에 띄게). */
 .cv-md table {
   width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
+  margin: 12px 0;
   font-size: 12px;
   background: #050810;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 2px solid #6BB6FF;
+  border: 3px solid #6BB6FF;
 }
 .cv-md thead {
-  background: linear-gradient(135deg, rgba(107, 182, 255, 0.35), rgba(184, 154, 255, 0.35));
+  background: linear-gradient(135deg, rgba(107, 182, 255, 0.4), rgba(184, 154, 255, 0.4));
 }
 .cv-md th {
-  padding: 8px 12px;
+  padding: 10px 12px;
   text-align: left;
   font-weight: 800;
   color: #FFFFFF;
-  border: 1.5px solid #6BB6FF;
+  border: 2px solid #6BB6FF;
 }
 .cv-md td {
-  padding: 8px 12px;
-  border: 1.5px solid #4A5A78;
+  padding: 10px 12px;
+  border: 2px solid #6BB6FF;
   color: #FFFFFF;
   vertical-align: top;
 }
-.cv-md tbody tr:hover { background: rgba(107, 182, 255, 0.12); }
+.cv-md tbody tr:hover { background: rgba(107, 182, 255, 0.15); }
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
 
 /* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
