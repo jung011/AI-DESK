@@ -163,7 +163,7 @@ onUnmounted(() => {
 
 <style scoped>
 .local-usage {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   padding: 14px 18px;

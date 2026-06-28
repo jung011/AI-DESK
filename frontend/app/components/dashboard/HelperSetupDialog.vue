@@ -100,7 +100,7 @@ function onCancel(): void {
 }
 .popup-box {
   width: 480px; max-width: calc(100vw - 40px);
-  background: #fff; border-radius: 10px;
+  background: var(--bg-card); border-radius: 10px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .2);
 }
 .popup-head { padding: 16px 20px; border-bottom: 1px solid #F0F2F5; }
@@ -138,7 +138,7 @@ function onCancel(): void {
 }
 .btn.normal.type_v1 { background: #0062ff; color: #fff; }
 .btn.normal.type_v1:hover:not(:disabled) { background: #0052d4; }
-.btn.normal.type_v2 { background: #fff; color: #475569; border-color: #D4DCE4; }
+.btn.normal.type_v2 { background: var(--bg-card); color: #475569; border-color: #D4DCE4; }
 .btn.normal.type_v2:hover:not(:disabled) { background: #F8FAFC; }
 .btn.normal:disabled { opacity: .6; cursor: not-allowed; }
 </style>

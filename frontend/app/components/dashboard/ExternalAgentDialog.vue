@@ -236,7 +236,7 @@ function onClose() {
   z-index: 1000;
 }
 .ext-modal {
-  background: #fff; border-radius: 8px;
+  background: var(--bg-card); border-radius: 8px;
   width: 480px; max-width: 92vw;
   max-height: 90vh;
   display: flex; flex-direction: column;
@@ -285,7 +285,7 @@ function onClose() {
 }
 .ext-btn {
   padding: 6px 14px; border: 1px solid #D4DCE4; border-radius: 4px;
-  background: #fff; cursor: pointer; font-size: 13px;
+  background: var(--bg-card); cursor: pointer; font-size: 13px;
 }
 .ext-btn.primary {
   background: #2D7FF9; color: #fff; border-color: #2D7FF9;

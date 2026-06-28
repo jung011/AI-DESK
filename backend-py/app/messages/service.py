@@ -70,8 +70,12 @@ class MessageService:
 
     # ---- send (create) ----
 
-    def create(self, body: MessageCreateRq) -> MessageItem:
-        """1:1 메시지 송신. 정책 위반 시 status='failed' + error_reason 로 row 보존 (audit)."""
+    def create(self, body: MessageCreateRq, caller_account_sn: int | None = None) -> MessageItem:
+        """1:1 메시지 송신. 정책 위반 시 status='failed' + error_reason 로 row 보존 (audit).
+
+        sameUser 격리 — caller_account_sn 박으면 fromAgentId 의 owner 가 caller 매칭
+        검증. 다른 user 명의로 spoofing 차단.
+        """
         from_id = body.from_agent_id
         to_id = body.to_agent_id
         if from_id == to_id:
@@ -80,6 +84,8 @@ class MessageService:
         sender = self.agent_repo.find_by_agent_id_any_owner(from_id)
         if sender is None:
             return self._save_failed(body, "발신 agent 없음")
+        if caller_account_sn is not None and sender.owner_account_sn != caller_account_sn:
+            return self._save_failed(body, "fromAgent owner != caller — spoofing 차단")
         receiver = self.agent_repo.find_by_agent_id_any_owner(to_id)
         if receiver is None:
             return self._save_failed(body, "수신 agent 없음")
@@ -125,10 +131,13 @@ class MessageService:
         # B Phase 7 — render 책임 backend 이관. helper sse_consumer 의 _HEADER_TEMPLATE
         # 대체. ANSI: \x1b[100;97m...\x1b[0m = 회색 bg + 흰 글자. 형식 변경 시 backend
         # rebuild 만 — helper 안 만짐.
+        # mark_read 안내를 *content 앞* 으로 옮김 — AI 가 메시지 *읽는 순간 첫 줄* 부터
+        # 박혀있어 skip 못함. 옛 trailer (뒤쪽 위치) 가 무시되던 사고 fix.
         payload["renderedContent"] = (
-            f"\x1b[100;97m[aidesk · FROM:{sender.agent_name} | MSG:{msg.message_id}]"
-            f"\x1b[0m {body.content}"
-            f"  ↳ 응답: adesk reply {msg.message_id} '<답변>'"
+            f"\x1b[100;97m[aidesk · FROM:{sender.agent_name} | MSG:{msg.message_id}]\x1b[0m "
+            f"⚠ 먼저 mcp `mark_read(\"{msg.message_id}\")` 호출 후 처리 — "
+            f"{body.content}"
+            f"  ↳ 답신: adesk reply {msg.message_id} '<답변>'"
         )
         broker.publish("message.deliver", payload)
         # WS payload — mcp aidesk-channel 의 ws client 가 evt.type === 'message.deliver' +
@@ -183,10 +192,20 @@ class MessageService:
 
     # ---- detail ----
 
-    def detail(self, message_id: str) -> MessageItem | None:
+    def detail(self, message_id: str, caller_account_sn: int | None = None) -> MessageItem | None:
+        """sameUser 격리 — caller_account_sn 박으면 from/to 중 *하나라도* caller 소유면
+        통과. 둘 다 다른 user 면 None (404 응답).
+        """
         msg = self.repo.find_by_id(message_id)
         if msg is None:
             return None
+        if caller_account_sn is not None:
+            sender = self.agent_repo.find_by_agent_id_any_owner(msg.from_agent_id)
+            receiver = self.agent_repo.find_by_agent_id_any_owner(msg.to_agent_id)
+            sender_owner = sender.owner_account_sn if sender else None
+            receiver_owner = receiver.owner_account_sn if receiver else None
+            if sender_owner != caller_account_sn and receiver_owner != caller_account_sn:
+                return None
         return self._enrich(msg)
 
     # ---- list ----
@@ -198,7 +217,15 @@ class MessageService:
         with_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
+        caller_account_sn: int | None = None,
     ) -> MessageListRs:
+        """sameUser 격리 — caller_account_sn 박으면 *agent_id 의 owner != caller* 면 빈
+        list 반환. 옛 *agentId 알면 누구나 메시지 봄* 사고 fix.
+        """
+        if caller_account_sn is not None:
+            agent = self.agent_repo.find_by_agent_id_any_owner(agent_id)
+            if agent is None or agent.owner_account_sn != caller_account_sn:
+                return MessageListRs(items=[], has_more=False)
         rows, has_more = self.repo.list_for_agent(agent_id, direction, with_id, status, limit)
         attachments_by_msg = self.attachment_repo.list_by_message_ids([r.message_id for r in rows])
         items = [self._enrich(r, attachments=attachments_by_msg.get(r.message_id, [])) for r in rows]
@@ -206,10 +233,16 @@ class MessageService:
 
     # ---- unread count ----
 
-    def get_unread_count(self, agent_id: str | None) -> UnreadCountRs:
-        """rc50 — N+1 → batch IN, response 직전 commit (idle in transaction 차단)."""
+    def get_unread_count(self, agent_id: str | None, caller_account_sn: int | None = None) -> UnreadCountRs:
+        """rc50 — N+1 → batch IN, response 직전 commit (idle in transaction 차단).
+        sameUser 격리 — caller_account_sn 박으면 agent_id owner 매칭 검증.
+        """
         if not agent_id:
             return UnreadCountRs(total_unread=0, by_agent=[])
+        if caller_account_sn is not None:
+            agent = self.agent_repo.find_by_agent_id_any_owner(agent_id)
+            if agent is None or agent.owner_account_sn != caller_account_sn:
+                return UnreadCountRs(total_unread=0, by_agent=[])
         total = self.repo.count_unread_for_to(agent_id)
         by_from = self.repo.list_unread_by_from(agent_id)
         # batch fetch — N SELECT → 1 SELECT WHERE IN
@@ -230,7 +263,25 @@ class MessageService:
     # ---- mark read / ack ----
 
     def mark_read(self, message_id: str, agent_id: str) -> bool:
+        """to_agent_id == agent_id 일 때만 read_at 박음 + SSE message.read broadcast.
+
+        SSE 는 sender (from_agent_id) 의 채팅 페이지 가 *읽음 신호* 받아 책상
+        애니메이션 박는 path.
+        """
         n = self.repo.mark_read(message_id, agent_id)
+        if n > 0:
+            # row 마킹 성공 → from_agent_id 알아내서 SSE broadcast
+            msg = self.repo.find_by_id(message_id)
+            if msg is not None:
+                broker.publish(
+                    "message.read",
+                    {
+                        "messageId": message_id,
+                        "fromAgentId": msg.from_agent_id,
+                        "toAgentId": msg.to_agent_id,
+                        "readAt": (msg.read_at or datetime.now(tz=timezone.utc)).isoformat(),
+                    },
+                )
         self.db.commit()
         return n > 0
 
@@ -240,14 +291,17 @@ class MessageService:
 
     # ---- broadcast ----
 
-    def broadcast(self, body: MessageBroadcastRq) -> MessageBroadcastRs:
+    def broadcast(self, body: MessageBroadcastRq, caller_account_sn: int | None = None) -> MessageBroadcastRs:
         """fan-out 발신 — 각 수신자에게 create() 동일 흐름 적용.
 
-        Spring MessageService.broadcast 와 1:1.
+        Spring MessageService.broadcast 와 1:1. sameUser 격리 — caller_account_sn 박으면
+        fromAgentId owner 가 caller 매칭 검증 (spoofing 차단).
         """
         sender = self.agent_repo.find_by_agent_id_any_owner(body.from_agent_id)
         if sender is None:
             # Spring: 404. 여기선 빈 결과 + notFound 카운트.
+            return MessageBroadcastRs(items=[], total_attempted=0, succeeded=0, failed=0, not_found=len(body.to_agent_ids))
+        if caller_account_sn is not None and sender.owner_account_sn != caller_account_sn:
             return MessageBroadcastRs(items=[], total_attempted=0, succeeded=0, failed=0, not_found=len(body.to_agent_ids))
 
         # 자기 자신 + 중복 제거
@@ -294,12 +348,17 @@ class MessageService:
 
     # ---- conversations ----
 
-    def get_conversations(self, agent_id: str) -> list[ConversationItem]:
+    def get_conversations(self, agent_id: str, caller_account_sn: int | None = None) -> list[ConversationItem]:
         """대화 partner 별 최근 활동 — Spring MessageService.getConversations.
 
         rc50 — N+1 SELECT (매 partner_id 별 find_by_agent_id) → batch IN.
-        15 agent 의 dashboard polling 시점 idle in transaction 15 burst 사고 fix.
+        sameUser 격리 — caller_account_sn 박으면 agent_id owner 매칭 검증, 미일치 시 빈 list.
         """
+        if caller_account_sn is not None:
+            agent = self.agent_repo.find_by_agent_id_any_owner(agent_id)
+            if agent is None or agent.owner_account_sn != caller_account_sn:
+                self.db.commit()
+                return []
         partner_rows = self.repo.list_conversations_for(agent_id)
         # batch fetch — N SELECT → 1 SELECT WHERE IN
         partner_ids = [r[0] for r in partner_rows]
@@ -334,9 +393,20 @@ class MessageService:
         to_agent_id: str | None,
         q: str | None,
         limit: int = 100,
+        caller_account_sn: int | None = None,
     ) -> MessageListRs:
+        """audit — caller_account_sn 박으면 *caller 의 own agent 가 from 또는 to 인 메시지만* 반환.
+        옛 = 인증 없이 전체 검색 사고 fix.
+        """
         safe_limit = max(1, min(limit, 1000))
         rows, has_more = self.repo.select_audit(status, from_agent_id, to_agent_id, q, safe_limit)
+        if caller_account_sn is not None:
+            from app.agents.models import Agent
+            from sqlalchemy import select as _sel
+            owned_ids = {r[0] for r in self.db.execute(
+                _sel(Agent.agent_id).where(Agent.owner_account_sn == caller_account_sn)
+            ).all()}
+            rows = [r for r in rows if r.from_agent_id in owned_ids or r.to_agent_id in owned_ids]
         items = [self._enrich(r) for r in rows]
         return MessageListRs(items=items, has_more=has_more)
 

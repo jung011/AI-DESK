@@ -32,6 +32,14 @@ BUILD="$ROOT/build-dev"
 DIST="$ROOT/dist"
 PAYLOAD="$BUILD/payload"
 
+# helper python __version__ 자동 sync — build.sh 와 동일 path.
+# [[feedback-helper-version-constant-sync]] 정합.
+INIT_PY="$DESKTOP_AGENT/src/aidesk_agent/__init__.py"
+if [[ -f "$INIT_PY" ]]; then
+    echo "→ Sync __version__ = \"$VERSION\" into $INIT_PY"
+    sed -i '' "s/__version__ = \".*\"/__version__ = \"${VERSION}\"/" "$INIT_PY"
+fi
+
 echo "→ Cleaning build-dev/"
 rm -rf "$BUILD"
 mkdir -p "$BUILD" "$DIST"

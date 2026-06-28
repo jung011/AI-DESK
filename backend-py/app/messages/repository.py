@@ -16,12 +16,18 @@ class MessageRepository:
         self.db.flush()
         return msg
 
-    def aggregate_wiring(self, window_min: int = 30) -> list[tuple[str, str, int, datetime]]:
+    def aggregate_wiring(
+        self,
+        window_min: int = 30,
+        account_sn: int | None = None,
+    ) -> list[tuple[str, str, int, datetime]]:
         """최근 window_min 분 의 agent pair (from, to) 별 메시지 수 + 가장 최근 timestamp.
 
-        대시보드 wiring view 용 — 활발한 대화 쌍 visualize.
-        반환: [(fromAgentId, toAgentId, messageCount, lastAt), ...]
+        대시보드 wiring view 용. account_sn 박으면 *그 user 의 own agent* 가 from 또는
+        to 인 pair 만 반환 (sameUser 격리). None 이면 옛 동작 (모든 user — 내부 admin 용).
         """
+        from app.agents.models import Agent
+
         cutoff = datetime.now(tz=timezone.utc) - timedelta(minutes=window_min)
         stmt = (
             select(
@@ -34,6 +40,19 @@ class MessageRepository:
             .group_by(Message.from_agent_id, Message.to_agent_id)
             .order_by(desc("count"))
         )
+        if account_sn is not None:
+            # from 또는 to 중 하나라도 caller 의 agent 면 포함. agent.owner_account_sn 매칭
+            # subquery 박음 (small set — agents 보통 < 100).
+            owned_ids_stmt = select(Agent.agent_id).where(Agent.owner_account_sn == account_sn)
+            owned_ids = {r[0] for r in self.db.execute(owned_ids_stmt).all()}
+            if not owned_ids:
+                return []
+            rows = self.db.execute(stmt).all()
+            return [
+                (r.from_agent_id, r.to_agent_id, r.count, r.last_at)
+                for r in rows
+                if r.from_agent_id in owned_ids or r.to_agent_id in owned_ids
+            ]
         return [(r.from_agent_id, r.to_agent_id, r.count, r.last_at) for r in self.db.execute(stmt).all()]
 
     def find_by_id(self, message_id: str) -> Message | None:

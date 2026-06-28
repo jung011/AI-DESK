@@ -229,28 +229,31 @@ const onlineCount = computed(() =>
 <style scoped>
 .colleague-section {
   margin-top: 24px;
-  background: #fff;
-  border: 1px solid #D4DCE4;
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
   border-radius: 8px;
   padding: 18px 20px;
-  box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .08);
+  box-shadow: none;
 }
 .colleague-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 14px;
 }
-.colleague-title { font-size: 15px; font-weight: 700; color: #101010; }
+.colleague-title { font-size: 15px; font-weight: 700; color: var(--text); }
 .colleague-head-right {
   display: flex; align-items: center; gap: 12px;
 }
 .ext-add-btn {
-  font-size: 11px; padding: 4px 10px;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 4px;
-  color: #2D7FF9; font-weight: 600; cursor: pointer;
+  font-size: 11px; padding: 6px 14px;
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF);
+  border: none; border-radius: 6px;
+  color: #fff; font-weight: 700; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(107, 182, 255, 0.25);
+  transition: box-shadow .15s, transform .12s;
 }
-.ext-add-btn:hover { background: #F2F8FE; border-color: #B6D7F9; }
+.ext-add-btn:hover { box-shadow: 0 4px 14px rgba(184, 154, 255, 0.45); transform: translateY(-1px); }
 .colleague-summary {
-  font-size: 12px; color: #666;
+  font-size: 12px; color: var(--text-muted);
   display: inline-flex; align-items: center; gap: 6px;
 }
 .colleague-sep { color: #CBD5E1; }
@@ -262,13 +265,13 @@ const onlineCount = computed(() =>
 
 .colleague-empty {
   padding: 32px 20px; text-align: center;
-  color: #999; font-size: 13px;
+  color: var(--text-muted); font-size: 13px;
 }
 .colleague-empty-hint {
-  display: block; margin-top: 8px; color: #BBB; font-size: 11px;
+  display: block; margin-top: 8px; color: var(--text-dim); font-size: 11px;
 }
 .colleague-empty-hint code {
-  background: #F4F6FB; padding: 1px 4px; border-radius: 3px; font-family: monospace;
+  background: rgba(15, 23, 41, 0.4); padding: 1px 4px; border-radius: 3px; font-family: monospace;
 }
 
 .colleague-grid {
@@ -277,40 +280,44 @@ const onlineCount = computed(() =>
 }
 .colleague-card {
   position: relative;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
+  /* 모든 카드 통일 — 알바 (external) 카드 의 alpha 색. online/offline 차이는 *online-dot* 만 */
+  background: rgba(107, 182, 255, 0.08);
+  border: 1px solid rgba(107, 182, 255, 0.4);
+  border-radius: 6px;
   padding: 12px 14px;
   text-align: left;
   font-family: inherit;
   display: flex; flex-direction: column; gap: 4px;
 }
-.colleague-card.offline { background: #F8FAFC; }
+/* offline 카드 도 같은 배경 — 색 통일 (요청 spec) */
+.colleague-card.offline { background: rgba(107, 182, 255, 0.08); }
 .colleague-card.me-unset { opacity: 0.7; }
 .colleague-card .online-dot {
   position: absolute; top: 12px; right: 12px;
 }
 .colleague-name {
-  font-size: 13px; font-weight: 600; color: #222;
+  font-size: 13px; font-weight: 600; color: var(--text);
   padding-right: 16px;     /* online-dot 공간 */
 }
 .me-unset-tag {
-  font-size: 10px; font-weight: 500; color: #AAB4BE;
+  font-size: 10px; font-weight: 500; color: var(--text-dim);
   margin-left: 4px;
 }
 .colleague-meta {
-  font-size: 11px; color: #888;
+  font-size: 11px; color: var(--text-muted);
 }
 
-/* 외부 AI 카드 — service 형태라 다른 색상 / 배지로 구분. */
+/* 외부 AI 카드 — 옛엔 별 색 박혔는데 사용자 정정으로 모든 카드 통일.
+   external-tag 만 *외부 AI* 구분 표시. */
 .colleague-card.external {
-  border-color: #B6D7F9;
-  background: #F2F8FE;
+  /* base .colleague-card 와 동일 — override 안 함 */
 }
 .colleague-card.external.offline {
-  background: #F4F8FC;
+  /* base .colleague-card.offline 와 동일 */
 }
 .external-tag {
-  font-size: 10px; font-weight: 600; color: #1F6FCE;
-  background: #DEEDFD; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 600; color: var(--link);
+  background: rgba(107, 182, 255, 0.2); padding: 1px 6px; border-radius: 3px;
   margin-left: 6px;
 }
 .ext-action-btn {
@@ -318,15 +325,15 @@ const onlineCount = computed(() =>
   width: 20px; height: 20px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: none; border-radius: 4px;
-  color: #B6C2CE;
+  color: var(--text-dim);
   cursor: pointer; opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 .colleague-card.external:hover .ext-action-btn { opacity: 1; }
 .ext-rotate-btn { right: 48px; }
-.ext-rotate-btn:hover { color: #2D7FF9; background: #DEEDFD; }
+.ext-rotate-btn:hover { color: var(--link); background: rgba(107, 182, 255, 0.2); }
 .ext-delete-btn { right: 26px; }
-.ext-delete-btn:hover { color: #E25555; background: #FFE9E9; }
+.ext-delete-btn:hover { color: var(--danger); background: rgba(248, 113, 113, 0.18); }
 
 /* Confirm modal — ExternalAgentDialog 와 톤 통일. */
 .confirm-backdrop {
@@ -337,7 +344,7 @@ const onlineCount = computed(() =>
 }
 @keyframes confirm-fade { from { opacity: 0; } to { opacity: 1; } }
 .confirm-modal {
-  background: #fff; border-radius: 10px;
+  background: var(--bg-card); border-radius: 10px;
   width: 420px; max-width: 92vw;
   box-shadow: 0 12px 40px rgba(0,0,0,.22);
   overflow: hidden;
@@ -354,7 +361,7 @@ const onlineCount = computed(() =>
 .confirm-icon-wrap {
   width: 36px; height: 36px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #FDECEC; color: #E25555;
+  background: #FDECEC; color: var(--danger);
   flex-shrink: 0;
 }
 .confirm-head h3 {
@@ -383,14 +390,14 @@ const onlineCount = computed(() =>
   border-top: 1px solid #EEF1F5;
 }
 .ext-btn {
-  padding: 7px 16px; border: 1px solid #D4DCE4; border-radius: 4px;
-  background: #fff; cursor: pointer; font-size: 13px;
+  padding: 7px 16px; border: 1px solid var(--border-soft); border-radius: 4px;
+  background: var(--bg-card); cursor: pointer; font-size: 13px;
   color: #2C3946;
   font-family: inherit;
 }
 .ext-btn:disabled { cursor: not-allowed; opacity: 0.6; }
 .ext-btn.danger {
-  background: #E25555; color: #fff; border-color: #E25555;
+  background: #E25555; color: #fff; border-color: var(--danger);
 }
 .ext-btn.danger:hover:not(:disabled) {
   background: #CF4444; border-color: #CF4444;

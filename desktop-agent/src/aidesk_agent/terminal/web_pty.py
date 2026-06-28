@@ -119,80 +119,6 @@ def _set_winsize(fd: int, rows: int, cols: int) -> None:
         pass
 
 
-async def _handle_background_polling(
-    ws: web.WebSocketResponse,
-    tmux_session: str,
-    rows: int,
-) -> None:
-    """background_mode (대시보드 mini preview) 전용 path — *attach 안 함, pty fork 안 함*.
-
-    옵션 F = 원본 tmux window 의 grid (cols/rows) 를 frontend 에 JSON 으로 알려준 후
-    capture-pane 의 *마지막 N rows* dump polling. frontend 가 *원본 cols 기반* xterm
-    재박음 → wrap 사고 없음 (cursor 좌표 정확). 글자는 작아짐 (fontSize 자동 축소).
-
-    근본 사고 = 두 client (mini preview + 웹 터미널) 동시 attach + 다른 grid 시 tmux
-    가 *active client 의 grid* 박아 passive client 가 *큰 grid 의 일부 crop* 만
-    보임. polling path = *attach 안 함* 으로 grid race 자체 회피.
-    """
-    log = logging.getLogger("aidesk-agent.web-pty")
-    # 원본 tmux window 의 grid (cols/rows) 알아내기 — 첫 ws message 로 frontend 에
-    # JSON send. frontend 가 xterm 의 cols 를 그 값으로 재박음.
-    src_cols, src_rows = 80, 24
-    try:
-        result = subprocess.run(
-            ["tmux", "display-message", "-t", tmux_session, "-p",
-             "#{window_width} #{window_height}"],
-            capture_output=True, timeout=1.0, check=False, text=True,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            parts = result.stdout.strip().split()
-            if len(parts) == 2:
-                src_cols = int(parts[0])
-                src_rows = int(parts[1])
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        pass
-
-    log.info(
-        "ws-terminal: background polling start tmux=%s src_grid=%dx%d viewport_rows=%d",
-        tmux_session, src_cols, src_rows, rows,
-    )
-
-    try:
-        # 첫 message = 원본 grid info (TEXT JSON). frontend 가 받아 xterm resize.
-        await ws.send_str(json.dumps({"type": "info", "cols": src_cols, "rows": rows}))
-        # 그 후 binary = ANSI reset + cursor home
-        await ws.send_bytes(b"\x1b[2J\x1b[H")
-    except Exception:
-        return
-
-    last_payload: bytes = b""
-    poll_rows = max(rows, 14)
-
-    while not ws.closed:
-        try:
-            result = subprocess.run(
-                [
-                    "tmux", "capture-pane", "-e", "-p", "-t", tmux_session,
-                    "-S", f"-{poll_rows}", "-E", "-1",
-                ],
-                capture_output=True, timeout=1.0, check=False,
-            )
-            if result.returncode == 0 and result.stdout:
-                # cursor home + clear + content — 매 frame 전체 redraw
-                payload = b"\x1b[2J\x1b[H" + result.stdout
-                if payload != last_payload:
-                    try:
-                        await ws.send_bytes(payload)
-                    except Exception:
-                        break
-                    last_payload = payload
-        except (subprocess.TimeoutExpired, OSError):
-            pass
-        except Exception:
-            break
-        await asyncio.sleep(0.5)
-
-
 async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     """`ws://127.0.0.1:30083/ws/terminal?cwd=...&cols=...&rows=...&shell=...`.
 
@@ -232,15 +158,6 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
     # agentName — *처음 claude 부팅* 시 identity prompt 자동 inject 용. 옛
     # start_claude_with_mode 의 _build_identity_prompt 부활.
     agent_name = request.query.get("agentName", "").strip()
-    # background=1 → mini preview (대시보드 카드) 전용. attach 안 함 — capture-pane
-    # polling 으로 *큰 grid 의 마지막 N rows* dump + ws send. 두 client 동시 attach +
-    # 다른 grid race 사고 (grid 작은 100×14 master 잡혀 큰 client padding `·` / grid
-    # 큰 200×50 master 잡혀 작은 client crop) 근본 회피.
-    background_mode = request.query.get("background", "").strip() == "1"
-    if background_mode and tmux_session:
-        log.info("ws-terminal: background polling path tmux=%s rows=%d", tmux_session, rows)
-        await _handle_background_polling(ws, tmux_session, rows)
-        return ws
 
     log.info(
         "ws-terminal: open client=%s cwd=%s cols=%d rows=%d shell=%s agentId=%s apiUrl=%s tmux=%s",
@@ -369,9 +286,7 @@ async def web_terminal_handler(request: web.Request) -> web.StreamResponse:
 
     # tmux session 의 cols/rows 를 client xterm size 와 동일하게 resize. mismatch 시
     # capture-pane / attach 출력의 grid 가 xterm parser 의 viewport 와 안 맞아 정렬 깨짐.
-    # background_mode (mini preview) 는 skip — 큰 client (웹 터미널) 의 grid 따라가야
-    # 두 client 동시 attach + 새로고침 race 차단 (점 padding 사고 근본 fix).
-    if tmux_session and not background_mode:
+    if tmux_session:
         try:
             subprocess.run(
                 ["tmux", "resize-window", "-t", tmux_session, "-x", str(cols), "-y", str(rows)],

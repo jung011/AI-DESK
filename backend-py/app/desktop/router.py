@@ -34,12 +34,15 @@ async def upload_local_info(
 
 
 @router.get("/events")
-async def events(filter: str = "") -> StreamingResponse:
+async def events(filter: str = "", catchupSince: float | None = None) -> StreamingResponse:  # noqa: N803
     """SSE channel — helper / dashboard 가 subscribe. messages 의 broker 재사용 (단일 채널).
 
     Query:
     - `filter` (선택): comma-separated tmux session name (예: `aidesk-abc,aidesk-self-liki`).
       매칭 event 만 받음. 빈 값 = 모든 event (옛 broadcast 호환).
+    - `catchupSince` (선택): epoch seconds (float). helper sse_consumer 의 reconnect 시
+      마지막 성공 시각 박음. broker 의 7s buffer 에서 *그 시각 이후 + filter 매칭* event
+      들을 connected 직후 replay. 분실 7s 안 event 자동 복구.
 
     이벤트 타입:
     - `event: connected` — 초기
@@ -48,7 +51,7 @@ async def events(filter: str = "") -> StreamingResponse:
     """
     tmux_filter = frozenset(s for s in filter.split(",") if s.strip()) if filter else None
     return StreamingResponse(
-        broker.event_stream(tmux_filter),
+        broker.event_stream(tmux_filter, catchup_since_sec=catchupSince),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -83,7 +83,7 @@ async function onLogout() {
 <style scoped>
 .header-top {
   position: fixed; top: 0; left: 0; right: 0;
-  height: 56px; background: #f0f2f8; border-bottom: 1px solid #dde1ea;
+  height: 56px; background: var(--bg-card); border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; z-index: 100;
   transition: left 0.25s ease;
@@ -91,15 +91,23 @@ async function onLogout() {
 .header-top-left { display: flex; align-items: center; gap: 12px; }
 .header-logo-box {
   width: 32px; height: 32px; border-radius: 8px;
-  background: #0062ff; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF);
+  display: flex; align-items: center; justify-content: center;
 }
-.header-title { font-size: 15px; font-weight: 600; color: #333; }
+.header-title {
+  font-size: 15px; font-weight: 700;
+  background: linear-gradient(90deg, #6BB6FF, #B89AFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
 .header-top-right { display: flex; align-items: center; gap: 10px; }
 .header-metaverse {
   display: inline-flex; align-items: center;
   padding: 4px 10px; border-radius: 20px;
   background: rgba(59, 91, 219, .08); border: 1px solid rgba(59, 91, 219, .25);
-  color: #3B5BDB; font-size: 12px; font-weight: 600;
+  color: var(--link); font-size: 12px; font-weight: 600;
   text-decoration: none;
 }
 .header-metaverse:hover { background: rgba(59, 91, 219, .15); }
@@ -111,11 +119,11 @@ async function onLogout() {
 .header-status-badge .dot {
   width: 6px; height: 6px; border-radius: 50%; background: #00d084;
 }
-.header-status-badge span { font-size: 12px; font-weight: 600; color: #0062ff; }
+.header-status-badge span { font-size: 12px; font-weight: 600; color: #fff; }
 
 .header-bottom {
   position: fixed; top: 56px; left: 0; right: 0;
-  height: 48px; background: #fff; border-bottom: 1px solid #dde1ea;
+  height: 48px; background: var(--bg-page); border-bottom: 1px solid var(--border-soft);
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; z-index: 99;
   transition: left 0.25s ease;
@@ -133,15 +141,15 @@ async function onLogout() {
   display: block; width: 18px; height: 14px;
   background: linear-gradient(
     to bottom,
-    #333 0, #333 2px, transparent 2px, transparent 6px,
-    #333 6px, #333 8px, transparent 8px, transparent 12px,
-    #333 12px, #333 14px
+    var(--text-muted) 0, var(--text-muted) 2px, transparent 2px, transparent 6px,
+    var(--text-muted) 6px, var(--text-muted) 8px, transparent 8px, transparent 12px,
+    var(--text-muted) 12px, var(--text-muted) 14px
   );
 }
-.header-burger:hover { background: #F1F5F9; }
+.header-burger:hover { background: var(--bg-hover); }
 
 .header-user {
-  font-size: 13px; font-weight: 600; color: #333;
+  font-size: 13px; font-weight: 600; color: var(--text);
   display: flex; align-items: center; gap: 6px;
 }
 .header-user::before {
@@ -153,9 +161,13 @@ async function onLogout() {
   flex-shrink: 0;
 }
 .header-logout {
-  height: 28px; padding: 0 12px;
-  border: 1px solid #D4DCE4; background: #fff;
-  border-radius: 6px; font-size: 12px; font-weight: 500; color: #666; cursor: pointer;
+  height: 28px; padding: 0 14px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  border-radius: 6px; font-size: 12px; font-weight: 600; color: #F87171; cursor: pointer;
 }
-.header-logout:hover { background: #F8FAFC; border-color: #CBD5E1; }
+.header-logout:hover {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.6);
+}
 </style>

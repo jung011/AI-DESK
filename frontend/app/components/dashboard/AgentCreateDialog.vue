@@ -145,7 +145,7 @@ function onSubmit(): void {
 }
 .popup-box {
   width: 480px; max-width: calc(100vw - 40px);
-  background: #fff; border-radius: 10px;
+  background: var(--bg-card); border-radius: 10px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .2);
   display: flex; flex-direction: column;
 }
@@ -177,7 +177,7 @@ function onSubmit(): void {
 .form_field input[type="text"] {
   height: 36px; padding: 0 12px;
   border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #333; background: #fff;
+  font-size: 13px; color: #333; background: var(--bg-card);
 }
 .form_field input[type="text"]:focus { outline: none; border-color: #0062ff; }
 
@@ -187,7 +187,7 @@ function onSubmit(): void {
   flex-shrink: 0;
   height: 36px; padding: 0 14px;
   border: 1px solid #D4DCE4; border-radius: 6px;
-  background: #fff; color: #475569;
+  background: var(--bg-card); color: #475569;
   font-size: 12px; font-weight: 600; cursor: pointer;
 }
 .btn-browse:hover:not(:disabled) { background: #F8FAFC; border-color: #0062ff; color: #0062ff; }
@@ -197,7 +197,7 @@ function onSubmit(): void {
 .model-select-wrap select {
   width: 100%; height: 36px; padding: 0 32px 0 12px;
   border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #333; background: #fff;
+  font-size: 13px; color: #333; background: var(--bg-card);
   appearance: none; cursor: pointer;
 }
 .model-select-wrap::after {
@@ -217,7 +217,7 @@ function onSubmit(): void {
 .btn.normal.type_v1:hover:not(:disabled) { background: #0052d4; }
 .btn.normal.type_v1:disabled { background: #94A3B8; cursor: not-allowed; }
 .btn.normal.type_v2 {
-  background: #fff; color: #475569; border-color: #D4DCE4;
+  background: var(--bg-card); color: #475569; border-color: #D4DCE4;
 }
 .btn.normal.type_v2:hover:not(:disabled) { background: #F8FAFC; }
 </style>

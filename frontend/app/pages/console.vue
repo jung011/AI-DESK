@@ -107,7 +107,7 @@ function onDisconnected(reason: string): void {
 .descList_pageLocation em { font-style: normal; color: #475569; font-weight: 600; }
 
 .console-controls {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   padding: 14px 16px;

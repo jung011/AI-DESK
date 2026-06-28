@@ -134,77 +134,78 @@ const onSubmit = async () => {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #f0f2f8 0%, #F4F6FB 100%);
+  background: linear-gradient(135deg, #0B0F19 0%, #0F1729 100%);
   padding: 24px;
 }
 
 .login-card {
   width: 380px;
   max-width: 100%;
-  background: #fff;
-  border: 1px solid #D4DCE4;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 40px 36px 32px;
-  box-shadow: 0 10px 30px 0 rgba(67, 87, 103, .12);
+  box-shadow: 0 10px 30px 0 rgba(0, 0, 0, .35);
 }
 
 /* 브랜드 */
 .login-brand { text-align: center; margin-bottom: 28px; }
 .login-logo {
   width: 56px; height: 56px;
-  background: #0062ff; border-radius: 12px;
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF); border-radius: 12px;
   display: inline-flex; align-items: center; justify-content: center;
   margin-bottom: 14px;
+  box-shadow: 0 4px 16px rgba(107, 182, 255, 0.35);
 }
 .login-logo svg { width: 32px; height: 32px; fill: #fff; }
-.login-title { font-size: 20px; font-weight: 700; color: #101010; letter-spacing: -.02em; margin: 0 0 4px; }
-.login-subtitle { font-size: 12px; color: #999; letter-spacing: .02em; }
+.login-title {
+  font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px;
+  background: linear-gradient(90deg, #6BB6FF, #B89AFF);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.login-subtitle { font-size: 12px; color: #94A3B8; letter-spacing: .02em; }
 
 /* 폼 */
 .login-form { display: flex; flex-direction: column; gap: 14px; }
 .form_field { display: flex; flex-direction: column; gap: 6px; }
-.form_label { font-size: 12px; font-weight: 600; color: #444; }
+.form_label { font-size: 12px; font-weight: 600; color: var(--text); }
 .form_input {
   height: 40px; padding: 0 12px;
-  border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #222; background: #fff;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; color: var(--text); background: var(--bg-input);
   outline: none; transition: border-color .15s;
   width: 100%; box-sizing: border-box;
-  /* 외부 reset.css 의 input[type=email/password] 가 color 미정의지만, 일부 브라우저 매니저가
-     ‘유출 비밀번호 경고’ 색을 덮어쓰는 케이스가 있어서 명시. */
-  -webkit-text-fill-color: #222;
+  -webkit-text-fill-color: var(--text);
 }
-.form_input:focus { border-color: #0062ff; }
-.form_input::placeholder { color: #BCC4D0; }
-.form_input:disabled { background: #F4F6FB; color: #999; -webkit-text-fill-color: #999; }
+.form_input:focus { border-color: #6BB6FF; }
+.form_input::placeholder { color: #64748B; }
+.form_input:disabled { background: rgba(11, 18, 32, 0.5); color: #64748B; -webkit-text-fill-color: #64748B; }
 
-/* common.css 의 글로벌 룰 `input:invalid { border-color/color: #E83667 !important; }` 가
-   :invalid 상태(빈 값 + required, 잘못된 email 형식 등)에서 input 을 빨갛게 만든다. 로그인
-   화면은 .login-error 의 단일 한국어 문구로만 에러를 표시하므로 :invalid 빨강은 끄고
-   디자인 시스템의 기본 회색 / 포커스 파란색을 유지한다. */
+/* common.css 의 글로벌 룰 `input:invalid { ... !important }` override — 다크 정합 */
 .form_input:invalid,
 .form_input:required:invalid,
 input.form_input:invalid {
-  border-color: #D4DCE4 !important;
-  color: #222 !important;
-  -webkit-text-fill-color: #222 !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text) !important;
   box-shadow: none !important;
   outline: none !important;
 }
 .form_input:focus:invalid,
 input.form_input:focus:invalid {
-  border-color: #0062ff !important;
+  border-color: #6BB6FF !important;
 }
 
-/* Chrome / Safari autofill 노란 박스 + 텍스트 색 덮어쓰기 강제 회피.
-   autofill 적용 시 -webkit-text-fill-color 를 우리 색으로, box-shadow 로 흰 배경 강제. */
+/* Chrome / Safari autofill 의 흰 배경 → 다크 박스로 강제. caret + text 도 light. */
 .form_input:-webkit-autofill,
 .form_input:-webkit-autofill:hover,
 .form_input:-webkit-autofill:focus,
 .form_input:-webkit-autofill:active {
-  -webkit-text-fill-color: #222 !important;
-  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
-  caret-color: #222;
+  -webkit-text-fill-color: var(--text) !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-input) inset !important;
+  caret-color: var(--text);
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -217,18 +218,18 @@ input.form_input:focus:invalid {
   width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: none; cursor: pointer;
-  color: #AAB4BE; border-radius: 4px;
+  color: #64748B; border-radius: 4px;
   transition: color .15s, background .15s;
 }
-.btn_pw_toggle:hover { color: #444; background: #F4F6FB; }
-.btn_pw_toggle:focus { outline: 2px solid #0062ff33; outline-offset: 1px; }
+.btn_pw_toggle:hover { color: var(--text); background: rgba(107, 182, 255, 0.1); }
+.btn_pw_toggle:focus { outline: 2px solid rgba(107, 182, 255, 0.4); outline-offset: 1px; }
 .btn_pw_toggle svg { width: 18px; height: 18px; }
-.btn_pw_toggle.is-shown { color: #0062ff; }
+.btn_pw_toggle.is-shown { color: #6BB6FF; }
 
 /* 에러 */
 .login-error {
   min-height: 16px;
-  font-size: 12px; color: #E83667;
+  font-size: 12px; color: #F87171;
   padding-left: 2px; line-height: 1.4;
 }
 
@@ -239,12 +240,12 @@ input.form_input:focus:invalid {
 /* 푸터 */
 .login-foot {
   margin-top: 24px; padding-top: 18px;
-  border-top: 1px solid #EEF0F4;
-  font-size: 11px; color: #AAB4BE; text-align: center; line-height: 1.6;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: #94A3B8; text-align: center; line-height: 1.6;
 }
-.login-foot strong { color: #666; font-weight: 600; }
+.login-foot strong { color: var(--text); font-weight: 600; }
 .login-foot code {
-  background: #F4F6FB; padding: 1px 4px; border-radius: 3px;
-  font-family: monospace; color: #666;
+  background: var(--bg-input); padding: 1px 4px; border-radius: 3px;
+  font-family: monospace; color: #B0BCD0;
 }
 </style>

@@ -121,6 +121,47 @@ const TOOLS = [
     name: 'list_agents',
     description: '다른 AI 에이전트 목록을 조회합니다 (자기 자신만 제외, 상태 무관).',
     inputSchema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'task_start',
+    description:
+      '사용자가 대시보드 task 패널에서 박은 task 의 처리 시작 신호. backend 에 status=in_progress 마킹. ' +
+      '사용자 메시지가 task_id 동봉해서 도착하면 처리 시작 시점에 호출.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'task UUID — 도착 메시지의 메타에서' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'task_complete',
+    description:
+      'task 처리 완료 신호. backend 에 status=done 마킹 + 다음 task push. result 는 사용자에게 ' +
+      '보여줄 요약 (옵션).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'task UUID' },
+        result: { type: 'string', description: '완료 요약 (옵션)' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'mark_read',
+    description:
+      '받은 메시지의 *읽음* 신호. 사용자가 채팅 페이지에서 답신 기다리는 동안 ' +
+      '*AI 가 책상에서 작업중* 애니메이션을 위해 사용. 메시지를 *실제로 읽기 시작할 때* 호출. ' +
+      '메시지마다 한 번만 (반복 호출은 멱등 무시).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        message_id: { type: 'string', description: '도착 메시지의 task_id / message_id' }
+      },
+      required: ['message_id']
+    }
   }
 ];
 
@@ -209,8 +250,9 @@ async function ensureAgentId() {
     }
     AGENT_ID = ENV_AGENT_ID;
     // 본인 이름 backend lookup — Bearer 인증으로 본인 row 만 조회 가능.
+    // callerAgentId = ENV_AGENT_ID (자기 자신) — backend 의 detail sameUser 검증 통과.
     try {
-      const env = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}`);
+      const env = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}?callerAgentId=${encodeURIComponent(ENV_AGENT_ID)}`);
       MY_AGENT_NAME = env.data?.agentName || null;
     } catch (e) {
       dbg(`aidesk-channel: name lookup failed: ${e?.message ?? e}`);
@@ -227,6 +269,18 @@ async function ensureAgentId() {
       AGENT_ID = byEnv.agentId;
       MY_AGENT_NAME = byEnv.agentName || null;
       return AGENT_ID;
+    }
+    // sameUser 격리 (bepy-rc63) 로 비인증 list 호출이 빈 응답 → byEnv 못 찾음.
+    // detail endpoint 는 sameUser filter 없으므로 ENV_AGENT_ID 직접 조회로 fallback.
+    try {
+      const self = await api(`/api/agents/${encodeURIComponent(ENV_AGENT_ID)}?callerAgentId=${encodeURIComponent(ENV_AGENT_ID)}`);
+      if (self?.data?.agentId === ENV_AGENT_ID) {
+        AGENT_ID = ENV_AGENT_ID;
+        MY_AGENT_NAME = self.data.agentName || null;
+        return AGENT_ID;
+      }
+    } catch (e) {
+      dbg(`aidesk-channel: self detail lookup failed: ${e?.message ?? e}`);
     }
     dbg(`aidesk-channel: AIDESK_AGENT_ID=${ENV_AGENT_ID} not in DB; falling back to cwd match`);
   }
@@ -282,7 +336,7 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   // 발생하는 무응답 silence 또는 압축 중 자연 지연을 caller LLM 이 즉시 인지하게.
   let preWarning = null;
   try {
-    const probe = await api(`/api/agents/${encodeURIComponent(toAgentId)}`);
+    const probe = await api(`/api/agents/${encodeURIComponent(toAgentId)}?callerAgentId=${encodeURIComponent(me)}`);
     const s = probe.data?.status;
     const name = probe.data?.agentName || target_agent;
     if (s === 'offline' || s === 'error') {
@@ -308,7 +362,7 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
   if (finalStatus === 'sent' && message?.messageId) {
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      const check = await api(`/api/messages/${encodeURIComponent(message.messageId)}`);
+      const check = await api(`/api/messages/${encodeURIComponent(message.messageId)}?callerAgentId=${encodeURIComponent(me)}`);
       const after = check.data;
       if (after) {
         finalStatus = after.status ?? finalStatus;
@@ -337,7 +391,7 @@ async function sendTo({ target_agent, content, reply_to_message_id }) {
 async function replyToMessage({ message_id, content }) {
   if (!message_id || !content) throw new Error('message_id and content are required');
   const me = await ensureAgentId();
-  const env = await api(`/api/messages/${encodeURIComponent(message_id)}`);
+  const env = await api(`/api/messages/${encodeURIComponent(message_id)}?callerAgentId=${encodeURIComponent(me)}`);
   const orig = env.data;
   if (!orig) throw new Error(`Original message not found: ${message_id}`);
   if (orig.toAgentId !== me) {
@@ -348,6 +402,43 @@ async function replyToMessage({ message_id, content }) {
     content,
     reply_to_message_id: message_id
   });
+}
+
+async function taskStart({ task_id } = {}) {
+  if (!task_id) throw new Error('task_id required');
+  const me = await ensureAgentId();
+  await api(`/api/tasks/${encodeURIComponent(task_id)}/start?callerAgentId=${encodeURIComponent(me)}`, { method: 'POST', body: '{}' });
+  return { ok: true, taskId: task_id, status: 'in_progress' };
+}
+
+async function taskComplete({ task_id, result } = {}) {
+  if (!task_id) throw new Error('task_id required');
+  const me = await ensureAgentId();
+  await api(`/api/tasks/${encodeURIComponent(task_id)}/complete?callerAgentId=${encodeURIComponent(me)}`, {
+    method: 'POST',
+    body: JSON.stringify({ result: result ?? null }),
+  });
+  return { ok: true, taskId: task_id, status: 'done' };
+}
+
+async function markRead({ message_id } = {}) {
+  if (!message_id) throw new Error('message_id required');
+  const me = await ensureAgentId();
+  // PATCH /api/messages/{id}/read?agentId=<self> — repeated call 은 *already read* 로 404
+  // 받지만 mark_read 의 의도는 멱등 신호이므로 404 도 ok 로 처리.
+  try {
+    await api(
+      `/api/messages/${encodeURIComponent(message_id)}/read?agentId=${encodeURIComponent(me)}`,
+      { method: 'PATCH' }
+    );
+    return { ok: true, messageId: message_id, readAt: new Date().toISOString() };
+  } catch (err) {
+    const msg = String(err?.message ?? err);
+    if (msg.includes('already read') || msg.includes('not found')) {
+      return { ok: true, messageId: message_id, alreadyRead: true };
+    }
+    throw err;
+  }
 }
 
 async function checkInbox({ unread_only = true, limit = 10 } = {}) {
@@ -387,7 +478,13 @@ const server = new Server(
       '다른 AI 가 채팅에서 부르는 이름이 곧 당신의 이름입니다.' +
       '\n\n[도구] 다른 AI 에게 메시지 → send_to. 받은 메시지(<channel> 태그)에 답 → reply. ' +
       '미확인 점검 → check_inbox. 다른 AI 목록 → list_agents. ' +
-      '답변 시 <channel> 태그의 task_id 를 message_id 로 그대로 전달하세요.'
+      '답변 시 <channel> 태그의 task_id 를 message_id 로 그대로 전달하세요.' +
+      '\n\n[task 큐] 사용자가 대시보드 task 패널에서 박은 task 가 *task_id 메타* 동봉된 메시지로 ' +
+      '도착합니다. 처리 시작 시 task_start(task_id) 호출, 완료 시 task_complete(task_id, result) ' +
+      '호출하세요. mcp tool 호출 안 하면 backend 가 stuck 상태로 인식.' +
+      '\n\n[읽음 신호] 메시지를 *실제로 읽기 시작할 때* mark_read(message_id) 호출. 사용자 채팅 ' +
+      '페이지에 *AI 가 책상에서 작업중* 애니메이션이 표시됩니다. 메시지 받자마자 한 번씩. ' +
+      'task 메시지면 mark_read 먼저 + task_start 뒤이어 호출.'
   }
 );
 
@@ -402,6 +499,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'reply':       result = await replyToMessage(args); break;
       case 'check_inbox': result = await checkInbox(args); break;
       case 'list_agents': result = await listAgents(); break;
+      case 'task_start':  result = await taskStart(args); break;
+      case 'task_complete': result = await taskComplete(args); break;
+      case 'mark_read':   result = await markRead(args); break;
       default: throw new Error(`Unknown tool: ${name}`);
     }
     return {

@@ -21,6 +21,7 @@ from app.logs.router import router as logs_router
 from app.messages.attachment_router import router as attachments_router
 from app.messages.router import router as messages_router
 from app.settings.router import router as settings_router
+from app.tasks.router import router as tasks_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,6 +114,7 @@ app.include_router(desktop_router,          prefix="/api/desktop",         tags=
 app.include_router(helper_router,           prefix="/api/helper",          tags=["helper"])
 app.include_router(colleagues_router,       prefix="/api/colleagues",      tags=["colleagues"])
 app.include_router(settings_router,         prefix="/api/settings",        tags=["settings"])
+app.include_router(tasks_router,            prefix="/api/tasks",           tags=["tasks"])
 # logs router 는 /api/action-logs + /api/logs 두 path 처리 — prefix 안 채우고 root mount
 app.include_router(logs_router,             prefix="/api",                 tags=["logs"])
 

@@ -30,7 +30,7 @@
       <div v-else-if="messages.length === 0" class="cv-empty">아직 메시지 없음 — 첫 대화를 시작해보세요</div>
       <ul v-else class="cv-msgs">
         <li
-          v-for="m in messages"
+          v-for="m in visibleMessages"
           :key="m.messageId"
           class="cv-msg"
           :class="{
@@ -54,7 +54,13 @@
               class="cv-sender">
               {{ m.fromAgentName }}
             </div>
-            <div v-if="m.content && m.content.trim()" class="cv-content">{{ m.content }}</div>
+            <!-- 채팅 메시지 markdown 렌더 — table / code / list / strong 등 시각 요소.
+                 marked + dompurify 로 sanitize. XSS 차단 + 표 같은 풍부한 표현. -->
+            <div
+              v-if="m.content && m.content.trim()"
+              class="cv-content cv-md"
+              v-html="renderMd(m.content)"
+            ></div>
             <!--
               첨부 chip — 카카오톡 스타일. 파일명/크기 + 다운로드 아이콘.
               backend = permitAll (cookie auth 없음) 이라 단순 <a download> 로 충분.
@@ -82,6 +88,16 @@
                 {{ statusBadge(m.status) }}
               </span>
             </div>
+          </div>
+        </li>
+        <!-- AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 AI 측
+             (좌측) 에 *책상 stage* 박힘. 답신 도착 시 workingOnMessageId null →
+             stage 사라짐 + 실제 메시지 표시. chip + hover popover path 폐기 —
+             모바일/접근성 호환 + 항상 노출. -->
+        <li v-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
+          <div class="cv-bubble cv-bubble-stage">
+            <div class="cv-sender">{{ partner.agentName }}</div>
+            <WorkingDeskStage :agent-name="partner.agentName" />
           </div>
         </li>
       </ul>
@@ -160,6 +176,10 @@
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
+import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
+import { renderMarkdown } from '~/utils/renderMarkdown';
+
+const renderMd = renderMarkdown;
 
 const props = defineProps<{
   partner: AgentItem | null;
@@ -183,6 +203,52 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 const pendingAttachments = ref<AttachmentRef[]>([]);
 const uploadingFiles = ref(false);
 const settingsOpen = ref(false);
+
+/**
+ * 채팅 vs task 큐 분리 — task 메시지 (`[task:UUID]` 시작) 는 대시보드 TaskPanel
+ * 의 책임. 채팅 페이지에서는 제외 = 두 path 가 시각적으로 안 섞임.
+ *
+ * mark_read 도 task 메시지의 readAt 패치 받지만 chip 계산에선 task 메시지 무시.
+ * → 채팅창 chip = *채팅에서 보낸 메시지의 읽음* 만 trigger. task 의 lifecycle 은
+ * 대시보드의 TaskPanel 배지 (in_progress / done) 가 책임.
+ */
+const visibleMessages = computed<MessageItem[]>(() => {
+  return props.messages.filter((m) => {
+    const c = (m.content || '').trimStart();
+    return !c.startsWith('[task:');
+  });
+});
+
+/**
+ * AI 가 책상에서 작업중 chip 박을 messageId.
+ *
+ * 조건:
+ *  - 마지막 내 발신 메시지 (fromAgentId === meId, toAgentId === partner)
+ *  - readAt 이 박혀있음 (AI 가 mark_read mcp tool 호출 완료)
+ *  - 그 뒤로 partner 의 답신 (fromAgentId === partner) 메시지가 *아직* 없음
+ *
+ * 답신 오면 chip 자동 사라짐. hover 시 stage popover (CSS only — Vue state X).
+ *
+ * visibleMessages 기반 — task 메시지 무시 (chat vs task 분리 정합).
+ */
+const workingOnMessageId = computed<string | null>(() => {
+  if (!props.partner) return null;
+  const list = visibleMessages.value;
+  // 최신 → 옛 순으로 뒤에서부터 — partner 답신 있으면 chip 표시 X
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i] as MessageItem;
+    if (!m) continue;
+    if (m.fromAgentId === props.partner.agentId && m.toAgentId === props.meId) {
+      // partner → me 메시지가 더 최신 → 이미 답신 옴
+      return null;
+    }
+    if (m.fromAgentId === props.meId && m.toAgentId === props.partner.agentId) {
+      // 마지막 내 발신 메시지
+      return m.readAt ? m.messageId : null;
+    }
+  }
+  return null;
+});
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
 const FONT_MAX_PX = 24;
@@ -199,6 +265,9 @@ onMounted(() => {
     fontSizePxInput.value = n;
   }
   document.addEventListener('keydown', onSettingsKey);
+  // 새로고침 / 첫 mount 시 — parent 가 미리 fetch 한 messages 가 박혀있을 수 있음.
+  // watch source 가 *변화 없으면* 발사 안 하므로 mount 시점에도 명시적 scroll 박음.
+  scrollToBottomDeferred();
 });
 onBeforeUnmount(() => {
   if (typeof document !== 'undefined') document.removeEventListener('keydown', onSettingsKey);
@@ -281,16 +350,28 @@ function scrollToBottom(): void {
   bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
 }
 
+// nextTick 만으로는 *async render component (image / syntax-highlight 등)* 의 layout shift
+// 후 scroll 위치가 상단으로 보이는 사고. 2 frames 후 한 번 더 박음 — render 완료 보장.
+function scrollToBottomDeferred(): void {
+  void nextTick().then(() => {
+    scrollToBottom();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(scrollToBottom);
+    });
+  });
+}
+
 // 마지막 메시지 ID watch — length 대신. fetchMessages 가 array 새로 박을 때 limit=100
 // 초과 conversation 에서 옛 1 빠지고 새 1 추가되면 length 변화 없어 옛 watch 미발화 사고 fix.
-watch(() => props.messages[props.messages.length - 1]?.messageId, () => {
-  void nextTick().then(scrollToBottom);
-});
+watch(() => props.messages[props.messages.length - 1]?.messageId, scrollToBottomDeferred);
 // partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
 // 새 partner 의 마지막 메시지 ID 도 위 watch 가 잡지만, 빈 conversation 같은 edge 도 cover.
-watch(() => props.partner?.agentId, () => {
-  void nextTick().then(scrollToBottom);
-});
+watch(() => props.partner?.agentId, scrollToBottomDeferred);
+// AI 답신 작성중 placeholder bubble 이 추가 / 제거되면 scroll 도 따라옴. 옛에는
+// workingOnMessageId 가 새로 set 되도 messages array 자체는 안 변해 위 messageId
+// watch 미발화 → 사용자가 *placeholder 안 보임* 사고. visibleMessages 의 마지막
+// messageId 외 *workingOnMessageId 변화* 도 scroll trigger 박음.
+watch(workingOnMessageId, scrollToBottomDeferred);
 
 function statusLabel(s: AgentStatus): string {
   // 3 layer 통합: 온라인 / 오프라인 / 압축중.
@@ -422,7 +503,27 @@ function formatSize(bytes: number): string {
   margin-bottom: 3px;
 }
 .cv-content { font-size: 13px; line-height: 1.55; }
+/* markdown 규칙은 별 non-scoped <style> 블록 (파일 끝). v-html injected content 는
+   Vue 의 scoped data attribute 안 박혀 .cv-md table {...} (scoped) 미적용 사고 fix. */
 .cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
+
+/* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
+   답신 도착 시 자동 사라짐 + 실제 메시지로 교체. */
+.cv-msg.typing-placeholder { animation: tpFade .25s ease; }
+@keyframes tpFade {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+/* stage bubble — 옛 text bubble 스타일과 다름. stage 자체가 내부 background +
+   border 박혀있으니 wrapper 의 padding/background 최소화. sender 만 위에 박음. */
+.cv-bubble-stage {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+.cv-bubble-stage .cv-sender {
+  padding: 0 4px 4px 4px;
+}
 .cv-status.sent     { color: #6B7785; }
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
@@ -694,4 +795,95 @@ function formatSize(bytes: number): string {
   .cv-back { display: block; }
   .cv-att-name { max-width: 160px; }
 }
+</style>
+
+<!--
+  markdown 렌더 규칙은 *non-scoped* 박음. v-html 로 injected HTML 은 Vue 의 scoped
+  data-v-xxx attribute 안 박혀, 위의 <style scoped> 안 .cv-md table {...} 규칙이
+  적용 안 되는 사고. non-scoped 로 글로벌 박아 v-html 자식 element 도 정상 매칭.
+-->
+<style>
+.cv-md, .cv-md * { color: #FFFFFF; }
+.cv-md p { margin: 0 0 6px; }
+.cv-md p:last-child { margin: 0; }
+.cv-md strong { font-weight: 800; color: #FFFFFF; }
+.cv-md em { font-style: italic; color: #FFFFFF; }
+.cv-md del, .cv-md s { text-decoration: line-through; opacity: 0.7; }
+.cv-md code {
+  background: rgba(107, 182, 255, 0.22);
+  color: #E0EFFF;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.92em;
+  border: 1px solid rgba(107, 182, 255, 0.35);
+}
+.cv-md pre {
+  background: #050810;
+  border: 2px solid #6BB6FF;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.cv-md pre code {
+  background: transparent;
+  padding: 0;
+  border: none;
+  color: #FFFFFF;
+  font-size: 12px;
+  white-space: pre;
+}
+.cv-md ul, .cv-md ol { margin: 4px 0 6px; padding-left: 22px; color: #FFFFFF; }
+.cv-md li { margin: 2px 0; color: #FFFFFF; }
+.cv-md blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 4px solid #6BB6FF;
+  background: rgba(107, 182, 255, 0.1);
+  color: #FFFFFF;
+}
+.cv-md h1, .cv-md h2, .cv-md h3, .cv-md h4 {
+  margin: 12px 0 8px;
+  font-weight: 800;
+  color: #FFFFFF;
+  border-bottom: 2px solid #6BB6FF;
+  padding-bottom: 6px;
+}
+.cv-md h1 { font-size: 1.3em; }
+.cv-md h2 { font-size: 1.18em; }
+.cv-md h3 { font-size: 1.1em; }
+.cv-md h4 { font-size: 1em; border-bottom: 2px solid #4A5A78; }
+.cv-md a { color: #93C5FD; text-decoration: underline; }
+.cv-md a:hover { color: #BFDBFE; }
+.cv-md hr {
+  border: none;
+  border-top: 2px solid #6BB6FF;
+  margin: 12px 0;
+}
+.cv-md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+  background: #050810;
+  border: 3px solid #6BB6FF;
+}
+.cv-md thead {
+  background: linear-gradient(135deg, rgba(107, 182, 255, 0.4), rgba(184, 154, 255, 0.4));
+}
+.cv-md th {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 800;
+  color: #FFFFFF;
+  border: 2px solid #6BB6FF;
+}
+.cv-md td {
+  padding: 10px 12px;
+  border: 2px solid #6BB6FF;
+  color: #FFFFFF;
+  vertical-align: top;
+}
+.cv-md tbody tr:hover { background: rgba(107, 182, 255, 0.15); }
 </style>

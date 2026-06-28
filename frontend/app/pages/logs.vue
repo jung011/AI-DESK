@@ -194,7 +194,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 .descList_pageLocation em { font-style: normal; color: #475569; font-weight: 600; }
 
 .card {
-  background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;
+  background: var(--bg-card); border: 1px solid #E2E8F0; border-radius: 8px;
   box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .08);
   margin-bottom: 20px;
 }
@@ -211,7 +211,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 }
 .tab {
   height: 30px; padding: 0 14px;
-  background: #fff; color: #475569;
+  background: var(--bg-card); color: #475569;
   border: 1px solid #D4DCE4; border-radius: 16px;
   font-size: 12px; font-weight: 600; cursor: pointer;
 }

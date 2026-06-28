@@ -161,7 +161,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 <style scoped>
 .local-resource {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   padding: 14px 18px;
@@ -205,16 +205,21 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 .action { display: flex; align-items: center; padding-bottom: 6px; }
 .btn-cleanup {
-  background: #475569; color: #fff;
-  border: none; border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 12px; font-weight: 600;
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF);
+  color: #fff;
+  border: none; border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 12px; font-weight: 700;
   cursor: pointer;
-  transition: background .12s;
+  transition: box-shadow .15s, transform .12s;
   white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(107, 182, 255, 0.25);
 }
-.btn-cleanup:hover:not(:disabled) { background: #334155; }
-.btn-cleanup:disabled { background: #CBD5E1; cursor: not-allowed; }
+.btn-cleanup:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(184, 154, 255, 0.45);
+  transform: translateY(-1px);
+}
+.btn-cleanup:disabled { background: var(--bg-hover); color: var(--text-dim); cursor: not-allowed; box-shadow: none; }
 
 .result-inline {
   display: flex; align-items: center; justify-content: space-between;
@@ -241,7 +246,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
   z-index: 1000;
 }
 .modal {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 24px;
   max-width: 480px;

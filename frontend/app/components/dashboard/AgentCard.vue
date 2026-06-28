@@ -270,10 +270,13 @@ const statusLabel = computed(() => ({
   error: '오류'
 }[props.agent.status] ?? '온라인'));
 
+// 온라인 3 상태 (active/waiting/idle) = 모두 초록 type_v5. 옛 idle→type_v8 (gray) 사고
+// 가 *온라인이지만 회색* 박힘으로 offline 과 구분 안가. 통일 = statusLabel 의 *온라인 묶음*
+// 과 정합.
 const badgeClass = computed(() => ({
   active: 'type_v5',
-  waiting: 'type_v10',
-  idle: 'type_v8',
+  waiting: 'type_v5',
+  idle: 'type_v5',
   offline: 'type_v8',
   compacting: 'type_v10',
   error: 'type_v11'
@@ -337,15 +340,15 @@ function formatTime(iso: string, status: string): string {
 
 <style scoped>
 .ai-card {
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
-  padding: 20px; box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .12);
+  background: rgba(15, 23, 41, 0.6); border: 1px solid var(--border-soft); border-radius: 12px;
+  padding: 20px; box-shadow: none;
   position: relative;
   cursor: pointer;
-  transition: border-color .15s, box-shadow .15s, transform .08s;
+  transition: border-color .15s, transform .15s;
 }
-.ai-card:hover { border-color: #0062ff; box-shadow: 0 6px 18px rgba(0, 98, 255, .15); }
+.ai-card:hover { border-color: #6BB6FF; transform: translateY(-2px); }
 .ai-card:active { transform: scale(.995); }
-.ai-card:focus-visible { outline: 2px solid #0062ff; outline-offset: 2px; }
+.ai-card:focus-visible { outline: 2px solid #6BB6FF; outline-offset: 2px; }
 /* 메뉴 열렸을 때 — 드롭다운이 다음 행 카드 뒤에 깔리지 않도록 카드 자체를 위로 끌어올림.
  * (.ai-card 가 position:relative + z-index:auto 라 형제 카드와 DOM 순서로 쌓이는 문제 보정) */
 .ai-card.menu-open { z-index: 100; }
@@ -353,10 +356,12 @@ function formatTime(iso: string, status: string): string {
   content: ''; position: absolute; top: 0; left: 0; right: 0;
   height: 3px; border-radius: 6px 6px 0 0;
 }
-.ai-card.working::before { background: #00C853; }
-.ai-card.waiting::before { background: #0062FF; }
-.ai-card.idle::before    { background: #FFB300; }
-.ai-card.error::before   { background: #E53935; }
+/* 상단 3px line — 온라인 (working) = 초록, 압축중 = 파랑, 에러 = 빨강. offline = 없음 */
+.ai-card.working::before { background: #10B981; }
+.ai-card.waiting::before { background: #6BB6FF; }
+.ai-card.idle::before    { background: #10B981; }
+.ai-card.error::before   { background: #F87171; }
+.ai-card.offline::before { background: transparent; }
 
 .ai-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
 .ai-card-name-wrap { display: flex; align-items: center; gap: 10px; }
@@ -365,13 +370,13 @@ function formatTime(iso: string, status: string): string {
   display: flex; align-items: center; justify-content: center;
   font-size: 18px; flex-shrink: 0;
 }
-.ai-avatar.working { background: #E8F5E9; }
-.ai-avatar.waiting { background: #E3F2FD; }
-.ai-avatar.idle    { background: #FFF8E1; }
-.ai-avatar.error   { background: #FFEBEE; }
+.ai-avatar.working { background: rgba(16, 185, 129, 0.2); }
+.ai-avatar.waiting { background: rgba(107, 182, 255, 0.2); }
+.ai-avatar.idle    { background: rgba(251, 191, 36, 0.2); }
+.ai-avatar.error   { background: rgba(239, 68, 68, 0.2); }
 
 .ai-name {
-  font-size: 15px; font-weight: 700; color: #101010; letter-spacing: -.02em;
+  font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -.02em;
   display: inline-flex; align-items: center; gap: 6px;
 }
 /* 컨텍스트 사용량 — 5h 사용량과 달리 agent 별 별도값. */
@@ -380,11 +385,11 @@ function formatTime(iso: string, status: string): string {
   margin: 4px 0 12px;
 }
 .ctx-label {
-  font-size: 11px; color: #94A3B8; flex-shrink: 0;
+  font-size: 11px; color: var(--text-muted); flex-shrink: 0;
 }
 .ctx-bar {
   flex: 1; height: 6px; border-radius: 3px;
-  background: #F1F5F9; overflow: hidden;
+  background: var(--border-soft); overflow: hidden;
 }
 .ctx-fill { height: 100%; transition: width .2s ease; }
 .ctx-fill.level-low  { background: #10B981; }
@@ -418,7 +423,7 @@ function formatTime(iso: string, status: string): string {
 .card-menu-dropdown {
   position: absolute; top: 36px; right: 0;
   width: 180px;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
+  background: var(--bg-card); border: 1px solid #D4DCE4; border-radius: 6px;
   box-shadow: 0 6px 18px 0 rgba(67, 87, 103, .18);
   padding: 4px 0; z-index: 50;
   display: flex; flex-direction: column;
@@ -442,17 +447,24 @@ function formatTime(iso: string, status: string): string {
   padding: 4px 10px; border-radius: 20px;
   font-size: 11px; font-weight: 600;
 }
-.ico_badge.type_v5  { background: #E8F5E9; color: #2E7D32; }
-.ico_badge.type_v8  { background: #FFF8E1; color: #E65100; }
-.ico_badge.type_v9  { background: #F3E8FF; color: #6A1B9A; }
-.ico_badge.type_v10 { background: #E3F2FD; color: #0D47A1; }
-.ico_badge.type_v11 { background: #FFEBEE; color: #B71C1C; }
-.badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.ico_badge.type_v5  .badge-dot { background: #00C853; }
-.ico_badge.type_v8  .badge-dot { background: #FFB300; }
-.ico_badge.type_v9  .badge-dot { background: #9C27B0; }
-.ico_badge.type_v10 .badge-dot { background: #0062FF; }
-.ico_badge.type_v11 .badge-dot { background: #E53935; }
+/* 다크 정합 + 사용자 spec 통일 (옛 옅은 light → alpha 다크):
+   - 온라인 (active/waiting/idle → type_v5) = 초록
+   - 오프라인 (type_v8) = 회색 (옛 노랑 → 회색 통일)
+   - 압축중 (type_v10) = 파랑
+   - 에러 (type_v11) = 빨강 */
+.ico_badge.type_v5  { background: rgba(16, 185, 129, 0.18); color: #34D399; }
+.ico_badge.type_v8  { background: rgba(107, 114, 128, 0.22); color: #9CA3AF; }
+.ico_badge.type_v9  { background: rgba(168, 85, 247, 0.18); color: #C084FC; }
+.ico_badge.type_v10 { background: rgba(107, 182, 255, 0.18); color: #6BB6FF; }
+.ico_badge.type_v11 { background: rgba(248, 113, 113, 0.18); color: #F87171; }
+.badge-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+/* 점등 — 온라인 (type_v5) 만 초록 glow ON. 오프라인 (type_v8) = 점등 OFF (display:none).
+   압축중 / 에러 도 같은 초록 dot (옛 통일 spec 유지). 8px 크기 + strong glow 박아 visible. */
+.ico_badge.type_v5  .badge-dot { background: #22C55E; box-shadow: 0 0 6px #22C55E, 0 0 2px rgba(34,197,94,0.8); }
+.ico_badge.type_v8  .badge-dot { display: none; }
+.ico_badge.type_v9  .badge-dot { background: #22C55E; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+.ico_badge.type_v10 .badge-dot { background: #22C55E; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+.ico_badge.type_v11 .badge-dot { background: #22C55E; box-shadow: 0 0 4px rgba(34,197,94,0.5); }
 
 .ai-model-tag {
   display: inline-block; padding: 2px 8px;

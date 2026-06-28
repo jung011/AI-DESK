@@ -1,23 +1,22 @@
-name: Backend-py (FastAPI) Docker Build and Push
+name: Docker Build and Push (backend-py)
 
+# bepy-* tag push 시 backend-py image build (aidesk-channel mcp 동봉) + helm bump.
 on:
   push:
     tags:
-      - 'bepy-*'  # FastAPI 마이그 image tag
+      - 'bepy-*'
 
-# 기존 be / fe workflow 와 다른 group — bepy 는 별도 image (jsh125/aidesk-backend-py).
-# rc48 (2026-06-22) — helm bump 자동화 활성. 마이그 안정화 완료 + rc24/47/48 사이클로
-# tag → image → helm → ArgoCD swap 패턴 검증됨. 수동 step (helm bump + master push) 제거.
+# tag 별 concurrency group — 같은 tag retag 시만 옛 run cancel.
+# fe workflow 와 별개 group 라 fe + bepy 동시 push 안 충돌.
 concurrency:
-  group: deploy-pipeline-bepy
-  cancel-in-progress: false
+  group: deploy-bepy-${{ github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   build-and-push:
-    # 우드 K8s 노드 = arm64 only.
     runs-on: ubuntu-24.04-arm
     permissions:
-      contents: write  # helm bump commit + master push 위해 write 필요
+      contents: write
 
     steps:
       - name: Checkout Repository
@@ -25,17 +24,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract version from tag
+      - name: Resolve image tag (strip bepy- prefix)
+        id: tag
         run: |
-          # bepy-0.1.0-rc1 → 0.1.0-rc1
-          echo "IMAGE_TAG=${GITHUB_REF#refs/tags/bepy-}" >> "$GITHUB_ENV"
+          REF="${GITHUB_REF#refs/tags/}"
+          IMAGE_TAG="${REF#bepy-}"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Tag detected: $REF → image_tag=$IMAGE_TAG"
 
-      - name: Set up Bun (aidesk-channel mcp standalone binary build)
+      - name: Check if tag is from master
+        run: |
+          # FETCH_HEAD 만 갱신되는 사고 차단 — refs/remotes/origin/master 명시 갱신.
+          git fetch origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/master; then
+            echo "::error::This tag is not from master. Failing the build."
+            exit 1
+          fi
+
+      - name: Set up Bun (aidesk-channel mcp standalone binary)
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
 
-      - name: Build mcp standalone binaries (darwin-arm64 / linux-x64 / linux-arm64)
+      - name: Build mcp standalone binaries
         run: |
           set -e
           cd aidesk-channel
@@ -62,40 +73,32 @@ jobs:
           file: ./backend-py/Dockerfile
           platforms: linux/arm64
           push: true
-          tags: jsh125/aidesk-backend-py:${{ env.IMAGE_TAG }}
+          tags: jsh125/aidesk-backend-py:${{ steps.tag.outputs.image_tag }}
           cache-from: type=gha,scope=backend-py
           cache-to: type=gha,scope=backend-py,mode=max
 
-      # rc48 추가 — helm values.yaml 의 backend image tag 자동 bump + master push.
-      # ArgoCD auto sync 가 master 변경 감지 → prod swap. 수동 step 제거.
-      # rc53 (2026-06-23) — fe / bepy workflow 동시 trigger 시 master push race
-      # ("cannot lock ref") 사고로 helm bump 누락. retry-on-conflict 5회.
-      - name: Helm values.yaml — backend tag bump (with retry)
+      - name: Helm values.yaml — image tag bump (with retry)
         run: |
           set -e
+          IMAGE_TAG="${{ steps.tag.outputs.image_tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
             git fetch origin master
-            # rc54 fix — reset --hard origin/master 만 하면 detached HEAD 라 push origin
-            # master 시 "src refspec master does not match any" 발생.
-            # switch -C 로 *local master branch* 가 origin/master 가리키게 강제.
             git switch -C master origin/master
-            # backend image tag 만 매치 (frontend tag 형식 = 1.30.7-rc21 와 다름)
-            # Helm/ (대문자) — git case-sensitive, macOS 의 helm/ 와 다름
-            sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "${{ env.IMAGE_TAG }}"|' Helm/values.yaml
+            sed -i 's|tag: "0\.1\.0-rc[0-9]\+"|tag: "'"$IMAGE_TAG"'"|' Helm/values.yaml
             if git diff --quiet Helm/values.yaml; then
               echo "values.yaml unchanged — already on $IMAGE_TAG (skip)"
               exit 0
             fi
             git add Helm/values.yaml
-            git commit -m "deploy(be): helm bump ${{ env.IMAGE_TAG }} (auto from GHA)"
+            git commit -m "deploy(be): helm bump ${IMAGE_TAG} (auto from GHA)"
             if git push origin master 2>&1; then
-              echo "✓ helm bump push success on attempt $attempt"
+              echo "helm bump push success on attempt $attempt"
               exit 0
             fi
-            echo "× push race detected on attempt $attempt — fetch + retry in $((attempt * 3))s"
+            echo "push race on attempt $attempt — fetch + retry in $((attempt * 3))s"
             sleep $((attempt * 3))
           done
-          echo "✗ helm bump push failed after 5 attempts — manual fix needed"
+          echo "::error::push failed after retries"
           exit 1

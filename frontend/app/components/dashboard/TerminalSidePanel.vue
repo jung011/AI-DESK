@@ -171,7 +171,7 @@ watch(() => props.open, (v) => { if (v) void fetchCodeServer(); }, { immediate: 
 .side-panel {
   position: absolute; top: 0; right: 0; bottom: 0;
   width: 1100px; max-width: 95vw;
-  background: #fff;
+  background: var(--bg-card);
   box-shadow: -12px 0 30px rgba(15, 23, 42, .18);
   transform: translateX(100%);
   transition: transform .22s ease;
@@ -233,7 +233,7 @@ watch(() => props.open, (v) => { if (v) void fetchCodeServer(); }, { immediate: 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .settings-modal {
   width: 400px; max-width: calc(100% - 40px);
-  background: #fff; border-radius: 12px;
+  background: var(--bg-card); border-radius: 12px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .25);
   display: flex; flex-direction: column;
   animation: slideIn .18s ease;
@@ -273,7 +273,7 @@ watch(() => props.open, (v) => { if (v) void fetchCodeServer(); }, { immediate: 
   flex: 1; min-width: 0;
   height: 32px; padding: 0 10px;
   border: 1px solid #CBD5E1; border-radius: 6px;
-  background: #fff; font-size: 13px; color: #1E293B;
+  background: var(--bg-card); font-size: 13px; color: #1E293B;
   cursor: pointer;
 }
 .settings-row select:focus { outline: 2px solid #0062ff; outline-offset: -1px; border-color: #0062ff; }
@@ -302,7 +302,7 @@ watch(() => props.open, (v) => { if (v) void fetchCodeServer(); }, { immediate: 
   display: flex; gap: 4px;
   padding: 8px 16px 0;
   border-bottom: 1px solid #F0F2F5;
-  background: #fff;
+  background: var(--bg-card);
 }
 .tab-btn {
   display: inline-flex; align-items: center; gap: 6px;

@@ -78,7 +78,7 @@ watch(() => props.open, (v) => {
 }
 .popup-box {
   width: 380px; max-width: calc(100vw - 40px);
-  background: #fff; border-radius: 10px;
+  background: var(--bg-card); border-radius: 10px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .2);
   display: flex; flex-direction: column;
 }
@@ -121,7 +121,7 @@ watch(() => props.open, (v) => {
 .btn.normal.type_v6 { background: #E83667; color: #fff; }
 .btn.normal.type_v6:hover:not(:disabled) { background: #C42154; }
 .btn.normal.type_v2 {
-  background: #fff; color: #475569; border-color: #D4DCE4;
+  background: var(--bg-card); color: #475569; border-color: #D4DCE4;
 }
 .btn.normal.type_v2:hover:not(:disabled) { background: #F8FAFC; }
 .btn.normal:disabled { opacity: .6; cursor: not-allowed; }

@@ -22,6 +22,8 @@
           @select="onSelectPartner"
           @delete="onDeleteLocal"
           @open-claude="onOpenClaude"
+          @open-telegram="onOpenTelegram"
+          @open-skip="onOpenSkip"
         />
       </div>
       <div class="term-pane term-pane-conv">
@@ -178,31 +180,60 @@ async function onSelectPartner(agentId: string): Promise<void> {
 // dev/macOS = Agent Teams 분할창 활성. *옛 대화 있을 때만* -c 박음
 // (없으면 `No conversation found to continue` 에러).
 const webTermRef = ref<{ pasteCommand?: (text: string) => void } | null>(null);
+async function _hasPastSession(workspaceDir: string | undefined): Promise<boolean> {
+  if (!workspaceDir) return false;
+  try {
+    // prod = 127.0.0.1:30083 사용자 mac local helper. frontend hostname (kaflix.internal)
+    // 가리키면 ingress 30083 listen X → fetch fail → hasPast=false → `-c` 안 박음.
+    // WebTerminal.vue / AgentCardTerminal.vue 와 동일 분기 패턴.
+    const helperBase = import.meta.dev
+      ? `http://${window.location.hostname}:30084`
+      : 'http://127.0.0.1:30083';
+    const url = `${helperBase}/api/has-past-session?workspaceDir=${encodeURIComponent(workspaceDir)}`;
+    const res = await fetch(url);
+    const body = await res.json() as { hasPast?: boolean };
+    return !!body.hasPast;
+  } catch (_e) {
+    return false;  // fail-safe = `-c` 안 박음
+  }
+}
+
 async function onOpenClaude(agentId: string): Promise<void> {
   const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
-  let hasPast = false;
-  if (agent?.workspaceDir) {
-    try {
-      // prod = 127.0.0.1:30083 사용자 mac local helper. frontend hostname (kaflix.internal)
-      // 가리키면 ingress 30083 listen X → fetch fail → hasPast=false → `-c` 안 박음.
-      // WebTerminal.vue / AgentCardTerminal.vue 와 동일 분기 패턴.
-      const helperBase = import.meta.dev
-        ? `http://${window.location.hostname}:30084`
-        : 'http://127.0.0.1:30083';
-      const url = `${helperBase}/api/has-past-session?workspaceDir=${encodeURIComponent(agent.workspaceDir)}`;
-      const res = await fetch(url);
-      const body = await res.json() as { hasPast?: boolean };
-      hasPast = !!body.hasPast;
-    } catch (_e) {
-      hasPast = false;  // fail-safe = `-c` 안 박음
-    }
-  }
+  const hasPast = await _hasPastSession(agent?.workspaceDir);
   await nextTick();
   setTimeout(() => {
     const continueFlag = hasPast ? ' -c' : '';
     // Agent Teams 분할창 flag (--teammate-mode tmux) 는 ~/.claude/settings.json
     // 의 teammateMode=auto 가 *환경 자동 검출* — 명령어 안 박음.
     const cmd = `claude --dangerously-load-development-channels server:aidesk-channel${continueFlag}`;
+    webTermRef.value?.pasteCommand?.(cmd);
+  }, 600);
+}
+
+// 햄버거 메뉴 → 텔레그램으로 열기 — aidesk-channel + telegram 두 채널 동시 활성.
+// `--dangerously-load-development-channels server:aidesk-channel` + `--channels plugin:telegram...`
+// 두 flag 같이 박음. -c 옵션은 클로드 열기와 동일 has_past_session gate.
+async function onOpenTelegram(agentId: string): Promise<void> {
+  const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
+  const hasPast = await _hasPastSession(agent?.workspaceDir);
+  await nextTick();
+  setTimeout(() => {
+    const continueFlag = hasPast ? ' -c' : '';
+    const cmd = `claude --dangerously-load-development-channels server:aidesk-channel --channels plugin:telegram@claude-plugins-official${continueFlag}`;
+    webTermRef.value?.pasteCommand?.(cmd);
+  }, 600);
+}
+
+// 햄버거 메뉴 → 퍼미션 스킵 모드 — 클로드 열기 + `--dangerously-skip-permissions`.
+// claude 의 yes/no 확인 dialog 자동 통과 박는 path. 옵션 -c 옛 클로드 열기와 동일 gate.
+async function onOpenSkip(agentId: string): Promise<void> {
+  const agent = partners.value.find((p: AgentItem) => p.agentId === agentId);
+  const hasPast = await _hasPastSession(agent?.workspaceDir);
+  await nextTick();
+  setTimeout(() => {
+    const continueFlag = hasPast ? ' -c' : '';
+    const cmd = `claude --dangerously-load-development-channels server:aidesk-channel --dangerously-skip-permissions${continueFlag}`;
     webTermRef.value?.pasteCommand?.(cmd);
   }, 600);
 }

@@ -25,6 +25,15 @@ BUILD="$ROOT/build"
 DIST="$ROOT/dist"
 PAYLOAD="$BUILD/payload"
 
+# helper python __version__ 자동 sync — 옛엔 수동 sed 박았다 한 번 까먹으면 *.pkg 파일명과
+# binary 안 __version__ mismatch* 사고. [[feedback-helper-version-constant-sync]] 정합.
+# VERSION env 한 곳만 박으면 __init__.py 도 자동 정합.
+INIT_PY="$DESKTOP_AGENT/src/aidesk_agent/__init__.py"
+if [[ -f "$INIT_PY" ]]; then
+    echo "→ Sync __version__ = \"$VERSION\" into $INIT_PY"
+    sed -i '' "s/__version__ = \".*\"/__version__ = \"${VERSION}\"/" "$INIT_PY"
+fi
+
 echo "→ Cleaning build/ dist/"
 rm -rf "$BUILD" "$DIST"
 mkdir -p "$BUILD" "$DIST"
