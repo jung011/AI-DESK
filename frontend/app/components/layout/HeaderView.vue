@@ -107,7 +107,7 @@ async function onLogout() {
   display: inline-flex; align-items: center;
   padding: 4px 10px; border-radius: 20px;
   background: rgba(59, 91, 219, .08); border: 1px solid rgba(59, 91, 219, .25);
-  color: #3B5BDB; font-size: 12px; font-weight: 600;
+  color: var(--link); font-size: 12px; font-weight: 600;
   text-decoration: none;
 }
 .header-metaverse:hover { background: rgba(59, 91, 219, .15); }
@@ -119,7 +119,7 @@ async function onLogout() {
 .header-status-badge .dot {
   width: 6px; height: 6px; border-radius: 50%; background: #00d084;
 }
-.header-status-badge span { font-size: 12px; font-weight: 600; color: #0062ff; }
+.header-status-badge span { font-size: 12px; font-weight: 600; color: #fff; }
 
 .header-bottom {
   position: fixed; top: 56px; left: 0; right: 0;
@@ -149,7 +149,7 @@ async function onLogout() {
 .header-burger:hover { background: var(--bg-hover); }
 
 .header-user {
-  font-size: 13px; font-weight: 600; color: #333;
+  font-size: 13px; font-weight: 600; color: var(--text);
   display: flex; align-items: center; gap: 6px;
 }
 .header-user::before {
@@ -161,9 +161,13 @@ async function onLogout() {
   flex-shrink: 0;
 }
 .header-logout {
-  height: 28px; padding: 0 12px;
-  border: 1px solid #D4DCE4; background: var(--bg-card);
-  border-radius: 6px; font-size: 12px; font-weight: 500; color: #666; cursor: pointer;
+  height: 28px; padding: 0 14px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  border-radius: 6px; font-size: 12px; font-weight: 600; color: #F87171; cursor: pointer;
 }
-.header-logout:hover { background: #F8FAFC; border-color: #CBD5E1; }
+.header-logout:hover {
+  background: rgba(248, 113, 113, 0.22);
+  border-color: rgba(248, 113, 113, 0.6);
+}
 </style>
