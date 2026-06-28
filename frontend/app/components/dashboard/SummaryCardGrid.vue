@@ -61,7 +61,7 @@ defineProps<{ summary: AgentSummary }>();
 <style scoped>
 .summary-row { display: flex; gap: 16px; margin-bottom: 20px; }
 .summary-card {
-  flex: 1; background: #fff; border: 1px solid #D4DCE4;
+  flex: 1; background: var(--bg-card); border: 1px solid #D4DCE4;
   border-radius: 6px; padding: 16px 20px;
   box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .12);
   display: flex; align-items: center; gap: 14px;

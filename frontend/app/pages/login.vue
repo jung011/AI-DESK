@@ -141,7 +141,7 @@ const onSubmit = async () => {
 .login-card {
   width: 380px;
   max-width: 100%;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #D4DCE4;
   border-radius: 10px;
   padding: 40px 36px 32px;
@@ -167,7 +167,7 @@ const onSubmit = async () => {
 .form_input {
   height: 40px; padding: 0 12px;
   border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #222; background: #fff;
+  font-size: 13px; color: #222; background: var(--bg-card);
   outline: none; transition: border-color .15s;
   width: 100%; box-sizing: border-box;
   /* 외부 reset.css 의 input[type=email/password] 가 color 미정의지만, 일부 브라우저 매니저가

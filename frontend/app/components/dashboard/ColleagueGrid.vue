@@ -229,7 +229,7 @@ const onlineCount = computed(() =>
 <style scoped>
 .colleague-section {
   margin-top: 24px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #D4DCE4;
   border-radius: 8px;
   padding: 18px 20px;
@@ -245,7 +245,7 @@ const onlineCount = computed(() =>
 }
 .ext-add-btn {
   font-size: 11px; padding: 4px 10px;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 4px;
+  background: var(--bg-card); border: 1px solid #D4DCE4; border-radius: 4px;
   color: #2D7FF9; font-weight: 600; cursor: pointer;
 }
 .ext-add-btn:hover { background: #F2F8FE; border-color: #B6D7F9; }
@@ -277,7 +277,7 @@ const onlineCount = computed(() =>
 }
 .colleague-card {
   position: relative;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
+  background: var(--bg-card); border: 1px solid #D4DCE4; border-radius: 6px;
   padding: 12px 14px;
   text-align: left;
   font-family: inherit;
@@ -337,7 +337,7 @@ const onlineCount = computed(() =>
 }
 @keyframes confirm-fade { from { opacity: 0; } to { opacity: 1; } }
 .confirm-modal {
-  background: #fff; border-radius: 10px;
+  background: var(--bg-card); border-radius: 10px;
   width: 420px; max-width: 92vw;
   box-shadow: 0 12px 40px rgba(0,0,0,.22);
   overflow: hidden;
@@ -384,7 +384,7 @@ const onlineCount = computed(() =>
 }
 .ext-btn {
   padding: 7px 16px; border: 1px solid #D4DCE4; border-radius: 4px;
-  background: #fff; cursor: pointer; font-size: 13px;
+  background: var(--bg-card); cursor: pointer; font-size: 13px;
   color: #2C3946;
   font-family: inherit;
 }

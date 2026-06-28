@@ -75,7 +75,7 @@ const tabs = [
   height: 34px; width: 200px;
   padding: 0 12px 0 34px;
   border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #333; background: #fff;
+  font-size: 13px; color: #333; background: var(--bg-card);
 }
 .search-input-wrap input[type="text"]:focus {
   outline: none; border-color: #0062ff;

@@ -297,7 +297,7 @@ onMounted(() => {
 .descList_pageLocation em { font-style: normal; color: #475569; font-weight: 600; }
 
 .card {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   margin-bottom: 20px;
@@ -329,7 +329,7 @@ onMounted(() => {
 
 .btn-secondary {
   height: 36px; padding: 0 16px;
-  background: #fff; color: #475569;
+  background: var(--bg-card); color: #475569;
   border: 1px solid #D4DCE4; border-radius: 6px;
   font-size: 13px; font-weight: 600; cursor: pointer;
   white-space: nowrap;

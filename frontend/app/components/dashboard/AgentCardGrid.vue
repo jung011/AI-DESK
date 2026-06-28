@@ -35,7 +35,7 @@ const emit = defineEmits<{
   text-align: center;
   color: #94A3B8;
   font-size: 13px;
-  background: #fff;
+  background: var(--bg-card);
   border: 1px dashed #D4DCE4;
   border-radius: 6px;
 }

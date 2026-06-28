@@ -21,7 +21,7 @@ const layout = useLayoutStore();
 <style scoped>
 .app-shell {
   min-height: 100vh;
-  background: var(--bg-page);
+  background: linear-gradient(180deg, #0B0F19 0%, #0F1729 100%);
 }
 .app-main {
   padding-top: 104px;        /* header-top 56 + header-bottom 48 */

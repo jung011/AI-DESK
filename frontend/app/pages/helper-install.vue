@@ -164,7 +164,7 @@ async function recheck(): Promise<void> {
 }
 .install-box {
   width: 640px; max-width: 100%;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
   padding: 36px 40px;

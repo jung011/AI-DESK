@@ -418,7 +418,7 @@ function formatTime(iso: string, status: string): string {
 .card-menu-dropdown {
   position: absolute; top: 36px; right: 0;
   width: 180px;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 6px;
+  background: var(--bg-card); border: 1px solid #D4DCE4; border-radius: 6px;
   box-shadow: 0 6px 18px 0 rgba(67, 87, 103, .18);
   padding: 4px 0; z-index: 50;
   display: flex; flex-direction: column;

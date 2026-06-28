@@ -161,7 +161,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 
 <style scoped>
 .local-resource {
-  background: #fff;
+  background: var(--bg-card);
   border: 1px solid #E2E8F0;
   border-radius: 8px;
   padding: 14px 18px;
@@ -241,7 +241,7 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
   z-index: 1000;
 }
 .modal {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 24px;
   max-width: 480px;

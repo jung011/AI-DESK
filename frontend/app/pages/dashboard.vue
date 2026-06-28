@@ -388,7 +388,7 @@ onUnmounted(() => { stopPolling(); tasksStopPolling(); });
 .toggle-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 12px;
-  background: #fff; border: 1px solid #D4DCE4; border-radius: 4px;
+  background: var(--bg-card); border: 1px solid #D4DCE4; border-radius: 4px;
   font-size: 12px; color: #64748B; cursor: pointer;
   transition: background .12s, color .12s, border-color .12s;
 }

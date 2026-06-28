@@ -162,7 +162,7 @@ async function onLogout() {
 }
 .header-logout {
   height: 28px; padding: 0 12px;
-  border: 1px solid #D4DCE4; background: #fff;
+  border: 1px solid #D4DCE4; background: var(--bg-card);
   border-radius: 6px; font-size: 12px; font-weight: 500; color: #666; cursor: pointer;
 }
 .header-logout:hover { background: #F8FAFC; border-color: #CBD5E1; }
