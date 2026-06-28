@@ -5,11 +5,12 @@ on:
     tags:
       - 'bepy-*'  # FastAPI 마이그 image tag
 
-# 기존 be / fe workflow 와 다른 group — bepy 는 별도 image (jsh125/aidesk-backend-py).
-# rc48 (2026-06-22) — helm bump 자동화 활성. 마이그 안정화 완료 + rc24/47/48 사이클로
-# tag → image → helm → ArgoCD swap 패턴 검증됨. 수동 step (helm bump + master push) 제거.
+# fe / be 통합 group — 둘 다 Helm/values.yaml 의 helm bump auto commit 박아 동시 진행 시
+# *non-fast-forward + rebase conflict* 사고 빈번 (fe-rc75/76/77 cycle 3번 fail). 단일
+# lock 박아 직렬 — 다른 workflow 끝날 때까지 대기. cancel-in-progress: false 로 *옛
+# in-progress fail* 시 다음 run 자동 retry.
 concurrency:
-  group: deploy-pipeline-bepy
+  group: deploy-pipeline
   cancel-in-progress: false
 
 jobs:
