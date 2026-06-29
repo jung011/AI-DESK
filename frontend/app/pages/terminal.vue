@@ -186,9 +186,15 @@ async function _hasPastSession(workspaceDir: string | undefined): Promise<boolea
     // prod = 127.0.0.1:30083 사용자 mac local helper. frontend hostname (kaflix.internal)
     // 가리키면 ingress 30083 listen X → fetch fail → hasPast=false → `-c` 안 박음.
     // WebTerminal.vue / AgentCardTerminal.vue 와 동일 분기 패턴.
-    const helperBase = import.meta.dev
-      ? `http://${window.location.hostname}:30084`
-      : 'http://127.0.0.1:30083';
+    // 옵션 B MVP — 모바일 prod 박혀있으면 /api/helper/lan-ip 박은 LAN IP:30084 사용.
+    let helperBase: string;
+    if (import.meta.dev) {
+      helperBase = `http://${window.location.hostname}:30084`;
+    } else {
+      const { getMobileHelperBase } = await import('~/utils/mobileHelperBase');
+      const lanIp = await getMobileHelperBase();
+      helperBase = lanIp ? `http://${lanIp}:30084` : 'http://127.0.0.1:30083';
+    }
     const url = `${helperBase}/api/has-past-session?workspaceDir=${encodeURIComponent(workspaceDir)}`;
     const res = await fetch(url);
     const body = await res.json() as { hasPast?: boolean };

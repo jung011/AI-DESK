@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import socket
 
 import httpx
 
@@ -16,10 +17,29 @@ DEFAULT_BACKEND_URL = "http://localhost:30081"
 DEFAULT_REPORT_INTERVAL_SEC = 30.0
 
 
+def _detect_lan_ip() -> str:
+    """이 mac 의 wifi LAN IP 박는 trick — outbound socket 의 self.address.
+
+    실제 connect 안 박음 (UDP socket). 사용자 mac 의 default route interface 의
+    LAN IP 박힘. 옵션 B MVP — 모바일 frontend 가 같은 wifi 안 helper 한테 직접
+    호출 박을 때 backend 가 이 IP 박은 거 반환.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))  # 실제 packet 안 보냄
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return ""
+
+
 def build_payload() -> dict:
     return {
         "workspaces": [w.as_dict() for w in scan_workspaces()],
         "tmuxSessions": [s.as_dict() for s in scan_sessions()],
+        "lanIp": _detect_lan_ip(),
     }
 
 

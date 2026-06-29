@@ -29,6 +29,9 @@ class DesktopLocalInfoRq(BaseModel):
     owner_employee_id: str | None = Field(default=None, alias="ownerEmployeeId")
     workspaces: list[WorkspaceItem] = Field(default_factory=list)
     tmux_sessions: list[TmuxSessionItem] = Field(default_factory=list, alias="tmuxSessions")
+    # 옵션 B — helper 가 detect 박은 자기 LAN IP. 모바일 frontend 가 같은 wifi 박혀있을 때
+    # helper 직접 호출 박을 IP. helper 가 0.0.0.0:30084 LISTEN 박혀있어 사용 가능.
+    lan_ip: str | None = Field(default=None, alias="lanIp")
 
     model_config = ConfigDict(populate_by_name=True)
 
