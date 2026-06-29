@@ -59,17 +59,33 @@ spec:
             - name: TZ
               value: {{ .Values.backend.tz | quote }}
             {{- end }}
+          # readiness — tcpSocket 박으면 *port open* 만 확인. app 의 진짜 ready (db
+          # connect + broker init) 안 끝나도 ready 박혀 옛 pod 죽음 → 사용자 502 사고.
+          # /api/health endpoint 박음 — *서비스 진짜 ready* 박혀야 통과.
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            failureThreshold: 5
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # liveness — 더 관대 박음 (실제 죽었을 때만 restart trigger). readiness 와 분리.
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 5
             failureThreshold: 5
+          # lifecycle.preStop — SIGTERM 받기 전 5s 박아 옛 ws / SSE connection 의
+          # *graceful drain* time 확보. service endpoint 에서 빠지면 새 traffic 안 옴.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
+      # graceful shutdown 시간 (기본 30s 인데 명시) — preStop + main process SIGTERM.
+      terminationGracePeriodSeconds: 30
