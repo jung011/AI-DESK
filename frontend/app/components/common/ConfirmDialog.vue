@@ -72,28 +72,29 @@ watch(() => props.open, (v) => {
 <style scoped>
 .popup-overlay {
   position: fixed; inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: rgba(0, 0, 0, 0.55);
   display: flex; align-items: center; justify-content: center;
   z-index: 1100;
+  backdrop-filter: blur(2px);
 }
 .popup-box {
   width: 380px; max-width: calc(100vw - 40px);
-  background: var(--bg-card); border-radius: 10px;
-  box-shadow: 0 20px 50px rgba(15, 23, 42, .2);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .55);
   display: flex; flex-direction: column;
 }
-.popup-head { padding: 16px 20px; border-bottom: 1px solid #F0F2F5; }
-.popup-head h3 { font-size: 15px; font-weight: 700; color: #101010; margin: 0; }
+.popup-head { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.popup-head h3 { font-size: 15px; font-weight: 700; color: #FFFFFF; margin: 0; }
 .popup-body { padding: 20px; }
 .popup-body p {
-  margin: 0; color: #475569; font-size: 13px; line-height: 1.6;
+  margin: 0; color: #E5EBF5; font-size: 13px; line-height: 1.6;
   white-space: pre-line;  /* message 의 \n 을 줄바꿈으로 렌더 */
 }
 .extra-option {
   display: flex; align-items: center; gap: 8px;
   margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid #F0F2F5;
-  font-size: 12px; color: #475569;
+  border-top: 1px solid var(--border);
+  font-size: 12px; color: #B0BCD0;
   cursor: pointer; user-select: none;
 }
 /* 전역 reset 이 input 의 appearance/사이즈를 0 으로 꺼놨기 때문에 복구 — 브라우저 기본 체크박스 사용. */
@@ -103,12 +104,12 @@ watch(() => props.open, (v) => {
   width: 14px; height: 14px;
   margin: 0;
   cursor: pointer;
-  accent-color: #0062ff;
+  accent-color: #6BB6FF;
 }
 .extra-option:has(input:disabled) { cursor: not-allowed; opacity: .6; }
 .popup-foot {
   display: flex; justify-content: flex-end; gap: 8px;
-  padding: 14px 20px; border-top: 1px solid #F0F2F5;
+  padding: 14px 20px; border-top: 1px solid var(--border);
 }
 .btn.normal {
   display: inline-flex; align-items: center; height: 36px;
@@ -116,13 +117,13 @@ watch(() => props.open, (v) => {
   font-size: 13px; font-weight: 600; cursor: pointer;
   border: 1px solid transparent;
 }
-.btn.normal.type_v1 { background: #0062ff; color: #fff; }
-.btn.normal.type_v1:hover:not(:disabled) { background: #0052d4; }
-.btn.normal.type_v6 { background: #E83667; color: #fff; }
-.btn.normal.type_v6:hover:not(:disabled) { background: #C42154; }
+.btn.normal.type_v1 { background: linear-gradient(135deg, #6BB6FF, #B89AFF); color: #fff; }
+.btn.normal.type_v1:hover:not(:disabled) { filter: brightness(1.1); }
+.btn.normal.type_v6 { background: #E25555; color: #fff; }
+.btn.normal.type_v6:hover:not(:disabled) { background: #CF4444; }
 .btn.normal.type_v2 {
-  background: var(--bg-card); color: #475569; border-color: #D4DCE4;
+  background: var(--bg-input); color: #E5EBF5; border-color: var(--border);
 }
-.btn.normal.type_v2:hover:not(:disabled) { background: #F8FAFC; }
+.btn.normal.type_v2:hover:not(:disabled) { background: rgba(107, 182, 255, 0.1); border-color: #6BB6FF; }
 .btn.normal:disabled { opacity: .6; cursor: not-allowed; }
 </style>
