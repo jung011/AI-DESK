@@ -574,9 +574,9 @@ function formatSize(bytes: number): string {
 .cv-content { font-size: 13px; line-height: 1.55; }
 /* markdown 규칙은 별 non-scoped <style> 블록 (파일 끝). v-html injected content 는
    Vue 의 scoped data attribute 안 박혀 .cv-md table {...} (scoped) 미적용 사고 fix. */
-/* 다크모드 — 옛 #6B7785 박힌 거 어두운 bubble 위 안 보임 사고. #B0BCD0 가 다른 다크모드
-   요소 (옛 [[project-dashboard-darkmode-unification]]) 와 정합 박혀있는 *isub label* 색. */
-.cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #B0BCD0; }
+/* 다크모드 — 옛 #6B7785 박힌 거 어두운 bubble 위 안 보임 사고. #E5EBF5 (옛 다크모드 의
+   primary body text 색) + bold 박아 가독성 확실. */
+.cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #E5EBF5; font-weight: 600; }
 
 /* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
    답신 도착 시 자동 사라짐 + 실제 메시지로 교체. */
@@ -595,7 +595,7 @@ function formatSize(bytes: number): string {
 .cv-bubble-stage .cv-sender {
   padding: 0 4px 4px 4px;
 }
-.cv-status.sent     { color: #B0BCD0; }
+.cv-status.sent     { color: #E5EBF5; font-weight: 600; }
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
 .cv-status.failed   { color: #F87171; font-weight: 700; }
