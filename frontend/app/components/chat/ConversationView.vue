@@ -188,6 +188,7 @@ import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
 import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
 import { renderMarkdown } from '~/utils/renderMarkdown';
+import { useInputDrafts } from '~/composables/useInputDrafts';
 
 const renderMd = renderMarkdown;
 
@@ -207,7 +208,15 @@ const emit = defineEmits<{
   (e: 'back'): void;
 }>();
 
-const draft = ref('');
+// partner 별 draft 보존 (per-partner). 옛 단일 ref('') 패턴 박혔는데 partner 전환 시
+// 옛 draft 가 새 partner 채팅창에 *공유* 박히는 사고 → 사용자가 다른 사람한테 보낼 메시지
+// 안 박힌 채로 잘못된 partner 한테 발사 위험. [[feedback-input-shared-on-partner-switch]]
+// 패턴 (옛 WebTerminal 의 :key + useInputDrafts 패턴 정합).
+const inputDrafts = useInputDrafts();
+const draft = ref(props.partner?.agentId ? inputDrafts.get(props.partner.agentId) : '');
+watch(draft, (v) => {
+  if (props.partner?.agentId) inputDrafts.set(props.partner.agentId, v);
+});
 const bodyRef = ref<HTMLElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const pendingAttachments = ref<AttachmentRef[]>([]);
@@ -383,6 +392,8 @@ async function onSend(): Promise<void> {
   const ids = pendingAttachments.value.map((a) => a.attachmentId);
   emit('send', text, ids);
   draft.value = '';
+  // store 도 비움 — 옛 watch(draft) 가 store.set 박지만 timing safety
+  if (props.partner?.agentId) inputDrafts.clear(props.partner.agentId);
   pendingAttachments.value = [];
   await nextTick();
   scrollToBottom();
@@ -418,6 +429,13 @@ watch(() => props.messages[props.messages.length - 1]?.messageId, scrollToBottom
 // partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
 // 새 partner 의 마지막 메시지 ID 도 위 watch 가 잡지만, 빈 conversation 같은 edge 도 cover.
 watch(() => props.partner?.agentId, scrollToBottomDeferred);
+// partner 전환 시 draft 복원 + pendingAttachments 비움.
+// draft = per-partner store 박혀있어 *그 partner 박은 옛 입력* 복원.
+// pendingAttachments = 업로드 박은 거 partner 별 분리 X (session-bound) → 비움.
+watch(() => props.partner?.agentId, (newId) => {
+  draft.value = newId ? inputDrafts.get(newId) : '';
+  pendingAttachments.value = [];
+});
 // AI 답신 작성중 placeholder bubble 이 추가 / 제거되면 scroll 도 따라옴. 옛에는
 // workingOnMessageId 가 새로 set 되도 messages array 자체는 안 변해 위 messageId
 // watch 미발화 → 사용자가 *placeholder 안 보임* 사고. visibleMessages 의 마지막
