@@ -56,7 +56,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // default layout 의 배너가 사용자에게 알린다 (강제 X — B-2 정책).
   // dev 환경 (localhost frontend + prod-향 helper) 에서는 mismatch 로 false missing
   // 판정될 수 있어 helper check skip — dashboard 직접 진입 가능. prod build 영향 X.
-  if (auth.isAuthenticated && !HELPER_OPTIONAL_PATHS.has(to.path) && !import.meta.dev) {
+  // 모바일 (UA 기반) 박혀있으면 helper check skip — 모바일은 127.0.0.1:30083 에 helper 없어
+  // 항상 missing 판정 → /helper-install 무한 redirect 사고 회피. helper 의존 페이지 (대시보드 /
+  // 터미널) 들어가도 helper 관련 UI 만 *비활성* 박힘 (강제 redirect X).
+  const isMobile = typeof navigator !== 'undefined'
+    && /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent);
+  if (auth.isAuthenticated && !HELPER_OPTIONAL_PATHS.has(to.path) && !import.meta.dev && !isMobile) {
     const helperVersion = useHelperVersionStore();
     await helperVersion.refresh();
     if (helperVersion.missing) {
