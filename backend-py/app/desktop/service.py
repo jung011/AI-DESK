@@ -100,8 +100,8 @@ class DesktopService:
         if req.lan_ip and matched_ids:
             for w in req.workspaces:
                 agent = by_ws.get(w.workspace_dir or "")
-                if agent and agent.account_sn:
-                    lan_ip_store.put(agent.account_sn, req.lan_ip)
+                if agent and agent.owner_account_sn:
+                    lan_ip_store.put(agent.owner_account_sn, req.lan_ip)
                     break
 
         return rs
