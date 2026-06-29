@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
-from app.auth.deps import optional_user
+from app.auth.deps import current_user, optional_user
 from app.auth.schemas import AuthenticatedUser
 from app.common.response import ApiEnvelope, ok
 from app.core.database import get_db
@@ -36,10 +36,12 @@ async def record_action(
 async def feed(
     category: str | None = Query(default=None),
     limit: int | None = Query(default=None),
+    user: AuthenticatedUser = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[list[LogFeedItem]]:
+    """sameUser 격리 박힌 통합 로그 feed — 그 user 의 agent 가 발신/수신한 거 만 반환."""
     svc = LogService(db)
-    return ok(svc.get_feed(category, limit))
+    return ok(svc.get_feed(category, limit, account_sn=user.account_sn))
 
 
 @router.post("/logs/client", response_model=ApiEnvelope[str])

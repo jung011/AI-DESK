@@ -182,67 +182,67 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 .group_pageLocation {
   display: flex; align-items: center; gap: 16px; margin-bottom: 20px;
 }
-.tit_h2 { font-size: 20px; font-weight: 700; color: #101010; margin: 0; }
+.tit_h2 { font-size: 20px; font-weight: 700; color: var(--text); margin: 0; }
 .descList_pageLocation {
   display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: #94A3B8;
+  font-size: 12px; color: var(--text-muted);
 }
-.descList_pageLocation a { color: #94A3B8; text-decoration: none; }
+.descList_pageLocation a { color: var(--text-muted); text-decoration: none; }
 .descList_pageLocation a + a::before {
-  content: '›'; margin-right: 6px; color: #CBD5E1;
+  content: '›'; margin-right: 6px; color: var(--text-dim);
 }
-.descList_pageLocation em { font-style: normal; color: #475569; font-weight: 600; }
+.descList_pageLocation em { font-style: normal; color: var(--text); font-weight: 600; }
 
 .card {
-  background: var(--bg-card); border: 1px solid #E2E8F0; border-radius: 8px;
-  box-shadow: 0 3px 10px 0 rgba(67, 87, 103, .08);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 3px 10px 0 rgba(0, 0, 0, .3);
   margin-bottom: 20px;
 }
 .card-head {
   padding: 18px 22px;
-  border-bottom: 1px solid #F0F2F5;
+  border-bottom: 1px solid var(--border-soft);
 }
-.card-title { font-size: 15px; font-weight: 700; color: #101010; margin: 0 0 6px; }
-.card-desc { font-size: 12px; color: #94A3B8; margin: 0; line-height: 1.6; }
+.card-title { font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 6px; }
+.card-desc { font-size: 12px; color: var(--text-muted); margin: 0; line-height: 1.6; }
 
 .filter-bar {
   display: flex; align-items: center; gap: 8px;
-  padding: 12px 22px; border-bottom: 1px solid #F0F2F5;
+  padding: 12px 22px; border-bottom: 1px solid var(--border-soft);
 }
 .tab {
   height: 30px; padding: 0 14px;
-  background: var(--bg-card); color: #475569;
-  border: 1px solid #D4DCE4; border-radius: 16px;
+  background: var(--bg-card); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 16px;
   font-size: 12px; font-weight: 600; cursor: pointer;
 }
-.tab:hover:not(.active) { background: #F8FAFC; border-color: #0062ff; color: #0062ff; }
+.tab:hover:not(.active) { background: var(--bg-hover); border-color: #0062ff; color: #6BB6FF; }
 .tab.active { background: #0062ff; border-color: #0062ff; color: #fff; }
 .filter-spacer { flex: 1; }
 .refresh-btn {
   height: 30px; padding: 0 12px;
-  background: #F8FAFC; color: #475569;
-  border: 1px solid #D4DCE4; border-radius: 6px;
+  background: var(--bg-hover); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
   font-size: 12px; cursor: pointer;
 }
 .refresh-btn:disabled { opacity: .6; cursor: not-allowed; }
 
 .state-msg {
   padding: 60px 22px; text-align: center;
-  color: #94A3B8; font-size: 13px;
+  color: var(--text-muted); font-size: 13px;
 }
 
 .feed { list-style: none; padding: 0; margin: 0; }
 .row {
   padding: 14px 22px;
-  border-bottom: 1px solid #F0F2F5;
+  border-bottom: 1px solid var(--border-soft);
   display: flex; flex-direction: column; gap: 8px;
 }
 .row:last-child { border-bottom: none; }
-.row-action { background: #FAFBFE; }
+.row-action { background: rgba(255, 255, 255, 0.02); }
 
 .row-head {
   display: flex; align-items: center; gap: 10px;
-  font-size: 12px; color: #475569;
+  font-size: 12px; color: var(--text-muted);
 }
 .badge {
   display: inline-flex; align-items: center;
@@ -258,11 +258,11 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
 .badge.cat-error      { background: #FFEBEE; color: #B71C1C; }
 
 .row-type { font-size: 14px; }
-.row-actor strong { color: #101010; font-weight: 600; }
-.row-actor .arrow { margin: 0 6px; color: #94A3B8; }
-.row-time { margin-left: auto; color: #94A3B8; font-size: 11px; }
+.row-actor strong { color: var(--text); font-weight: 600; }
+.row-actor .arrow { margin: 0 6px; color: var(--text-muted); }
+.row-time { margin-left: auto; color: var(--text-muted); font-size: 11px; }
 
-.row-body { font-size: 13px; color: #1E293B; line-height: 1.6; }
+.row-body { font-size: 13px; color: var(--text); line-height: 1.6; }
 .row-body .content {
   margin: 0; white-space: pre-wrap; word-break: break-word;
 }
