@@ -73,6 +73,11 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # 모바일 직접 IP 접속 — nginx server_name 에 172.20.1.3 추가.
+    # K8s Ingress 의 host field 는 RFC1123 hostname 만 허용 (IP reject) 라
+    # annotation 으로 server_name alias 박는 패턴이 정합. mobile DNS 박는 작업
+    # 안 박아도 모바일 wifi 만 같으면 http://172.20.1.3 그대로 접속 OK.
+    nginx.ingress.kubernetes.io/server-alias: "172.20.1.3"
   hosts:
     - host: aidesk.kaflix.internal
       paths:
