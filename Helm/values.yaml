@@ -27,7 +27,7 @@ backend:
     retryMaxRetries: "60"
     retryBatchLimit: "50"
     policyRateLimitPerMinute: "30"
-    policyHopLimit: "10"
+    policyHopLimit: "20"
     policyContextLimitPct: "90"
     retryRecipientOfflineSec: "180"
   jwt:
