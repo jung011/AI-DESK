@@ -1,5 +1,5 @@
 <template>
-  <section class="conv-view" :style="{ '--cv-font-size': `${fontSizePx}px` }">
+  <section class="conv-view" :style="{ '--cv-font-size': `${fontSizePx}px`, '--cv-font-family': fontFamilyCss }">
     <header v-if="partner" class="conv-head">
       <button v-if="showBack" class="cv-back" @click="$emit('back')" aria-label="뒤로">←</button>
       <span class="cv-avatar" :class="partner.status">{{ avatar(partner.status) }}</span>
@@ -127,12 +127,22 @@
                 <button class="cv-stepper" @click="bumpFontSize(1)" :disabled="fontSizePx >= 24" aria-label="증가">＋</button>
                 <span class="cv-settings-range">10 — 24</span>
               </div>
-              <div class="cv-settings-preview" :style="{ fontSize: `${fontSizePx}px` }">
-                미리보기 — 안녕하세요, 채팅 글자 크기 샘플입니다.
+            </div>
+            <div class="cv-settings-field">
+              <label class="cv-settings-label">폰트</label>
+              <div class="cv-settings-control">
+                <select class="cv-settings-select" v-model="fontFamilyKey" @change="setFontFamily(fontFamilyKey)">
+                  <option v-for="f in FONT_OPTIONS" :key="f.key" :value="f.key" :style="{ fontFamily: f.css }">
+                    {{ f.label }}
+                  </option>
+                </select>
               </div>
             </div>
+            <div class="cv-settings-preview" :style="{ fontSize: `${fontSizePx}px`, fontFamily: fontFamilyCss }">
+              미리보기 — 안녕하세요, 채팅 글자 크기 / 폰트 샘플입니다. The quick brown fox jumps over the lazy dog.
+            </div>
             <div class="cv-settings-actions">
-              <button class="cv-settings-reset" @click="resetFontSize">기본값으로</button>
+              <button class="cv-settings-reset" @click="resetSettings">기본값으로</button>
               <button class="cv-settings-done" @click="settingsOpen = false">완료</button>
             </div>
           </div>
@@ -255,6 +265,30 @@ const FONT_MAX_PX = 24;
 const fontSizePx = ref<number>(FONT_DEFAULT_PX);
 const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
 
+// 폰트 family — 유명한 sans / serif / mono 박음. *CSS 우선순위 stack* 으로 fallback.
+// 한국어 우선 (Pretendard / Noto Sans KR / Spoqa) + 영문 mainstream + serif + mono.
+const FONT_OPTIONS = [
+  { key: 'system', label: '시스템 기본', css: '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", sans-serif' },
+  { key: 'pretendard', label: 'Pretendard', css: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif' },
+  { key: 'noto-sans-kr', label: 'Noto Sans KR', css: '"Noto Sans KR", "Noto Sans CJK KR", -apple-system, sans-serif' },
+  { key: 'spoqa', label: 'Spoqa Han Sans Neo', css: '"Spoqa Han Sans Neo", -apple-system, sans-serif' },
+  { key: 'inter', label: 'Inter', css: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' },
+  { key: 'roboto', label: 'Roboto', css: 'Roboto, -apple-system, sans-serif' },
+  { key: 'ibm-plex', label: 'IBM Plex Sans', css: '"IBM Plex Sans", "IBM Plex Sans KR", -apple-system, sans-serif' },
+  { key: 'sf-pro', label: 'SF Pro Display', css: '"SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif' },
+  { key: 'helvetica', label: 'Helvetica Neue', css: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { key: 'nanum-gothic', label: '나눔고딕', css: '"Nanum Gothic", -apple-system, sans-serif' },
+  { key: 'malgun', label: '맑은 고딕', css: '"Malgun Gothic", "맑은 고딕", -apple-system, sans-serif' },
+  { key: 'noto-serif-kr', label: 'Noto Serif KR', css: '"Noto Serif KR", "Noto Serif", Georgia, serif' },
+  { key: 'georgia', label: 'Georgia', css: 'Georgia, "Noto Serif KR", serif' },
+  { key: 'jetbrains-mono', label: 'JetBrains Mono', css: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+  { key: 'sf-mono', label: 'SF Mono', css: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace' },
+] as const;
+type FontKey = typeof FONT_OPTIONS[number]['key'];
+const FONT_DEFAULT_KEY: FontKey = 'system';
+const fontFamilyKey = ref<FontKey>(FONT_DEFAULT_KEY);
+const fontFamilyCss = computed(() => FONT_OPTIONS.find((f) => f.key === fontFamilyKey.value)?.css || FONT_OPTIONS[0].css);
+
 // iTerm 스타일 — 숫자(px) 단위 직접 조절. localStorage 저장.
 onMounted(() => {
   if (typeof window === 'undefined') return;
@@ -263,6 +297,11 @@ onMounted(() => {
   if (Number.isFinite(n) && n >= FONT_MIN_PX && n <= FONT_MAX_PX) {
     fontSizePx.value = n;
     fontSizePxInput.value = n;
+  }
+  // 폰트 family 복원
+  const savedFont = window.localStorage.getItem('aidesk.chat.fontFamilyKey');
+  if (savedFont && FONT_OPTIONS.some((f) => f.key === savedFont)) {
+    fontFamilyKey.value = savedFont as FontKey;
   }
   document.addEventListener('keydown', onSettingsKey);
   // 새로고침 / 첫 mount 시 — parent 가 미리 fetch 한 messages 가 박혀있을 수 있음.
@@ -300,6 +339,18 @@ function applyFontSizeInput(): void {
 
 function resetFontSize(): void {
   setFontSizePx(FONT_DEFAULT_PX);
+}
+
+function setFontFamily(key: FontKey): void {
+  fontFamilyKey.value = key;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('aidesk.chat.fontFamilyKey', key);
+  }
+}
+
+function resetSettings(): void {
+  setFontSizePx(FONT_DEFAULT_PX);
+  setFontFamily(FONT_DEFAULT_KEY);
 }
 
 function onAttachClick(): void {
@@ -601,10 +652,12 @@ function formatSize(bytes: number): string {
 .conv-body::-webkit-scrollbar-thumb { background: #2A3447; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 .conv-body::-webkit-scrollbar-thumb:hover { background: #3A4A66; background-clip: padding-box; }
 
-/* 폰트 사이즈 — root section 의 --cv-font-size cssvar 가 메시지 본문/입력창 일괄 조정.
-   사용자가 설정 모달에서 숫자 조절 (10-24px). chip / header / status 같은 보조 요소는 고정. */
-.conv-view .cv-content { font-size: var(--cv-font-size, 13px); }
-.conv-view .cv-textarea { font-size: var(--cv-font-size, 13px); }
+/* 폰트 사이즈 + family — root section 의 cssvar 가 메시지 본문/입력창 일괄 조정.
+   사용자가 설정 모달에서 숫자 조절 (10-24px) + 폰트 family 선택 (시스템 / Pretendard / Inter 등).
+   chip / header / status 같은 보조 요소는 고정. */
+.conv-view .cv-content { font-size: var(--cv-font-size, 13px); font-family: var(--cv-font-family, inherit); }
+.conv-view .cv-textarea { font-size: var(--cv-font-size, 13px); font-family: var(--cv-font-family, inherit); }
+.conv-view .cv-sender { font-family: var(--cv-font-family, inherit); }
 
 /* 헤더의 ... 메뉴 */
 .cv-head-actions { margin-left: auto; position: relative; }
@@ -682,6 +735,28 @@ function formatSize(bytes: number): string {
 .cv-settings-num:focus {
   outline: none; border-color: #4F7FFF;
   box-shadow: 0 0 0 3px rgba(79, 127, 255, 0.15);
+}
+.cv-settings-select {
+  flex: 1; min-width: 0;
+  padding: 8px 12px;
+  background: #0F1729; border: 1px solid #2A3447; border-radius: 8px;
+  color: #E5E9EE; font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='%236BB6FF' d='M2 4l4 4 4-4z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 32px;
+}
+.cv-settings-select:focus {
+  outline: none; border-color: #6BB6FF;
+  box-shadow: 0 0 0 3px rgba(107, 182, 255, 0.15);
+}
+.cv-settings-select option {
+  background: #1E2738; color: #E5E9EE;
+  padding: 6px;
 }
 .cv-settings-range {
   font-size: 11px; color: #6B7785;

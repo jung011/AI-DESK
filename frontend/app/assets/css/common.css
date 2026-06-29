@@ -1,5 +1,12 @@
 @charset "UTF-8";
 
+/* 채팅 폰트 선택 (ConversationView 의 폰트 family 설정 모달) 용 — 유명한 web font CDN.
+ * Pretendard / Inter / Noto Sans KR / Spoqa / Roboto / IBM Plex / JetBrains Mono 등
+ * 시스템 fallback 박혀있어 load 실패해도 정상 표시. async load — 첫 paint 안 막음. */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto:wght@400;500;700&family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;700&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css');
+
 /* CSS Variables — 다크모드 통일 palette (옵션 P).
  * 옛 라이트 모드 (#F4F6FB base) 폐기, 채팅/터미널 색감 정합.
  * 컴포넌트 scoped style 안 var(--...) 접근 가능 (root 변수는 전역).
