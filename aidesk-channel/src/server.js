@@ -162,6 +162,21 @@ const TOOLS = [
       },
       required: ['message_id']
     }
+  },
+  {
+    name: 'read_attachment',
+    description:
+      '메시지의 첨부 파일을 다운로드. attachment_id 는 메시지 페이로드의 attachments[] 의 attachmentId. ' +
+      '결과 = { filename, contentType, sizeBytes, encoding, content }. text/json/csv 면 content = utf-8 문자열, ' +
+      '그 외 (xlsx / pdf / png 등 바이너리) 면 encoding="base64" + content = base64. 5MB 제한 (backend 의 ' +
+      'message_attachment_max_bytes).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        attachment_id: { type: 'string', description: '첨부 파일의 UUID' }
+      },
+      required: ['attachment_id']
+    }
   }
 ];
 
@@ -441,6 +456,48 @@ async function markRead({ message_id } = {}) {
   }
 }
 
+/**
+ * 첨부 파일 다운로드. backend = GET /api/attachments/{id}?callerAgentId=<me>.
+ * 옛 보안 sweep (bepy-rc93) 의 sameUser 검증 통과 — caller 가 message 의 from/to 의
+ * owner 매칭이면 OK. text/json/csv = utf-8 문자열 직반환, 나머지 (xlsx/pdf/png 등) =
+ * base64. 5MB 박힘 (backend message_attachment_max_bytes).
+ */
+async function readAttachment({ attachment_id } = {}) {
+  if (!attachment_id) throw new Error('attachment_id required');
+  const me = await ensureAgentId();
+  const url = `${API_URL}/api/attachments/${encodeURIComponent(attachment_id)}?callerAgentId=${encodeURIComponent(me)}`;
+  // 직접 fetch — api() wrapper 는 JSON parse 박혀 binary 처리 X.
+  const headers = { Accept: '*/*' };
+  if (BEARER_TOKEN) headers.Authorization = `Bearer ${BEARER_TOKEN}`;
+  const res = await fetch(url, { method: 'GET', headers });
+  if (!res.ok) {
+    let body = '';
+    try { body = (await res.text()).slice(0, 400); } catch { /* ignore */ }
+    throw new Error(`HTTP ${res.status}: ${body || res.statusText}`);
+  }
+  const contentType = res.headers.get('content-type') || 'application/octet-stream';
+  // Content-Disposition 에서 filename 추출 (옵션)
+  const dispo = res.headers.get('content-disposition') || '';
+  let filename = '';
+  const m = dispo.match(/filename\*?=['"]?(?:UTF-8'')?([^'";\n]+)/i);
+  if (m) {
+    try { filename = decodeURIComponent(m[1]); } catch { filename = m[1]; }
+  }
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const sizeBytes = buf.byteLength;
+  // text / json / csv → utf-8 직반환, 그 외 → base64
+  const isText = /^(text\/|application\/(json|xml|csv|javascript|typescript))/i.test(contentType);
+  if (isText) {
+    let content = '';
+    try { content = new TextDecoder('utf-8').decode(buf); }
+    catch { content = ''; }
+    return { filename, contentType, sizeBytes, encoding: 'utf-8', content };
+  }
+  // base64 — bun / node 의 Buffer 사용
+  const base64 = Buffer.from(buf).toString('base64');
+  return { filename, contentType, sizeBytes, encoding: 'base64', content: base64 };
+}
+
 async function checkInbox({ unread_only = true, limit = 10 } = {}) {
   const me = await ensureAgentId();
   const url = `/api/messages?agentId=${encodeURIComponent(me)}&direction=inbox&limit=${encodeURIComponent(
@@ -484,7 +541,10 @@ const server = new Server(
       '호출하세요. mcp tool 호출 안 하면 backend 가 stuck 상태로 인식.' +
       '\n\n[읽음 신호] 메시지를 *실제로 읽기 시작할 때* mark_read(message_id) 호출. 사용자 채팅 ' +
       '페이지에 *AI 가 책상에서 작업중* 애니메이션이 표시됩니다. 메시지 받자마자 한 번씩. ' +
-      'task 메시지면 mark_read 먼저 + task_start 뒤이어 호출.'
+      'task 메시지면 mark_read 먼저 + task_start 뒤이어 호출.' +
+      '\n\n[첨부 다운로드] 메시지의 attachments[] 항목의 attachmentId 를 read_attachment 에 ' +
+      '전달하면 backend 에서 파일 다운로드. text/json/csv 면 content 직반환, 그 외 (xlsx/pdf/png 등) ' +
+      '바이너리는 base64 인코딩 + encoding="base64" 박혀 반환 (Buffer.from(content, "base64") 로 decode).'
   }
 );
 
@@ -502,6 +562,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'task_start':  result = await taskStart(args); break;
       case 'task_complete': result = await taskComplete(args); break;
       case 'mark_read':   result = await markRead(args); break;
+      case 'read_attachment': result = await readAttachment(args); break;
       default: throw new Error(`Unknown tool: ${name}`);
     }
     return {
