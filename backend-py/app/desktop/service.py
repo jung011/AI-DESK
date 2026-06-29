@@ -93,11 +93,15 @@ class DesktopService:
         rs.matched_agent_ids = matched_ids
 
         # 옵션 B MVP — helper 가 박은 LAN IP 를 user (account_sn) 별 store 에 박음.
-        # matched_ids 의 첫 agent 의 account_sn = 그 user 의 helper. 모바일 frontend 가
-        # /api/helper/lan-ip 호출 시 이 store 에서 lookup. helper 가 30s cycle 마다 refresh.
+        # *매칭 박힌* workspace 들 안 첫 agent 의 account_sn = 그 user 의 helper.
+        # workspaces[0] 가 unmatched 박힐 수 있어 by_ws 의 *매칭 박힌 agent* 들 안에서 찾음.
+        # 모바일 frontend 가 /api/helper/lan-ip 호출 시 이 store 에서 lookup. helper 가
+        # 30s cycle 마다 refresh.
         if req.lan_ip and matched_ids:
-            first_agent = by_ws.get(req.workspaces[0].workspace_dir or "")
-            if first_agent and first_agent.account_sn:
-                lan_ip_store.put(first_agent.account_sn, req.lan_ip)
+            for w in req.workspaces:
+                agent = by_ws.get(w.workspace_dir or "")
+                if agent and agent.account_sn:
+                    lan_ip_store.put(agent.account_sn, req.lan_ip)
+                    break
 
         return rs
