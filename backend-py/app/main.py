@@ -33,8 +33,22 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """app startup / shutdown — agent status watcher 등 백그라운드 task."""
-    log.info("aidesk-backend starting")
+    """app startup / shutdown — agent status watcher 등 백그라운드 task.
+
+    추가 진단 — pod restart 의 *진짜 root* 잡기 위해:
+    - startup 시 image tag + git sha + start time 명시 logging
+    - shutdown 시 uptime + SIGTERM 수신 시각 logging
+    이 신호 = K8s stdout 의 app log 에 박혀 사고 시 *언제 swap 박혔는지* 명확.
+    """
+    import time as _time
+    global _STARTUP_EPOCH
+    startup_epoch = _time.time()
+    _STARTUP_EPOCH = startup_epoch
+    image_tag = os.environ.get("IMAGE_TAG", "unknown")  # helm 에서 주입 (옵션)
+    log.warning(
+        "AIDESK_BACKEND_STARTUP — image_tag=%s pid=%d startup_epoch=%.3f",
+        image_tag, os.getpid(), startup_epoch,
+    )
 
     # alembic upgrade head — schema 변경을 *정식 migration* 으로 적용.
     # idempotent (이미 적용된 migration 은 noop). DB 권한 부족 시 warning + 진행.
@@ -84,7 +98,14 @@ async def lifespan(app: FastAPI):
                 await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001
                 pass
-        log.info("aidesk-backend stopping")
+        # SIGTERM 진단 — pod 가 *언제 / 얼마 만에* 죽었는지 명시. 옛 사고 시 K8s log
+        # 의 STARTUP / SHUTDOWN pair 박혀있어 *swap 빈도 / 원인* 분석 가능.
+        shutdown_epoch = _time.time()
+        uptime_sec = int(shutdown_epoch - startup_epoch)
+        log.warning(
+            "AIDESK_BACKEND_SHUTDOWN — image_tag=%s uptime_sec=%d shutdown_epoch=%.3f",
+            image_tag, uptime_sec, shutdown_epoch,
+        )
 
 
 app = FastAPI(
@@ -98,10 +119,25 @@ register_middlewares(app)
 register_exception_handlers(app)
 
 
+_STARTUP_EPOCH: float = 0.0  # lifespan startup 에서 박음 (옛 진단용)
+
+
 @app.get("/api/health", tags=["meta"])
-async def health() -> dict[str, str]:
-    """K8s liveness / readiness probe."""
-    return {"status": "ok", "service": "aidesk-backend"}
+async def health() -> dict[str, object]:
+    """K8s liveness / readiness probe + 진단 정보.
+
+    pod start 시점 / uptime 노출 — frontend 가 polling 박아 *pod swap 시점* 감지 가능.
+    옛 사고 시 nav-debug 의 fetch trace 에 startup_epoch 변화 박혀 *언제 swap* 명확.
+    """
+    import time as _time
+    return {
+        "status": "ok",
+        "service": "aidesk-backend",
+        "image_tag": os.environ.get("IMAGE_TAG", "unknown"),
+        "startup_epoch": _STARTUP_EPOCH,
+        "uptime_sec": int(_time.time() - _STARTUP_EPOCH) if _STARTUP_EPOCH else 0,
+        "pid": os.getpid(),
+    }
 
 
 # 도메인별 router 등록 — 순서는 endpoint 카탈로그 의 그룹에 맞춤.

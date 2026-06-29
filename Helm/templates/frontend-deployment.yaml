@@ -5,6 +5,9 @@ metadata:
   labels:
     {{- include "ai-desk.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
+  annotations:
+    # ServerSideApply — backend 와 동일 사유 (옛 readiness/liveness 시그니처 변경).
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Replace=true
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
   # 무중단 롤링 업데이트 — backend 와 동일 패턴. 새 pod readinessProbe (HTTP GET /) 통과 후 옛 pod 종료.

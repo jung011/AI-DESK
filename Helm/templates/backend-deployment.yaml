@@ -5,6 +5,11 @@ metadata:
   labels:
     {{- include "ai-desk.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
+  annotations:
+    # ServerSideApply 박음 — 옛 tcpSocket → httpGet 변경 시 *옛 field 자동 제거* path.
+    # 3-way merge patch (default) 는 *기존 field 안 지움* → "more than 1 handler type"
+    # 사고. SSA = 새 spec 의 *전체 replace* 패턴이라 안전.
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Replace=true
 spec:
   replicas: 1
   # 무중단 롤링 업데이트 — 새 pod 가 readinessProbe 통과해 Ready 가 된 뒤에만 옛 pod 를 종료.
