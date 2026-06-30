@@ -87,9 +87,13 @@
                 :title="m.errorReason || ''">
                 {{ statusBadge(m.status) }}
               </span>
-              <!-- 실패 시 ↻ 버튼 박혀 사용자가 다시 보낼 수 있음 -->
+              <!-- 실패 시 ↻ 버튼 박혀 사용자가 다시 보낼 수 있음.
+                   status='failed' (backend 가 명시 failed 박은 거) 외 에도,
+                   status='sent' 인데 *15초+ 지나도 deliveredAt null* 박혀있으면
+                   stale 박힘 → 사용자가 ↻ 박아 다시 보낼 수 있도록 박음. backend 가
+                   helper online 인 한 *failed 안 박는* 패턴 의 보완. -->
               <button
-                v-if="m.fromAgentId === meId && m.status === 'failed'"
+                v-if="m.fromAgentId === meId && isResendable(m)"
                 type="button"
                 class="cv-resend"
                 title="다시 보내기"
@@ -225,10 +229,24 @@ const emit = defineEmits<{
   (e: 'resend', m: MessageItem): void;
 }>();
 
-// 옵션 — failed 메시지 재전송. parent (chat.vue) 가 같은 partner 로 새 message
-// 박을 거. 사용자가 ↻ 클릭 시 trigger.
+// 옵션 — failed / stale-sent 메시지 재전송. parent (chat.vue) 가 같은 partner 로
+// 새 message 박을 거. 사용자가 ↻ 클릭 시 trigger.
 function onResend(m: MessageItem): void {
   emit('resend', m);
+}
+
+// stale-sent — backend 가 helper online 박혀있는 한 *failed 안 박는* 패턴 의 보완.
+// status='sent' + deliveredAt null + 15초+ 지나면 사용자한테 ↻ 노출 박음.
+// 시계 박힌 거 reactivity 위해 1초 cycle ref 박음 — Date.now() 직접 박으면 reactive X.
+const _now = ref(Date.now());
+setInterval(() => { _now.value = Date.now(); }, 1000);
+function isResendable(m: MessageItem): boolean {
+  if (m.status === 'failed') return true;
+  if (m.status === 'sent' && !m.deliveredAt) {
+    const age = _now.value - new Date(m.createdAt).getTime();
+    return age > 15000;
+  }
+  return false;
 }
 
 // partner 별 draft 보존 (per-partner). 옛 단일 ref('') 패턴 박혔는데 partner 전환 시
@@ -424,9 +442,16 @@ function removePending(attachmentId: string): void {
   pendingAttachments.value = pendingAttachments.value.filter((a) => a.attachmentId !== attachmentId);
 }
 
+// duplicate send 차단 — onSend 호출 시점에 *이미 sending* 박혀있거나, *방금 emit
+// 박은 거 처리 중* 박혀있으면 skip. 옛 사고 = 사용자가 빠르게 두번 클릭 / Enter
+// 박을 때 props.sending 박힌 거 *update 박기 전* 의 race window 박혀 두 번 emit 박힘.
+// 로컬 in-flight guard 박아 race window 0 박음.
+let sendInFlight = false;
 async function onSend(): Promise<void> {
+  if (props.sending || sendInFlight) return;
   const text = draft.value.trim();
   if (!text && pendingAttachments.value.length === 0) return;
+  sendInFlight = true;
   const ids = pendingAttachments.value.map((a) => a.attachmentId);
   emit('send', text, ids);
   draft.value = '';
@@ -435,6 +460,8 @@ async function onSend(): Promise<void> {
   pendingAttachments.value = [];
   await nextTick();
   scrollToBottom();
+  // 짧은 grace — props.sending 박힘이 update 박힐 시점 (parent → child reactive)
+  setTimeout(() => { sendInFlight = false; }, 300);
 }
 
 // IME (한글/일본어) 조합 중 Enter 는 무시 — 조합 완료 후 다음 Enter 가 전송.
