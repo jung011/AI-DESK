@@ -105,7 +105,7 @@
           <div class="cv-bubble">
             <div class="cv-sender">{{ partner.agentName }}</div>
             <div class="cv-typing">
-              <em class="cv-typing-text">답신 작성중</em>
+              <em class="cv-typing-text">메세지 전송중</em>
               <span class="cv-typing-scanner"></span>
             </div>
           </div>
