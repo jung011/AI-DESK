@@ -43,7 +43,7 @@ backend:
 frontend:
   image:
     repository: jsh125/aidesk-frontend
-    tag: "1.30.7-rc126"
+    tag: "1.30.7-rc127"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 80
