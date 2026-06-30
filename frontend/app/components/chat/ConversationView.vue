@@ -243,8 +243,10 @@ setInterval(() => { _now.value = Date.now(); }, 1000);
 function isResendable(m: MessageItem): boolean {
   if (m.status === 'failed') return true;
   if (m.status === 'sent' && !m.deliveredAt) {
+    // 8초 = backend 의 retryAckTimeoutSec(5s) + buffer(3s). 한 backend retry 사이클
+    // 박힌 후에도 안 박힌 거 = stale 박은 거 판단 OK.
     const age = _now.value - new Date(m.createdAt).getTime();
-    return age > 15000;
+    return age > 8000;
   }
   return false;
 }
