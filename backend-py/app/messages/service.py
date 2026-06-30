@@ -145,23 +145,35 @@ class MessageService:
         ws_payload = {"type": "message.deliver", **payload}
         _fire_and_forget(ws_broker.publish_to_account(receiver.owner_account_sn, ws_payload))
 
-        # ws-aware delivered (rc12) — Spring countSessionsForAgent + markDelivered 동등.
-        # receiver 가 ws connected 면 즉시 delivered 마킹 (helper ack 없이도). 외부 AI 처럼
-        # ack 안 보내는 client 도 ws session 살아있으면 도달 보장.
-        ws_count = ws_broker.count_sessions_for_agent(receiver.agent_id)
-        if ws_count > 0:
-            n = self.repo.ack_delivered(msg.message_id)
-            self.db.commit()
-            log.info(
-                "ws-aware delivered: message_id=%s receiver=%s ws_sessions=%d ack_rows=%d",
-                msg.message_id, receiver.agent_name, ws_count, n,
-            )
-            if n > 0:
-                item.delivered_at = datetime.now(tz=timezone.utc)
-                item.status = "delivered"
+        # ws-aware delivered — *외부 AI 전용* 박음. 옛 rc12 의 logic 박는 거 *모든* receiver
+        # 에 적용 박혀있어 사고:
+        # - 외부 AI (helper 없음) = ws session 만 박혀있어 ack 안 보냄 → ws 도달 = delivery
+        # - 내부 AI (helper + tmux) = tmux send-keys + ack 받아야 진짜 delivery
+        #   하지만 helper 의 broker ws 도 ws_count 박혀 → 잘못 *즉시 delivered* 박힘 →
+        #   사용자 frontend 가 *답신중* 박힘 *실제 tmux 도달 X* 사고.
+        # fix = agent_type='external' (외부 AI) 만 ws-aware delivered 박음. 내부 AI 는
+        # helper sse_consumer 의 /api/messages/{id}/ack 박혀야 deliveredAt 박힘.
+        if receiver.agent_type == "external":
+            ws_count = ws_broker.count_sessions_for_agent(receiver.agent_id)
+            if ws_count > 0:
+                n = self.repo.ack_delivered(msg.message_id)
+                self.db.commit()
+                log.info(
+                    "ws-aware delivered (external): message_id=%s receiver=%s ws_sessions=%d ack_rows=%d",
+                    msg.message_id, receiver.agent_name, ws_count, n,
+                )
+                if n > 0:
+                    item.delivered_at = datetime.now(tz=timezone.utc)
+                    item.status = "delivered"
+            else:
+                log.info(
+                    "external receiver — ws push sent but no ws session: message_id=%s receiver=%s",
+                    msg.message_id, receiver.agent_name,
+                )
         else:
+            # 내부 AI — SSE 박혀있어도 helper ack 박혀야 delivered. status='sent' 유지.
             log.info(
-                "ws push sent but receiver has no ws session — message_id=%s receiver=%s",
+                "internal receiver — awaiting helper ack: message_id=%s receiver=%s",
                 msg.message_id, receiver.agent_name,
             )
         return item
