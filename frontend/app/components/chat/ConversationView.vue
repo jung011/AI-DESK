@@ -87,14 +87,29 @@
                 :title="m.errorReason || ''">
                 {{ statusBadge(m.status) }}
               </span>
+              <!-- 실패 시 ↻ 버튼 박혀 사용자가 다시 보낼 수 있음 -->
+              <button
+                v-if="m.fromAgentId === meId && m.status === 'failed'"
+                type="button"
+                class="cv-resend"
+                title="다시 보내기"
+                @click="onResend(m)">↻</button>
             </div>
           </div>
         </li>
-        <!-- AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 AI 측
-             (좌측) 에 *책상 stage* 박힘. 답신 도착 시 workingOnMessageId null →
-             stage 사라짐 + 실제 메시지 표시. chip + hover popover path 폐기 —
-             모바일/접근성 호환 + 항상 노출. -->
-        <li v-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
+        <!-- AI 답신 작성중 placeholder — 3 phase 분기:
+             1) deliveredAwaitingReadId (helper PTY 도달, AI mark_read 전) → "답신중..." 텍스트
+             2) workingOnMessageId (AI mark_read 후, 답신 전) → 책상 stage 애니메이션
+             3) partner 답신 도착 → 둘 다 null → 실제 메시지 표시 -->
+        <li v-if="deliveredAwaitingReadId && partner && !workingOnMessageId" class="cv-msg theirs typing-placeholder">
+          <div class="cv-bubble cv-bubble-typing">
+            <div class="cv-sender">{{ partner.agentName }}</div>
+            <div class="cv-typing-text">
+              답신중<span class="cv-typing-dots"><span>.</span><span>.</span><span>.</span></span>
+            </div>
+          </div>
+        </li>
+        <li v-else-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
           <div class="cv-bubble cv-bubble-stage">
             <div class="cv-sender">{{ partner.agentName }}</div>
             <WorkingDeskStage :agent-name="partner.agentName" />
@@ -206,7 +221,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'send', content: string, attachmentIds: string[]): void;
   (e: 'back'): void;
+  (e: 'resend', m: MessageItem): void;
 }>();
+
+// 옵션 — failed 메시지 재전송. parent (chat.vue) 가 같은 partner 로 새 message
+// 박을 거. 사용자가 ↻ 클릭 시 trigger.
+function onResend(m: MessageItem): void {
+  emit('resend', m);
+}
 
 // partner 별 draft 보존 (per-partner). 옛 단일 ref('') 패턴 박혔는데 partner 전환 시
 // 옛 draft 가 새 partner 채팅창에 *공유* 박히는 사고 → 사용자가 다른 사람한테 보낼 메시지
@@ -250,23 +272,38 @@ const visibleMessages = computed<MessageItem[]>(() => {
  *
  * visibleMessages 기반 — task 메시지 무시 (chat vs task 분리 정합).
  */
-const workingOnMessageId = computed<string | null>(() => {
+/**
+ * 마지막 내 발신 메시지의 *delivery / read* 상태 추적. 3 phase 분기:
+ *  - lastSentMessage 가 *delivered (helper push 박힘) but readAt 안 박힘* → "답신중..." 텍스트 (간단한 typing indicator)
+ *  - lastSentMessage 의 *readAt 박힘* (AI 가 mark_read mcp 호출) → WorkingDeskStage (책상 애니메이션)
+ *  - partner 답신 도착 → null (placeholder 사라짐)
+ *  - status=failed → 별개 resend 박힘 (cv-status 옆 ↻ 버튼)
+ */
+const lastSentToPartner = computed<MessageItem | null>(() => {
   if (!props.partner) return null;
   const list = visibleMessages.value;
-  // 최신 → 옛 순으로 뒤에서부터 — partner 답신 있으면 chip 표시 X
   for (let i = list.length - 1; i >= 0; i--) {
     const m = list[i] as MessageItem;
     if (!m) continue;
     if (m.fromAgentId === props.partner.agentId && m.toAgentId === props.meId) {
-      // partner → me 메시지가 더 최신 → 이미 답신 옴
+      // partner → me 메시지가 더 최신 → 이미 답신 옴 → placeholder X
       return null;
     }
     if (m.fromAgentId === props.meId && m.toAgentId === props.partner.agentId) {
-      // 마지막 내 발신 메시지
-      return m.readAt ? m.messageId : null;
+      return m;
     }
   }
   return null;
+});
+// helper PTY 박힘 + AI mark_read 박은 후 — 책상 애니메이션 (옛 동작)
+const workingOnMessageId = computed<string | null>(() => {
+  const m = lastSentToPartner.value;
+  return m && m.readAt ? m.messageId : null;
+});
+// helper PTY 박혔지만 AI mark_read 안 박은 시점 — 텍스트 "답신중..." 박힘
+const deliveredAwaitingReadId = computed<string | null>(() => {
+  const m = lastSentToPartner.value;
+  return m && m.deliveredAt && !m.readAt ? m.messageId : null;
 });
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
@@ -596,6 +633,39 @@ function formatSize(bytes: number): string {
   padding: 0 4px 4px 4px;
 }
 .cv-status.sent     { color: #E5EBF5; font-weight: 600; }
+
+/* failed 메시지 의 ↻ 재전송 버튼 — cv-status 옆 박힘. 사용자 클릭 시 onResend(m). */
+.cv-resend {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  padding: 0; margin-left: 2px;
+  background: transparent; border: 1px solid #F87171;
+  border-radius: 50%;
+  color: #F87171; font-size: 11px; font-weight: 700;
+  line-height: 1; cursor: pointer;
+}
+.cv-resend:hover { background: #F87171; color: #fff; }
+
+/* 답신중... typing indicator — helper PTY 도달 박혔지만 AI mark_read 전 상태.
+   책상 stage 보다 가벼움. AI 가 mark_read mcp 호출 후 stage 박혀 교체. */
+.cv-bubble-typing {
+  padding: 8px 12px !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border) !important;
+}
+.cv-typing-text {
+  font-size: 12px; color: var(--text-muted); font-style: italic;
+}
+.cv-typing-dots span {
+  display: inline-block; opacity: 0.4;
+  animation: cvTypingPulse 1.4s infinite;
+}
+.cv-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.cv-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cvTypingPulse {
+  0%, 60%, 100% { opacity: 0.4; }
+  30% { opacity: 1; }
+}
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
 .cv-status.failed   { color: #F87171; font-weight: 700; }
