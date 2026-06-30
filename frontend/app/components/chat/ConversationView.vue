@@ -102,9 +102,12 @@
              2) workingOnMessageId (AI mark_read 후, 답신 전) → 책상 stage 애니메이션
              3) partner 답신 도착 → 둘 다 null → 실제 메시지 표시 -->
         <li v-if="deliveredAwaitingReadId && partner && !workingOnMessageId" class="cv-msg theirs typing-placeholder">
-          <div class="cv-bubble cv-bubble-stage">
+          <div class="cv-bubble">
             <div class="cv-sender">{{ partner.agentName }}</div>
-            <WorkingDeskChip :agent-name="partner.agentName" @expand="() => {}" />
+            <div class="cv-typing">
+              <em class="cv-typing-text">답신 작성중</em>
+              <span class="cv-typing-scanner"></span>
+            </div>
           </div>
         </li>
         <li v-else-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
@@ -199,7 +202,6 @@
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
-import WorkingDeskChip from '~/components/chat/WorkingDeskChip.vue';
 import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
 import { renderMarkdown } from '~/utils/renderMarkdown';
 import { useInputDrafts } from '~/composables/useInputDrafts';
@@ -646,8 +648,32 @@ function formatSize(bytes: number): string {
 .cv-resend:hover { background: #F87171; color: #fff; }
 
 /* 답신 작성중 indicator — helper PTY 도달 박혔지만 AI mark_read 전 상태.
-   옛 commit a45773d 의 WorkingDeskChip (mini SVG 책상+머리+모니터) 박음 — 책상 stage
-   의 *compact* 버전. AI 가 mark_read mcp 호출 후 full stage 박혀 교체. */
+   옛 commit b78d4a3 박힌 "답신 작성중" 텍스트 + 좌→우 scanner stripe (흔한 dots 회피).
+   HTML 시안 (working-desk-as-placeholder-preview.html) 의 옛 scene 박은 거 정합.
+   AI 가 mark_read mcp 호출 후 full stage 박혀 교체. */
+.cv-typing {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; color: #B0BCD0;
+}
+.cv-typing-text { font-style: italic; }
+.cv-typing-scanner {
+  position: relative;
+  width: 56px; height: 4px;
+  background: rgba(107, 182, 255, 0.15);
+  border-radius: 3px; overflow: hidden;
+}
+.cv-typing-scanner::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -20px;
+  width: 20px; height: 100%;
+  background: linear-gradient(90deg, transparent 0%, #6BB6FF 50%, transparent 100%);
+  animation: cvTpScan 1.4s linear infinite;
+}
+@keyframes cvTpScan {
+  0%   { left: -20px; }
+  100% { left: 56px; }
+}
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
 .cv-status.failed   { color: #F87171; font-weight: 700; }
