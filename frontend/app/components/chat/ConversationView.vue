@@ -102,11 +102,9 @@
              2) workingOnMessageId (AI mark_read 후, 답신 전) → 책상 stage 애니메이션
              3) partner 답신 도착 → 둘 다 null → 실제 메시지 표시 -->
         <li v-if="deliveredAwaitingReadId && partner && !workingOnMessageId" class="cv-msg theirs typing-placeholder">
-          <div class="cv-bubble cv-bubble-typing">
+          <div class="cv-bubble cv-bubble-stage">
             <div class="cv-sender">{{ partner.agentName }}</div>
-            <div class="cv-typing-text">
-              답신중<span class="cv-typing-dots"><span>.</span><span>.</span><span>.</span></span>
-            </div>
+            <WorkingDeskChip :agent-name="partner.agentName" @expand="() => {}" />
           </div>
         </li>
         <li v-else-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
@@ -201,6 +199,7 @@
 <script setup lang="ts">
 import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
+import WorkingDeskChip from '~/components/chat/WorkingDeskChip.vue';
 import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
 import { renderMarkdown } from '~/utils/renderMarkdown';
 import { useInputDrafts } from '~/composables/useInputDrafts';
@@ -646,26 +645,9 @@ function formatSize(bytes: number): string {
 }
 .cv-resend:hover { background: #F87171; color: #fff; }
 
-/* 답신중... typing indicator — helper PTY 도달 박혔지만 AI mark_read 전 상태.
-   책상 stage 보다 가벼움. AI 가 mark_read mcp 호출 후 stage 박혀 교체. */
-.cv-bubble-typing {
-  padding: 8px 12px !important;
-  background: var(--bg-card) !important;
-  border: 1px solid var(--border) !important;
-}
-.cv-typing-text {
-  font-size: 12px; color: var(--text-muted); font-style: italic;
-}
-.cv-typing-dots span {
-  display: inline-block; opacity: 0.4;
-  animation: cvTypingPulse 1.4s infinite;
-}
-.cv-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
-.cv-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes cvTypingPulse {
-  0%, 60%, 100% { opacity: 0.4; }
-  30% { opacity: 1; }
-}
+/* 답신 작성중 indicator — helper PTY 도달 박혔지만 AI mark_read 전 상태.
+   옛 commit a45773d 의 WorkingDeskChip (mini SVG 책상+머리+모니터) 박음 — 책상 stage
+   의 *compact* 버전. AI 가 mark_read mcp 호출 후 full stage 박혀 교체. */
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
 .cv-status.failed   { color: #F87171; font-weight: 700; }
