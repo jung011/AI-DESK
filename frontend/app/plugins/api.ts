@@ -51,10 +51,19 @@ export default defineNuxtPlugin(() => {
     if (!import.meta.client) return;
     const auth = useAuthStore();
     const route = useRoute();
+    // 옛 [[feedback-jwt-expired-vs-invalid]] 의 진단 path — 백엔드 K8s log 박혀있는
+    // app.client 채널 안 영구 보존. console 새로고침 사고 회피.
+    // visibility / referrer / cookie length 같은 *추가 단서* 같이 박음.
+    const cookieRaw = (typeof document !== 'undefined' ? document.cookie : '') || '';
     clientLog('error', 'redirectToLogin', {
       reason: reason ?? 'unknown',
       currentRoute: route.fullPath,
       hasSession: !!window.sessionStorage.getItem('aidesk.auth'),
+      visibilityState: typeof document !== 'undefined' ? document.visibilityState : '?',
+      referrer: typeof document !== 'undefined' ? (document.referrer || '').slice(0, 120) : '?',
+      cookieLength: cookieRaw.length,
+      // cookie value 자체 X (HttpOnly 라 어차피 없음) — length 만 진단 용
+      ua: typeof navigator !== 'undefined' ? (navigator.userAgent || '').slice(0, 120) : '?',
     });
     auth.clearUser();
     const router = useRouter();

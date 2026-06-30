@@ -144,34 +144,46 @@ class AuthService:
         - revoked=Y (= reuse 시도 → family 전체 폐기 + None)
         - tokenHash 불일치
         - User row 없음
+
+        모든 path 박을 때 *영구 server log* 박음. 옛 사고 (2026-06-29 12:55 logout)
+        path 정확 진단 박을 거 — *어느 fail path* 박혔는지 K8s log 에서 확인.
         """
         try:
             claims = jwt.decode(token_str, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-        except JWTError:
+        except JWTError as e:
+            log.warning("refresh fail — JWT decode error: %s", e)
             return None
 
         jti = claims.get("jti")
         if not jti:
+            log.warning("refresh fail — JWT missing jti claim")
             return None
 
         stored = self.repo.find_refresh_by_jti(jti)
         if stored is None:
+            log.warning("refresh fail — jti not in DB: jti=%s", jti)
             return None
 
         if stored.revoked_yn == "Y":
-            # reuse 감지 — family 전체 폐기
-            log.warning("refresh token reuse detected: login_id=%s family=%s", stored.login_id, stored.family_id)
+            # reuse 감지 — family 전체 폐기. 옛 사고 가설 B (multi-401 race) 박힐 때 박힘.
+            log.warning(
+                "refresh fail — REUSE DETECTED: login_id=%s family=%s jti=%s (family revoke trigger)",
+                stored.login_id, stored.family_id, jti,
+            )
             self.repo.revoke_family(stored.login_id, stored.family_id)
             self.db.commit()
             return None
 
         if hashlib.sha256(token_str.encode("utf-8")).hexdigest() != stored.token_hash:
+            log.warning("refresh fail — token hash mismatch: jti=%s login_id=%s", jti, stored.login_id)
             return None
 
         user = self.repo.find_by_account_sn(stored.account_sn)
         if user is None:
+            log.warning("refresh fail — User row missing: account_sn=%s jti=%s", stored.account_sn, jti)
             return None
 
+        log.info("refresh OK — login_id=%s old_jti=%s family=%s", stored.login_id, jti, stored.family_id)
         # 옛 jti 폐기 + 같은 family 의 새 jti 발급
         self.repo.revoke_refresh_by_jti(jti)
         new_refresh = self._issue_refresh(user, stored.family_id)
