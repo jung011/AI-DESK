@@ -114,6 +114,14 @@ function connectWs() {
 }
 
 function _doConnect(url: string) {
+  // reconnect 시 옛 화면 박은 거 비움 — helper 가 ws connect 마다 tmux capture-pane
+  // -S -3000 dump 박아 *옛 출력 같이 박혀* xterm 안 cumulative append 사고. 옛
+  // shuttle agent 박은 zsh plain text 박혀 *prompt line 누적* 사고 — alt-screen 박혀
+  // 있는 claude TUI 박은 거 와 차이. WebTerminal 박은 거 같은 패턴 (옛 dot 누적 사고
+  // f02732f 박은 거 와 정합).
+  if (term) {
+    try { term.reset(); } catch { /* ignore */ }
+  }
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (ev) => {
