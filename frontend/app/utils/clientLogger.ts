@@ -32,12 +32,24 @@ export function clientLog(level: Level, msg: string, data?: unknown): void {
     if (data instanceof Error) {
       serialized = { message: data.message, stack: data.stack };
     }
+    const payload = JSON.stringify({ level, msg, data: serialized, route });
     void fetch(`${baseURL}/api/logs/client`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ level, msg, data: serialized, route }),
+      body: payload,
       keepalive: true, // navigation 도중 호출 시 request 살리기 (logout redirect path 안전)
-    }).catch(() => { /* silent — log 적재 fail 이 user impact 만들면 안 됨 */ });
+    }).catch(() => {
+      // 2026-06-30 ws 1006 진단 실패 대응 — 옛 catch silent 가 사고 시점 backend
+      // stdout 을 0건으로 만든 원인. fetch fail (네트워크 끊김 / DNS fail / 401 등)
+      // 이라도 sendBeacon 으로 한 번 더 시도. sendBeacon 은 unload / unreachable 상황
+      // 에서 더 강건하고 queue 가 OS 레벨이라 page navigate 도중도 살림.
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+          const blob = new Blob([payload], { type: 'application/json' });
+          navigator.sendBeacon(`${baseURL}/api/logs/client`, blob);
+        }
+      } catch { /* sendBeacon 도 fail 하면 진짜 끝 — 그 case 만 silent */ }
+    });
   } catch { /* ignore */ }
 }

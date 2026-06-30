@@ -48,6 +48,12 @@ const CRITICAL_EVENTS = new Set([
   'router:onError',
   'sw:controllerchange',
   'window:error',
+  // 2026-06-30 ws 1006 사고 진단 실패 대응 — 옛에 console + localStorage 만 남던
+  // ws disconnect / 네트워크 fail event 를 DB 영구 저장 경로에 포함. clientLog 의
+  // fetch 가 fail-silent 라 사고 시점 backend stdout 도 비어있어 진단 데이터 부재였음.
+  'ws:close',
+  'ws:error',
+  'fetch:error',
 ]);
 
 function sendCriticalEvent(event: string, detail?: unknown): void {

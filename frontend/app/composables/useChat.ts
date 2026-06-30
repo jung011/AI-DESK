@@ -31,6 +31,7 @@ export function useChat() {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let ws: WebSocket | null = null;
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let wsPingTimer: ReturnType<typeof setInterval> | null = null;
 
   async function fetchAgents(): Promise<void> {
     loadingAgents.value = true;
@@ -168,6 +169,20 @@ export function useChat() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const url = `${proto}//${window.location.host}/ws/messages`;
       ws = new WebSocket(url);
+      // 30s 주기 application-level ping — backend recv loop 가 receive_text 박은 거
+      // wait 박은 거. 박은 거 client message 박지 않으면 ingress / 네트워크 박은 거
+      // idle 박은 거 connection drop (1006). server 박은 거 _ = await receive_text
+      // 박은 거 모든 메시지 ignore 박혀있어 ping payload 무관.
+      ws.addEventListener('open', () => {
+        if (wsPingTimer) clearInterval(wsPingTimer);
+        wsPingTimer = setInterval(() => {
+          try {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send('{"type":"ping"}');
+            }
+          } catch { /* send fail — close handler 가 reconnect 박음 */ }
+        }, 30000);
+      });
       ws.addEventListener('message', (e) => {
         try {
           const evt = JSON.parse(e.data as string);
@@ -191,6 +206,10 @@ export function useChat() {
       });
       ws.addEventListener('close', () => {
         ws = null;
+        if (wsPingTimer) {
+          clearInterval(wsPingTimer);
+          wsPingTimer = null;
+        }
         // pollTimer 가 살아있는 동안만 재시도 — stopPolling 호출 후엔 silent.
         if (pollTimer) {
           wsReconnectTimer = setTimeout(() => startWebSocket(), 3000);
@@ -206,6 +225,10 @@ export function useChat() {
     if (wsReconnectTimer) {
       clearTimeout(wsReconnectTimer);
       wsReconnectTimer = null;
+    }
+    if (wsPingTimer) {
+      clearInterval(wsPingTimer);
+      wsPingTimer = null;
     }
     if (ws) {
       try { ws.close(); } catch { /* noop */ }
