@@ -321,13 +321,14 @@ const workingOnMessageId = computed<string | null>(() => {
   const m = lastSentToPartner.value;
   return m && m.readAt ? m.messageId : null;
 });
-// 사용자 보낸 마지막 메시지 = mark_read 박기 *전까지* "메세지 전송중" 박힘.
-// 옛 *deliveredAt 박혀야 박힘* 패턴 박혀있었는데 helper sse_consumer 의 tmux
-// send-keys 박은 후에야 박혀 *이미 도달* 박은 뒤 indicator 박힘 사고. 사용자 박은
-// 즉시 박혀야 UX 정합. deliveredAt 박혀있을 필요 X — *내가 보낸 마지막 메시지 + 아직 안 읽음*.
+// 사용자 보낸 마지막 메시지 = mark_read 직전까지 "메세지 전송중" 표시.
+// 단 stale-sent (>8s deliveredAt null) 상태이면 placeholder 숨김 — ↻ 와 중복 회피.
+// 사용자 의도: 둘 중 하나만 — 정상 진행 중이면 placeholder, 지연되면 resend.
 const deliveredAwaitingReadId = computed<string | null>(() => {
   const m = lastSentToPartner.value;
-  return m && !m.readAt ? m.messageId : null;
+  if (!m || m.readAt) return null;
+  if (isResendable(m)) return null;  // stale → ↻ 만 표시, placeholder 숨김
+  return m.messageId;
 });
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
