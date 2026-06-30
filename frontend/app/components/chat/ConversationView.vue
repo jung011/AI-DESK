@@ -301,10 +301,13 @@ const workingOnMessageId = computed<string | null>(() => {
   const m = lastSentToPartner.value;
   return m && m.readAt ? m.messageId : null;
 });
-// helper PTY 박혔지만 AI mark_read 안 박은 시점 — 텍스트 "답신중..." 박힘
+// 사용자 박은 메시지 = mark_read 박기 *전까지* 항상 "메세지 전송중" 박힘.
+// 옛 *deliveredAt 박혀야 박힘* 사고 — helper sse_consumer 가 tmux send-keys 박은 후
+// 박혀 *이미 도달* 박은 뒤에야 indicator 박히는 사고. 사용자 박은 시점부터 즉시 박혀야
+// UX 정합. deliveredAt 박혀있을 필요 없음 — 그냥 *내가 보낸 마지막 메시지 + 아직 안 읽음*.
 const deliveredAwaitingReadId = computed<string | null>(() => {
   const m = lastSentToPartner.value;
-  return m && m.deliveredAt && !m.readAt ? m.messageId : null;
+  return m && !m.readAt ? m.messageId : null;
 });
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
@@ -479,6 +482,9 @@ watch(() => props.partner?.agentId, (newId) => {
 // watch 미발화 → 사용자가 *placeholder 안 보임* 사고. visibleMessages 의 마지막
 // messageId 외 *workingOnMessageId 변화* 도 scroll trigger 박음.
 watch(workingOnMessageId, scrollToBottomDeferred);
+// deliveredAwaitingReadId 박혔을 때 (사용자 보낸 메시지 + mark_read 전) 도 scroll trigger.
+// 새 placeholder 박혀 layout 변경 → 사용자 자동 스크롤 박혀야 input box 자리 박힘.
+watch(deliveredAwaitingReadId, scrollToBottomDeferred);
 
 function statusLabel(s: AgentStatus): string {
   // 3 layer 통합: 온라인 / 오프라인 / 압축중.
