@@ -176,6 +176,134 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
   } catch { /* unsupported */ }
 
+  // ---------------- 5. *원인 모를 새로고침* 추적 ----------------
+  // 옛 사고 (2026-06-30 02:44:57 KST) — beforeunload + plugin:init 만 있고
+  // 트리거 출처 정보 없음. 모든 reload 가능 경로에 hook 추가:
+  //  - location.reload() 호출 → 스택 트레이스
+  //  - location.href / .assign / .replace → URL + 스택
+  //  - F5 / Ctrl-R / Cmd-R 키 입력
+  //  - 폼 submit (페이지 navigation)
+  //  - <a href> 클릭 (외부 navigation)
+  // 다음 새로고침 발생 시 *원인 코드* 명확히 추적 가능.
+
+  function stackTrace(skip = 2): string {
+    try {
+      const stack = new Error().stack || '';
+      return stack.split('\n').slice(skip, skip + 6).map(s => s.trim()).join(' | ');
+    } catch { return ''; }
+  }
+
+  // 5-1. location.reload() override
+  try {
+    const origReload = window.location.reload.bind(window.location);
+    Object.defineProperty(window.location, 'reload', {
+      configurable: true,
+      writable: true,
+      value: function patchedReload(...args: unknown[]) {
+        trace('location:reload', { stack: stackTrace(2), args: String(args[0] ?? '') });
+        return (origReload as (...a: unknown[]) => unknown)(...args);
+      },
+    });
+  } catch (e) { trace('location:reload-hook-failed', { err: String(e) }); }
+
+  // 5-2. location.href setter wrap — `location.href = url` 할당 감지
+  try {
+    const desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+    if (desc?.set) {
+      const origSet = desc.set;
+      Object.defineProperty(window.location, 'href', {
+        configurable: true,
+        get: desc.get ? desc.get.bind(window.location) : undefined,
+        set(val) {
+          trace('location:href-set', { url: String(val).slice(0, 200), stack: stackTrace(2) });
+          origSet.call(this, val);
+        },
+      });
+    }
+  } catch (e) { trace('location:href-hook-failed', { err: String(e) }); }
+
+  // 5-3. location.assign / replace override
+  try {
+    const origAssign = window.location.assign.bind(window.location);
+    Object.defineProperty(window.location, 'assign', {
+      configurable: true,
+      writable: true,
+      value: function patchedAssign(url: string) {
+        trace('location:assign', { url: String(url).slice(0, 200), stack: stackTrace(2) });
+        return origAssign(url);
+      },
+    });
+    const origReplace = window.location.replace.bind(window.location);
+    Object.defineProperty(window.location, 'replace', {
+      configurable: true,
+      writable: true,
+      value: function patchedReplace(url: string) {
+        trace('location:replace', { url: String(url).slice(0, 200), stack: stackTrace(2) });
+        return origReplace(url);
+      },
+    });
+  } catch (e) { trace('location:assign-hook-failed', { err: String(e) }); }
+
+  // 5-4. F5 / Ctrl-R / Cmd-R / Ctrl-Shift-R 키 입력 감지 (capture phase 로 모든 element 보다 먼저)
+  window.addEventListener('keydown', (e) => {
+    const isF5 = e.key === 'F5';
+    const isCmdR = (e.key === 'r' || e.key === 'R') && (e.metaKey || e.ctrlKey);
+    if (isF5 || isCmdR) {
+      trace('keydown:refresh', {
+        key: e.key,
+        meta: e.metaKey,
+        ctrl: e.ctrlKey,
+        shift: e.shiftKey,
+        target: (e.target as Element)?.tagName,
+      });
+    }
+  }, true);
+
+  // 5-5. form submit — 페이지 navigation 일으킬 수 있음
+  document.addEventListener('submit', (e) => {
+    const form = e.target as HTMLFormElement;
+    if (form && form.tagName === 'FORM') {
+      trace('form:submit', {
+        action: form.action,
+        method: form.method,
+        target: form.target,
+      });
+    }
+  }, true);
+
+  // 5-6. window.open / target=_self link click — 외부 navigation
+  document.addEventListener('click', (e) => {
+    const a = (e.target as Element)?.closest?.('a[href]') as HTMLAnchorElement | null;
+    if (a && a.href && a.target !== '_blank') {
+      // _self / 빈 target 박혀있는 링크 = 현재 페이지 navigation. SPA router 가 잡으면 navigation X.
+      const href = a.href;
+      if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+        trace('link:click', { href: href.slice(0, 200), target: a.target || '_self' });
+      }
+    }
+  }, true);
+
+  // 5-7. beforeunload 시점 *상세 snapshot* 박음 — 다음 page 로드 후 진단 자료
+  window.addEventListener('beforeunload', () => {
+    trace('beforeunload:snapshot', {
+      route: window.location.pathname + window.location.search,
+      visibility: document.visibilityState,
+      hasFocus: document.hasFocus(),
+      lastEventTime: new Date().toISOString(),
+      // referrer 박혀있으면 어디서 navigation 박혔는지 단서
+      referrer: document.referrer.slice(0, 200),
+    });
+  });
+
+  // 5-8. unhandled error / rejection 추가 캡처 (이미 error-tracker 있지만 backup)
+  window.addEventListener('error', (e) => {
+    trace('window:error', {
+      msg: e.message?.slice(0, 200),
+      src: e.filename?.slice(0, 100),
+      line: e.lineno,
+    });
+  }, true);
+
   // 콘솔 helper — 사용자가 history 빠르게 dump 할 수 있게.
   (window as unknown as { aideskDebugTrace?: () => unknown }).aideskDebugTrace = () => {
     try {
