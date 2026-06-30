@@ -163,12 +163,29 @@ export default defineNuxtPlugin((nuxtApp) => {
       const res = await originalFetch(input, init);
       const elapsed = Math.round(performance.now() - started);
       if (!isSelfTrace && (!res.ok || elapsed > 3000)) {
+        // 2026-06-30 ws 1006 사고 진단 — 401 응답이 ET (Expired) vs NA (Invalid) 인지
+        // 사고 시점에 알 수 있도록 body 의 code field 함께 저장. response 본문은 한번만
+        // read 가능하므로 clone() 으로 복사 + best-effort JSON parse. 실패해도 silent.
+        let bodyCode: string | undefined;
+        if (res.status >= 400 && res.status < 500) {
+          try {
+            const cloned = res.clone();
+            const ct = cloned.headers.get('content-type') || '';
+            if (ct.includes('application/json')) {
+              const j = await cloned.json();
+              if (j && typeof j === 'object' && typeof j.code === 'string') {
+                bodyCode = j.code;
+              }
+            }
+          } catch { /* body read fail — silent */ }
+        }
         trace('fetch:result', {
           method,
           url: url.length > 200 ? url.slice(0, 200) + '...' : url,
           status: res.status,
           ok: res.ok,
           elapsedMs: elapsed,
+          ...(bodyCode ? { bodyCode } : {}),
         });
       }
       return res;

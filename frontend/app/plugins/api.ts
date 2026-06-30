@@ -30,14 +30,21 @@ export default defineNuxtPlugin(() => {
   const tryRefresh = async (): Promise<boolean> => {
     if (refreshPromise) return refreshPromise;
     refreshPromise = (async () => {
+      const started = Date.now();
       try {
         const res = await $fetch<{ result: number }>('/api/auth/refresh', {
           baseURL,
           method: 'POST',
           credentials: 'include',
         });
-        return res?.result === 0;
-      } catch {
+        const ok = res?.result === 0;
+        // 2026-06-30 ws 1006 진단 — refresh 결과 명시 trace. nav-debug 의 'fetch:result'
+        // 가 본 path 의 4xx 만 잡으니 *성공 / 결과* 도 별도 로깅. 사고 시점에 refresh
+        // 가 호출됐는지 / 성공했는지 / 어느 응답이었는지 backend stdout + DB 둘 다 보존.
+        clientLog('log', 'auth-refresh:done', { ok, result: res?.result, elapsedMs: Date.now() - started });
+        return ok;
+      } catch (e) {
+        clientLog('warn', 'auth-refresh:throw', { message: String((e as Error)?.message ?? e), elapsedMs: Date.now() - started });
         return false;
       } finally {
         // 다음 refresh 가능하도록 마이크로태스크 뒤에 비움
@@ -86,6 +93,11 @@ export default defineNuxtPlugin(() => {
 
       const body = ctx.response?._data as { code?: string } | undefined;
       const code = body?.code;
+
+      // 2026-06-30 ws 1006 진단 — 모든 401 받은 시점을 path + code 함께 trace. ET refresh
+      // 가 호출되었는지 / NA redirect 가 호출되었는지 / 둘 다 아닌 case 가 있는지 backend
+      // stdout + DB 영구 보존. 옛 *조용히 사라짐* 사고 root cause 잡기 위해 필수.
+      clientLog('log', 'api:401', { path, code: code ?? '(missing)', hasBody: !!body });
 
       // ET: access 만료 → refresh 후 원 요청 재시도. 한 번만 시도해 무한 루프 방지.
       const opts = ctx.options as unknown as { _retried?: boolean };
