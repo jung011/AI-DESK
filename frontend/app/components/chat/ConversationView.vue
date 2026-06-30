@@ -1,5 +1,5 @@
 <template>
-  <section class="conv-view" :style="{ '--cv-font-size': `${fontSizePx}px` }">
+  <section class="conv-view" :style="{ '--cv-font-size': `${fontSizePx}px`, '--cv-font-family': fontFamilyCss }">
     <header v-if="partner" class="conv-head">
       <button v-if="showBack" class="cv-back" @click="$emit('back')" aria-label="뒤로">←</button>
       <span class="cv-avatar" :class="partner.status">{{ avatar(partner.status) }}</span>
@@ -87,14 +87,34 @@
                 :title="m.errorReason || ''">
                 {{ statusBadge(m.status) }}
               </span>
+              <!-- 실패 시 ↻ 버튼 박혀 사용자가 다시 보낼 수 있음.
+                   status='failed' (backend 가 명시 failed 박은 거) 외 에도,
+                   status='sent' 인데 *15초+ 지나도 deliveredAt null* 박혀있으면
+                   stale 박힘 → 사용자가 ↻ 박아 다시 보낼 수 있도록 박음. backend 가
+                   helper online 인 한 *failed 안 박는* 패턴 의 보완. -->
+              <button
+                v-if="m.fromAgentId === meId && isResendable(m)"
+                type="button"
+                class="cv-resend"
+                title="다시 보내기"
+                @click="onResend(m)">↻</button>
             </div>
           </div>
         </li>
-        <!-- AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 AI 측
-             (좌측) 에 *책상 stage* 박힘. 답신 도착 시 workingOnMessageId null →
-             stage 사라짐 + 실제 메시지 표시. chip + hover popover path 폐기 —
-             모바일/접근성 호환 + 항상 노출. -->
-        <li v-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
+        <!-- AI 답신 작성중 placeholder — 3 phase 분기:
+             1) deliveredAwaitingReadId (helper PTY 도달, AI mark_read 전) → "답신중..." 텍스트
+             2) workingOnMessageId (AI mark_read 후, 답신 전) → 책상 stage 애니메이션
+             3) partner 답신 도착 → 둘 다 null → 실제 메시지 표시 -->
+        <li v-if="deliveredAwaitingReadId && partner && !workingOnMessageId" class="cv-msg theirs typing-placeholder">
+          <div class="cv-bubble">
+            <div class="cv-sender">{{ partner.agentName }}</div>
+            <div class="cv-typing">
+              <em class="cv-typing-text">메세지 전송중</em>
+              <span class="cv-typing-scanner"></span>
+            </div>
+          </div>
+        </li>
+        <li v-else-if="workingOnMessageId && partner" class="cv-msg theirs typing-placeholder">
           <div class="cv-bubble cv-bubble-stage">
             <div class="cv-sender">{{ partner.agentName }}</div>
             <WorkingDeskStage :agent-name="partner.agentName" />
@@ -127,12 +147,22 @@
                 <button class="cv-stepper" @click="bumpFontSize(1)" :disabled="fontSizePx >= 24" aria-label="증가">＋</button>
                 <span class="cv-settings-range">10 — 24</span>
               </div>
-              <div class="cv-settings-preview" :style="{ fontSize: `${fontSizePx}px` }">
-                미리보기 — 안녕하세요, 채팅 글자 크기 샘플입니다.
+            </div>
+            <div class="cv-settings-field">
+              <label class="cv-settings-label">폰트</label>
+              <div class="cv-settings-control">
+                <select class="cv-settings-select" v-model="fontFamilyKey" @change="setFontFamily(fontFamilyKey)">
+                  <option v-for="f in FONT_OPTIONS" :key="f.key" :value="f.key" :style="{ fontFamily: f.css }">
+                    {{ f.label }}
+                  </option>
+                </select>
               </div>
             </div>
+            <div class="cv-settings-preview" :style="{ fontSize: `${fontSizePx}px`, fontFamily: fontFamilyCss }">
+              미리보기 — 안녕하세요, 채팅 글자 크기 / 폰트 샘플입니다. The quick brown fox jumps over the lazy dog.
+            </div>
             <div class="cv-settings-actions">
-              <button class="cv-settings-reset" @click="resetFontSize">기본값으로</button>
+              <button class="cv-settings-reset" @click="resetSettings">기본값으로</button>
               <button class="cv-settings-done" @click="settingsOpen = false">완료</button>
             </div>
           </div>
@@ -178,6 +208,7 @@ import type { AgentItem, AgentStatus } from '~/vo/agents/AgentVo';
 import type { AttachmentRef, AttachmentUploadResponse, MessageItem } from '~/vo/messages/MessageVo';
 import WorkingDeskStage from '~/components/chat/WorkingDeskStage.vue';
 import { renderMarkdown } from '~/utils/renderMarkdown';
+import { useInputDrafts } from '~/composables/useInputDrafts';
 
 const renderMd = renderMarkdown;
 
@@ -195,9 +226,40 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'send', content: string, attachmentIds: string[]): void;
   (e: 'back'): void;
+  (e: 'resend', m: MessageItem): void;
 }>();
 
-const draft = ref('');
+// 옵션 — failed / stale-sent 메시지 재전송. parent (chat.vue) 가 같은 partner 로
+// 새 message 박을 거. 사용자가 ↻ 클릭 시 trigger.
+function onResend(m: MessageItem): void {
+  emit('resend', m);
+}
+
+// stale-sent — backend 가 helper online 박혀있는 한 *failed 안 박는* 패턴 의 보완.
+// status='sent' + deliveredAt null + 15초+ 지나면 사용자한테 ↻ 노출 박음.
+// 시계 박힌 거 reactivity 위해 1초 cycle ref 박음 — Date.now() 직접 박으면 reactive X.
+const _now = ref(Date.now());
+setInterval(() => { _now.value = Date.now(); }, 1000);
+function isResendable(m: MessageItem): boolean {
+  if (m.status === 'failed') return true;
+  if (m.status === 'sent' && !m.deliveredAt) {
+    // 8초 = backend 의 retryAckTimeoutSec(5s) + buffer(3s). 한 backend retry 사이클
+    // 박힌 후에도 안 박힌 거 = stale 박은 거 판단 OK.
+    const age = _now.value - new Date(m.createdAt).getTime();
+    return age > 8000;
+  }
+  return false;
+}
+
+// partner 별 draft 보존 (per-partner). 옛 단일 ref('') 패턴 박혔는데 partner 전환 시
+// 옛 draft 가 새 partner 채팅창에 *공유* 박히는 사고 → 사용자가 다른 사람한테 보낼 메시지
+// 안 박힌 채로 잘못된 partner 한테 발사 위험. [[feedback-input-shared-on-partner-switch]]
+// 패턴 (옛 WebTerminal 의 :key + useInputDrafts 패턴 정합).
+const inputDrafts = useInputDrafts();
+const draft = ref(props.partner?.agentId ? inputDrafts.get(props.partner.agentId) : '');
+watch(draft, (v) => {
+  if (props.partner?.agentId) inputDrafts.set(props.partner.agentId, v);
+});
 const bodyRef = ref<HTMLElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const pendingAttachments = ref<AttachmentRef[]>([]);
@@ -231,29 +293,72 @@ const visibleMessages = computed<MessageItem[]>(() => {
  *
  * visibleMessages 기반 — task 메시지 무시 (chat vs task 분리 정합).
  */
-const workingOnMessageId = computed<string | null>(() => {
+/**
+ * 마지막 내 발신 메시지의 *delivery / read* 상태 추적. 3 phase 분기:
+ *  - lastSentMessage 가 *delivered (helper push 박힘) but readAt 안 박힘* → "답신중..." 텍스트 (간단한 typing indicator)
+ *  - lastSentMessage 의 *readAt 박힘* (AI 가 mark_read mcp 호출) → WorkingDeskStage (책상 애니메이션)
+ *  - partner 답신 도착 → null (placeholder 사라짐)
+ *  - status=failed → 별개 resend 박힘 (cv-status 옆 ↻ 버튼)
+ */
+const lastSentToPartner = computed<MessageItem | null>(() => {
   if (!props.partner) return null;
   const list = visibleMessages.value;
-  // 최신 → 옛 순으로 뒤에서부터 — partner 답신 있으면 chip 표시 X
   for (let i = list.length - 1; i >= 0; i--) {
     const m = list[i] as MessageItem;
     if (!m) continue;
     if (m.fromAgentId === props.partner.agentId && m.toAgentId === props.meId) {
-      // partner → me 메시지가 더 최신 → 이미 답신 옴
+      // partner → me 메시지가 더 최신 → 이미 답신 옴 → placeholder X
       return null;
     }
     if (m.fromAgentId === props.meId && m.toAgentId === props.partner.agentId) {
-      // 마지막 내 발신 메시지
-      return m.readAt ? m.messageId : null;
+      return m;
     }
   }
   return null;
+});
+// helper PTY 박힘 + AI mark_read 박은 후 — 책상 애니메이션 (옛 동작)
+const workingOnMessageId = computed<string | null>(() => {
+  const m = lastSentToPartner.value;
+  return m && m.readAt ? m.messageId : null;
+});
+// 사용자 보낸 마지막 메시지 = mark_read 직전까지 "메세지 전송중" 표시.
+// 단 stale-sent (>8s deliveredAt null) 상태이면 placeholder 숨김 — ↻ 와 중복 회피.
+// 사용자 의도: 둘 중 하나만 — 정상 진행 중이면 placeholder, 지연되면 resend.
+const deliveredAwaitingReadId = computed<string | null>(() => {
+  const m = lastSentToPartner.value;
+  if (!m || m.readAt) return null;
+  if (isResendable(m)) return null;  // stale → ↻ 만 표시, placeholder 숨김
+  return m.messageId;
 });
 const FONT_DEFAULT_PX = 13;
 const FONT_MIN_PX = 10;
 const FONT_MAX_PX = 24;
 const fontSizePx = ref<number>(FONT_DEFAULT_PX);
 const fontSizePxInput = ref<number>(FONT_DEFAULT_PX);
+
+// 폰트 family — 유명한 sans / serif / mono 박음. *CSS 우선순위 stack* 으로 fallback.
+// 한국어 우선 (Pretendard / Noto Sans KR / Spoqa) + 영문 mainstream + serif + mono.
+const FONT_OPTIONS = [
+  { key: 'system', label: '시스템 기본', css: '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", sans-serif' },
+  { key: 'pretendard', label: 'Pretendard', css: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif' },
+  { key: 'noto-sans-kr', label: 'Noto Sans KR', css: '"Noto Sans KR", "Noto Sans CJK KR", -apple-system, sans-serif' },
+  { key: 'spoqa', label: 'Spoqa Han Sans Neo', css: '"Spoqa Han Sans Neo", -apple-system, sans-serif' },
+  { key: 'inter', label: 'Inter', css: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' },
+  { key: 'roboto', label: 'Roboto', css: 'Roboto, -apple-system, sans-serif' },
+  { key: 'ibm-plex', label: 'IBM Plex Sans', css: '"IBM Plex Sans", "IBM Plex Sans KR", -apple-system, sans-serif' },
+  { key: 'sf-pro', label: 'SF Pro Display', css: '"SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif' },
+  { key: 'helvetica', label: 'Helvetica Neue', css: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { key: 'nanum-gothic', label: '나눔고딕', css: '"Nanum Gothic", -apple-system, sans-serif' },
+  { key: 'malgun', label: '맑은 고딕', css: '"Malgun Gothic", "맑은 고딕", -apple-system, sans-serif' },
+  { key: 'noto-serif-kr', label: 'Noto Serif KR', css: '"Noto Serif KR", "Noto Serif", Georgia, serif' },
+  { key: 'georgia', label: 'Georgia', css: 'Georgia, "Noto Serif KR", serif' },
+  { key: 'jetbrains-mono', label: 'JetBrains Mono', css: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+  { key: 'sf-mono', label: 'SF Mono', css: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace' },
+] as const;
+type FontKey = typeof FONT_OPTIONS[number]['key'];
+const FONT_DEFAULT_KEY: FontKey = 'system';
+const fontFamilyKey = ref<FontKey>(FONT_DEFAULT_KEY);
+const fontFamilyCss = computed(() => FONT_OPTIONS.find((f) => f.key === fontFamilyKey.value)?.css || FONT_OPTIONS[0].css);
 
 // iTerm 스타일 — 숫자(px) 단위 직접 조절. localStorage 저장.
 onMounted(() => {
@@ -263,6 +368,11 @@ onMounted(() => {
   if (Number.isFinite(n) && n >= FONT_MIN_PX && n <= FONT_MAX_PX) {
     fontSizePx.value = n;
     fontSizePxInput.value = n;
+  }
+  // 폰트 family 복원
+  const savedFont = window.localStorage.getItem('aidesk.chat.fontFamilyKey');
+  if (savedFont && FONT_OPTIONS.some((f) => f.key === savedFont)) {
+    fontFamilyKey.value = savedFont as FontKey;
   }
   document.addEventListener('keydown', onSettingsKey);
   // 새로고침 / 첫 mount 시 — parent 가 미리 fetch 한 messages 가 박혀있을 수 있음.
@@ -302,6 +412,18 @@ function resetFontSize(): void {
   setFontSizePx(FONT_DEFAULT_PX);
 }
 
+function setFontFamily(key: FontKey): void {
+  fontFamilyKey.value = key;
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem('aidesk.chat.fontFamilyKey', key);
+  }
+}
+
+function resetSettings(): void {
+  setFontSizePx(FONT_DEFAULT_PX);
+  setFontFamily(FONT_DEFAULT_KEY);
+}
+
 function onAttachClick(): void {
   fileInputRef.value?.click();
 }
@@ -326,15 +448,26 @@ function removePending(attachmentId: string): void {
   pendingAttachments.value = pendingAttachments.value.filter((a) => a.attachmentId !== attachmentId);
 }
 
+// duplicate send 차단 — onSend 호출 시점에 *이미 sending* 박혀있거나, *방금 emit
+// 박은 거 처리 중* 박혀있으면 skip. 옛 사고 = 사용자가 빠르게 두번 클릭 / Enter
+// 박을 때 props.sending 박힌 거 *update 박기 전* 의 race window 박혀 두 번 emit 박힘.
+// 로컬 in-flight guard 박아 race window 0 박음.
+let sendInFlight = false;
 async function onSend(): Promise<void> {
+  if (props.sending || sendInFlight) return;
   const text = draft.value.trim();
   if (!text && pendingAttachments.value.length === 0) return;
+  sendInFlight = true;
   const ids = pendingAttachments.value.map((a) => a.attachmentId);
   emit('send', text, ids);
   draft.value = '';
+  // store 도 비움 — 옛 watch(draft) 가 store.set 박지만 timing safety
+  if (props.partner?.agentId) inputDrafts.clear(props.partner.agentId);
   pendingAttachments.value = [];
   await nextTick();
   scrollToBottom();
+  // 짧은 grace — props.sending 박힘이 update 박힐 시점 (parent → child reactive)
+  setTimeout(() => { sendInFlight = false; }, 300);
 }
 
 // IME (한글/일본어) 조합 중 Enter 는 무시 — 조합 완료 후 다음 Enter 가 전송.
@@ -367,11 +500,21 @@ watch(() => props.messages[props.messages.length - 1]?.messageId, scrollToBottom
 // partner 변경 시 scroll-to-bottom — agent 클릭 → 다른 conversation 의 message list 받음.
 // 새 partner 의 마지막 메시지 ID 도 위 watch 가 잡지만, 빈 conversation 같은 edge 도 cover.
 watch(() => props.partner?.agentId, scrollToBottomDeferred);
+// partner 전환 시 draft 복원 + pendingAttachments 비움.
+// draft = per-partner store 박혀있어 *그 partner 박은 옛 입력* 복원.
+// pendingAttachments = 업로드 박은 거 partner 별 분리 X (session-bound) → 비움.
+watch(() => props.partner?.agentId, (newId) => {
+  draft.value = newId ? inputDrafts.get(newId) : '';
+  pendingAttachments.value = [];
+});
 // AI 답신 작성중 placeholder bubble 이 추가 / 제거되면 scroll 도 따라옴. 옛에는
 // workingOnMessageId 가 새로 set 되도 messages array 자체는 안 변해 위 messageId
 // watch 미발화 → 사용자가 *placeholder 안 보임* 사고. visibleMessages 의 마지막
 // messageId 외 *workingOnMessageId 변화* 도 scroll trigger 박음.
 watch(workingOnMessageId, scrollToBottomDeferred);
+// "메세지 전송중" placeholder 박힐 때 layout 변경 → 사용자 자동 스크롤 박혀야 input box
+// 자리 박힘. 옛 rc120 의 fix 박은 거 (duplicate send 사고와 무관 박힘, 재 적용 박음).
+watch(deliveredAwaitingReadId, scrollToBottomDeferred);
 
 function statusLabel(s: AgentStatus): string {
   // 3 layer 통합: 온라인 / 오프라인 / 압축중.
@@ -505,7 +648,9 @@ function formatSize(bytes: number): string {
 .cv-content { font-size: 13px; line-height: 1.55; }
 /* markdown 규칙은 별 non-scoped <style> 블록 (파일 끝). v-html injected content 는
    Vue 의 scoped data attribute 안 박혀 .cv-md table {...} (scoped) 미적용 사고 fix. */
-.cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #6B7785; }
+/* 다크모드 — 옛 #6B7785 박힌 거 어두운 bubble 위 안 보임 사고. #E5EBF5 (옛 다크모드 의
+   primary body text 색) + bold 박아 가독성 확실. */
+.cv-foot { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 10px; color: #E5EBF5; font-weight: 600; }
 
 /* AI 답신 작성중 placeholder — workingOnMessageId 살아있는 동안 stage bubble.
    답신 도착 시 자동 사라짐 + 실제 메시지로 교체. */
@@ -524,7 +669,47 @@ function formatSize(bytes: number): string {
 .cv-bubble-stage .cv-sender {
   padding: 0 4px 4px 4px;
 }
-.cv-status.sent     { color: #6B7785; }
+.cv-status.sent     { color: #E5EBF5; font-weight: 600; }
+
+/* failed 메시지 의 ↻ 재전송 버튼 — cv-status 옆 박힘. 사용자 클릭 시 onResend(m). */
+.cv-resend {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  padding: 0; margin-left: 2px;
+  background: transparent; border: 1px solid #F87171;
+  border-radius: 50%;
+  color: #F87171; font-size: 11px; font-weight: 700;
+  line-height: 1; cursor: pointer;
+}
+.cv-resend:hover { background: #F87171; color: #fff; }
+
+/* 답신 작성중 indicator — helper PTY 도달 박혔지만 AI mark_read 전 상태.
+   옛 commit b78d4a3 박힌 "답신 작성중" 텍스트 + 좌→우 scanner stripe (흔한 dots 회피).
+   HTML 시안 (working-desk-as-placeholder-preview.html) 의 옛 scene 박은 거 정합.
+   AI 가 mark_read mcp 호출 후 full stage 박혀 교체. */
+.cv-typing {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; color: #B0BCD0;
+}
+.cv-typing-text { font-style: italic; }
+.cv-typing-scanner {
+  position: relative;
+  width: 56px; height: 4px;
+  background: rgba(107, 182, 255, 0.15);
+  border-radius: 3px; overflow: hidden;
+}
+.cv-typing-scanner::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -20px;
+  width: 20px; height: 100%;
+  background: linear-gradient(90deg, transparent 0%, #6BB6FF 50%, transparent 100%);
+  animation: cvTpScan 1.4s linear infinite;
+}
+@keyframes cvTpScan {
+  0%   { left: -20px; }
+  100% { left: 56px; }
+}
 .cv-status.delivered{ color: #6BB6FF; }
 .cv-status.replied  { color: #6BB6FF; font-weight: 700; }
 .cv-status.failed   { color: #F87171; font-weight: 700; }
@@ -601,10 +786,12 @@ function formatSize(bytes: number): string {
 .conv-body::-webkit-scrollbar-thumb { background: #2A3447; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 .conv-body::-webkit-scrollbar-thumb:hover { background: #3A4A66; background-clip: padding-box; }
 
-/* 폰트 사이즈 — root section 의 --cv-font-size cssvar 가 메시지 본문/입력창 일괄 조정.
-   사용자가 설정 모달에서 숫자 조절 (10-24px). chip / header / status 같은 보조 요소는 고정. */
-.conv-view .cv-content { font-size: var(--cv-font-size, 13px); }
-.conv-view .cv-textarea { font-size: var(--cv-font-size, 13px); }
+/* 폰트 사이즈 + family — root section 의 cssvar 가 메시지 본문/입력창 일괄 조정.
+   사용자가 설정 모달에서 숫자 조절 (10-24px) + 폰트 family 선택 (시스템 / Pretendard / Inter 등).
+   chip / header / status 같은 보조 요소는 고정. */
+.conv-view .cv-content { font-size: var(--cv-font-size, 13px); font-family: var(--cv-font-family, inherit); }
+.conv-view .cv-textarea { font-size: var(--cv-font-size, 13px); font-family: var(--cv-font-family, inherit); }
+.conv-view .cv-sender { font-family: var(--cv-font-family, inherit); }
 
 /* 헤더의 ... 메뉴 */
 .cv-head-actions { margin-left: auto; position: relative; }
@@ -682,6 +869,28 @@ function formatSize(bytes: number): string {
 .cv-settings-num:focus {
   outline: none; border-color: #4F7FFF;
   box-shadow: 0 0 0 3px rgba(79, 127, 255, 0.15);
+}
+.cv-settings-select {
+  flex: 1; min-width: 0;
+  padding: 8px 12px;
+  background: #0F1729; border: 1px solid #2A3447; border-radius: 8px;
+  color: #E5E9EE; font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='%236BB6FF' d='M2 4l4 4 4-4z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  padding-right: 32px;
+}
+.cv-settings-select:focus {
+  outline: none; border-color: #6BB6FF;
+  box-shadow: 0 0 0 3px rgba(107, 182, 255, 0.15);
+}
+.cv-settings-select option {
+  background: #1E2738; color: #E5E9EE;
+  padding: 6px;
 }
 .cv-settings-range {
   font-size: 11px; color: #6B7785;

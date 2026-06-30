@@ -361,9 +361,11 @@ let reconnectAttempt = 0;  // exp backoff 카운터 — onopen 시 reset
 //   frontend hostname 기반 동적 — PC localhost / 모바일 wifi IP 둘 다 정합.
 // prod = 30083 (LaunchAgent 127.0.0.1 only). 사용자 mac local 만.
 //   Vite tree-shake 으로 prod build 에는 prod branch 만 남음.
+// 옵션 B MVP — 모바일 prod 분기는 connectWs 안에서 /api/helper/lan-ip 박은 IP 사용.
 const HELPER_WS_URL = import.meta.dev
   ? `ws://${window.location.hostname}:30084/ws/terminal`
   : 'ws://127.0.0.1:30083/ws/terminal';
+import { getMobileHelperBase } from '~/utils/mobileHelperBase';
 
 async function ensureXterm(): Promise<void> {
   if (import.meta.server) return;
@@ -468,6 +470,16 @@ function sendResize(): void {
   } catch { /* ignore */ }
 }
 
+async function _resolveHelperWsBase(): Promise<string> {
+  // 옵션 B MVP — 모바일 prod 박혀있으면 /api/helper/lan-ip 박은 IP 사용.
+  // helper 가 0.0.0.0:30084 LISTEN 박혀있어 같은 wifi 안 모바일 접근 가능.
+  if (!import.meta.dev) {
+    const lanIp = await getMobileHelperBase();
+    if (lanIp) return `ws://${lanIp}:30084/ws/terminal`;
+  }
+  return HELPER_WS_URL;
+}
+
 function connectWs(): void {
   if (!term) return;
   if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
@@ -487,7 +499,16 @@ function connectWs(): void {
   const apiUrl = import.meta.dev
     ? `${window.location.protocol}//${window.location.hostname}:30081`
     : '';
-  let url = `${HELPER_WS_URL}?cwd=${encodeURIComponent(cwd)}&agentId=${encodeURIComponent(agentId)}&cols=${cols}&rows=${rows}`;
+  // helper ws base — 옵션 B MVP 의 모바일 분기. fire-and-forget 안에서 동적 resolve.
+  // 옛 desktop prod 는 HELPER_WS_URL 그대로.
+  void _resolveHelperWsBase().then((helperWsUrl) => {
+    _doConnectWs(helperWsUrl, cwd, agentId, tmuxSession, cols, rows, apiUrl);
+  });
+}
+
+function _doConnectWs(helperWsUrl: string, cwd: string, agentId: string, tmuxSession: string, cols: number, rows: number, apiUrl: string): void {
+  if (!term) return;
+  let url = `${helperWsUrl}?cwd=${encodeURIComponent(cwd)}&agentId=${encodeURIComponent(agentId)}&cols=${cols}&rows=${rows}`;
   if (apiUrl) url += `&apiUrl=${encodeURIComponent(apiUrl)}`;
   // tmuxSession — helper 가 tmux attach 패턴 사용. ws 끊김 = detach, claude 상태 유지.
   if (tmuxSession) url += `&tmuxSession=${encodeURIComponent(tmuxSession)}`;

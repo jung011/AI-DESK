@@ -145,23 +145,43 @@ class MessageService:
         ws_payload = {"type": "message.deliver", **payload}
         _fire_and_forget(ws_broker.publish_to_account(receiver.owner_account_sn, ws_payload))
 
-        # ws-aware delivered (rc12) — Spring countSessionsForAgent + markDelivered 동등.
-        # receiver 가 ws connected 면 즉시 delivered 마킹 (helper ack 없이도). 외부 AI 처럼
-        # ack 안 보내는 client 도 ws session 살아있으면 도달 보장.
-        ws_count = ws_broker.count_sessions_for_agent(receiver.agent_id)
-        if ws_count > 0:
-            n = self.repo.ack_delivered(msg.message_id)
-            self.db.commit()
-            log.info(
-                "ws-aware delivered: message_id=%s receiver=%s ws_sessions=%d ack_rows=%d",
-                msg.message_id, receiver.agent_name, ws_count, n,
-            )
-            if n > 0:
-                item.delivered_at = datetime.now(tz=timezone.utc)
-                item.status = "delivered"
+        # ws-aware delivered — *helper 없는 receiver 만*. 옛 rc12 의 logic 박는 거 *모든*
+        # receiver 에 적용 박혀있어 사고:
+        # - 외부 AI (helper 없음) = ws / api 로 받음 → 즉시 delivered OK
+        # - 휴먼 (helper 없음) = frontend 가 polling/SSE 로 받음 → 즉시 delivered OK
+        # - 내부 AI (helper + tmux) = helper sse_consumer 의 send-keys + ack 박혀야 delivery
+        #   하지만 helper 의 broker ws 도 ws_count 박혀 → 잘못 즉시 delivered 박힘 →
+        #   사용자 frontend 가 *답신중* 박힘 *실제 tmux 도달 X* 사고.
+        # fix = receiver 가 *helper 없음* (external 또는 human) 박혀있을 때 만 즉시 delivered.
+        # 내부 AI 는 helper ack 박혀야 deliveredAt 박힘.
+        receiver_needs_helper = (
+            receiver.agent_type not in ("external", "human")
+            and receiver.model != "human"
+        )
+        if not receiver_needs_helper:
+            ws_count = ws_broker.count_sessions_for_agent(receiver.agent_id)
+            # external 은 ws_count 박혀있어야 도달 보장. human 은 ws 없어도 frontend 가 polling
+            # 박힘으로 도달 — 무조건 delivered 박음.
+            if ws_count > 0 or receiver.model == "human" or receiver.agent_type == "human":
+                n = self.repo.ack_delivered(msg.message_id)
+                self.db.commit()
+                log.info(
+                    "ws-aware delivered: message_id=%s receiver=%s type=%s model=%s ws=%d ack=%d",
+                    msg.message_id, receiver.agent_name, receiver.agent_type,
+                    receiver.model, ws_count, n,
+                )
+                if n > 0:
+                    item.delivered_at = datetime.now(tz=timezone.utc)
+                    item.status = "delivered"
+            else:
+                log.info(
+                    "external receiver — ws push sent but no ws session: message_id=%s receiver=%s",
+                    msg.message_id, receiver.agent_name,
+                )
         else:
+            # 내부 AI — SSE 박혀있어도 helper ack 박혀야 delivered. status='sent' 유지.
             log.info(
-                "ws push sent but receiver has no ws session — message_id=%s receiver=%s",
+                "internal receiver — awaiting helper ack: message_id=%s receiver=%s",
                 msg.message_id, receiver.agent_name,
             )
         return item

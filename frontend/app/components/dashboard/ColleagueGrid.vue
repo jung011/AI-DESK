@@ -344,9 +344,9 @@ const onlineCount = computed(() =>
 }
 @keyframes confirm-fade { from { opacity: 0; } to { opacity: 1; } }
 .confirm-modal {
-  background: var(--bg-card); border-radius: 10px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
   width: 420px; max-width: 92vw;
-  box-shadow: 0 12px 40px rgba(0,0,0,.22);
+  box-shadow: 0 12px 40px rgba(0,0,0,.55);
   overflow: hidden;
   animation: confirm-pop 0.16s cubic-bezier(.2,.9,.3,1);
 }
@@ -361,43 +361,48 @@ const onlineCount = computed(() =>
 .confirm-icon-wrap {
   width: 36px; height: 36px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #FDECEC; color: var(--danger);
+  background: rgba(248, 113, 113, 0.18); color: #FCA5A5;
   flex-shrink: 0;
 }
 .confirm-head h3 {
-  margin: 0; font-size: 15px; font-weight: 700; color: #1E2A38;
+  margin: 0; font-size: 15px; font-weight: 700; color: #FFFFFF;
 }
 .confirm-body { padding: 4px 20px 18px; }
 .confirm-target {
-  font-size: 14px; color: #2C3946; margin: 0 0 10px;
+  font-size: 14px; color: #FFFFFF; margin: 0 0 10px;
   line-height: 1.5;
 }
-.confirm-target strong { color: #1E6FCE; }
+.confirm-target strong { color: #93C5FD; }
 .confirm-detail {
   margin: 0; padding-left: 18px;
-  font-size: 12px; color: #6B7785; line-height: 1.6;
+  font-size: 12px; color: #B0BCD0; line-height: 1.6;
 }
 .confirm-error {
   margin-top: 10px;
   padding: 8px 10px;
   border-radius: 4px;
-  background: #FDECEC; color: #B02929;
+  background: rgba(248, 113, 113, 0.15); color: #FCA5A5;
+  border: 1px solid rgba(248, 113, 113, 0.35);
   font-size: 12px;
 }
 .confirm-foot {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 12px 20px 16px;
-  border-top: 1px solid #EEF1F5;
+  border-top: 1px solid var(--border);
 }
 .ext-btn {
-  padding: 7px 16px; border: 1px solid var(--border-soft); border-radius: 4px;
-  background: var(--bg-card); cursor: pointer; font-size: 13px;
-  color: #2C3946;
+  padding: 7px 16px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-input); cursor: pointer; font-size: 13px;
+  color: #E5EBF5;
   font-family: inherit;
+}
+.ext-btn:hover:not(:disabled) {
+  background: rgba(107, 182, 255, 0.1);
+  border-color: #6BB6FF;
 }
 .ext-btn:disabled { cursor: not-allowed; opacity: 0.6; }
 .ext-btn.danger {
-  background: #E25555; color: #fff; border-color: var(--danger);
+  background: #E25555; color: #fff; border-color: #E25555;
 }
 .ext-btn.danger:hover:not(:disabled) {
   background: #CF4444; border-color: #CF4444;

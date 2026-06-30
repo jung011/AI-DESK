@@ -24,6 +24,7 @@
           :show-back="true"
           :upload-fn="uploadAttachment"
           @send="onSend"
+          @resend="onResend"
           @back="showConvMobile = false"
         />
       </div>
@@ -62,6 +63,13 @@ async function onSelectPartner(agentId: string): Promise<void> {
 
 async function onSend(content: string, attachmentIds: string[] = []): Promise<void> {
   await send(content, attachmentIds);
+}
+
+// failed 메시지 ↻ 클릭 시 같은 content + 옛 attachmentIds 로 새 메시지 발사.
+// 옛 메시지의 status 자체는 그대로 (실패 기록 보존), 사용자가 manually 박은 *새* 메시지.
+async function onResend(m: import('~/vo/messages/MessageVo').MessageItem): Promise<void> {
+  const ids = (m.attachments || []).map((a) => a.attachmentId);
+  await send(m.content, ids);
 }
 
 onMounted(async () => {

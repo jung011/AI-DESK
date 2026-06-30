@@ -24,9 +24,12 @@ const helperVersion = useHelperVersionStore();
 const dismissed = useState<string>('helper-update-dismissed', () => '');
 
 /** 같은 latest 버전 한 번 닫으면 그 세션 동안 다시 안 띄움. 새 버전 나오면 dismissed
- *  값이 옛 것이라 자동으로 다시 표시. */
+ *  값이 옛 것이라 자동으로 다시 표시. 모바일 박혀있으면 helper 자체 가 없어 항상 needsUpdate
+ *  박힘 → 배너 가림 (UA 기반 가드). */
+const isMobile = typeof navigator !== 'undefined'
+  && /iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent);
 const visible = computed(() =>
-  helperVersion.needsUpdate && dismissed.value !== helperVersion.latest,
+  !isMobile && helperVersion.needsUpdate && dismissed.value !== helperVersion.latest,
 );
 
 function dismiss(): void {

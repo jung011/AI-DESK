@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.repository import AgentRepository
 from app.desktop.schemas import DesktopLocalInfoRq, DesktopLocalInfoRs
+from app.helper.lan_ip_store import store as lan_ip_store
 
 log = logging.getLogger(__name__)
 
@@ -90,4 +91,17 @@ class DesktopService:
         rs.matched_agents = matched
         rs.updated_agents = updated
         rs.matched_agent_ids = matched_ids
+
+        # 옵션 B MVP — helper 가 박은 LAN IP 를 user (account_sn) 별 store 에 박음.
+        # *매칭 박힌* workspace 들 안 첫 agent 의 account_sn = 그 user 의 helper.
+        # workspaces[0] 가 unmatched 박힐 수 있어 by_ws 의 *매칭 박힌 agent* 들 안에서 찾음.
+        # 모바일 frontend 가 /api/helper/lan-ip 호출 시 이 store 에서 lookup. helper 가
+        # 30s cycle 마다 refresh.
+        if req.lan_ip and matched_ids:
+            for w in req.workspaces:
+                agent = by_ws.get(w.workspace_dir or "")
+                if agent and agent.owner_account_sn:
+                    lan_ip_store.put(agent.owner_account_sn, req.lan_ip)
+                    break
+
         return rs

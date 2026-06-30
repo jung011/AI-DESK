@@ -19,6 +19,7 @@ data:
   MESSAGES_RETRY_RECIPIENT_OFFLINE_SEC: {{ .Values.backend.messages.retryRecipientOfflineSec | quote }}
   JWT_ACCESS_EXPIRATION_SECONDS: {{ .Values.backend.jwt.accessExpirationSeconds | quote }}
   JWT_REFRESH_EXPIRATION_SECONDS: {{ .Values.backend.jwt.refreshExpirationSeconds | quote }}
-  {{- if .Values.backend.cookieDomain }}
+  # COOKIE_DOMAIN — 항상 명시 박음 (빈 string OK). 옛 if-조건 박혔을 때 ArgoCD 가
+  # key 제거 안 박는 사고 패턴 (3-way merge 한계) 회피. backend 의 cookie_domain
+  # default 가 ""  라 빈 값 박혀도 정합.
   COOKIE_DOMAIN: {{ .Values.backend.cookieDomain | quote }}
-  {{- end }}

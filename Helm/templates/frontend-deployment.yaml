@@ -5,6 +5,9 @@ metadata:
   labels:
     {{- include "ai-desk.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
+  annotations:
+    # ServerSideApply — backend 와 동일 사유 (옛 readiness/liveness 시그니처 변경).
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Replace=true
 spec:
   replicas: {{ .Values.frontend.replicaCount }}
   # 무중단 롤링 업데이트 — backend 와 동일 패턴. 새 pod readinessProbe (HTTP GET /) 통과 후 옛 pod 종료.
@@ -45,12 +48,22 @@ spec:
               path: /
               port: http
             initialDelaySeconds: 5
-            periodSeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 30
             periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          # frontend = nginx serving SPA. preStop 박아 *connection drain* 시간 확보.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
+      terminationGracePeriodSeconds: 30

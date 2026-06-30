@@ -8,7 +8,7 @@ backend:
     # staging deploy 통과 (모든 endpoint wire OK + envelope 호환 확인).
     # 문제 시 roll-back: 두 줄을 jsh125/aidesk-backend:1.53.10-rc1 로 되돌리고 push.
     repository: jsh125/aidesk-backend-py
-    tag: "0.1.0-rc93"
+    tag: "0.1.0-rc107"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 30081
@@ -27,19 +27,23 @@ backend:
     retryMaxRetries: "60"
     retryBatchLimit: "50"
     policyRateLimitPerMinute: "30"
-    policyHopLimit: "10"
+    policyHopLimit: "20"
     policyContextLimitPct: "90"
     retryRecipientOfflineSec: "180"
   jwt:
     accessExpirationSeconds: "3600"
     refreshExpirationSeconds: "2592000"
-  cookieDomain: ".kaflix.internal"
+  # cookieDomain "" = host-only 쿠키 (브라우저가 요청 호스트 정확 매칭).
+  # 옛 ".kaflix.internal" 박은 거 = 모바일이 IP (172.20.1.3) 로 접속 시 쿠키 거부.
+  # host-only 박으면 aidesk.kaflix.internal 과 172.20.1.3 가 *각자* 쿠키 분리 됨 (다른 host = 다른 cookie store).
+  # 옛 logged-in 사용자 = 기존 Domain=.kaflix.internal 쿠키 + 새 host-only 쿠키 공존 (refresh cycle 거치며 자연 정리).
+  cookieDomain: ""
   metaverseUrl: "http://metaverse.kaflix.internal/"
   allowedHosts: ".kaflix.internal"
 frontend:
   image:
     repository: jsh125/aidesk-frontend
-    tag: "1.30.7-rc104"
+    tag: "1.30.7-rc128"
     pullPolicy: IfNotPresent
   replicaCount: 1
   port: 80
@@ -73,6 +77,11 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
     nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # 모바일 직접 IP 접속 — nginx server_name 에 172.20.1.3 추가.
+    # K8s Ingress 의 host field 는 RFC1123 hostname 만 허용 (IP reject) 라
+    # annotation 으로 server_name alias 박는 패턴이 정합. mobile DNS 박는 작업
+    # 안 박아도 모바일 wifi 만 같으면 http://172.20.1.3 그대로 접속 OK.
+    nginx.ingress.kubernetes.io/server-alias: "172.20.1.3"
   hosts:
     - host: aidesk.kaflix.internal
       paths:

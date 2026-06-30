@@ -41,25 +41,23 @@ let disposed = false;
 const MINI_COLS = 100;
 const MINI_ROWS = 14;
 
-function helperWsUrl(): string {
-  if (typeof window === 'undefined') return '';
+// 옵션 B MVP — 모바일 prod 박혀있으면 /api/helper/lan-ip 박은 IP 사용. async 분기 박힘.
+async function helperWsUrlAsync(): Promise<string> {
   const params = new URLSearchParams({
-    cols: String(MINI_COLS),
-    rows: String(MINI_ROWS),
     agentId: props.agentId,
     tmuxSession: props.tmuxSession,
     background: '1',
   });
-  // workspaceDir 박혀있으면 cwd 전달 — helper 가 *tmux new-session 처음 만들 때*
-  // 정확한 workspace 에서 claude 시작 (workspace trust dialog 회피).
   if (props.workspaceDir) params.set('cwd', props.workspaceDir);
   if (props.agentName) params.set('agentName', props.agentName);
-  // prod = 사용자 mac local helper 직접 (127.0.0.1:30083). frontend hostname
-  // 가리키면 ingress 30083 listen 안 해서 fail. WebTerminal.vue 와 동일 분기.
-  // dev = wifi IP / localhost frontend 모두 호환 위해 hostname 기반.
-  const wsBase = import.meta.dev
-    ? `ws://${window.location.hostname}:30084`
-    : 'ws://127.0.0.1:30083';
+  let wsBase: string;
+  if (import.meta.dev) {
+    wsBase = `ws://${window.location.hostname}:30084`;
+  } else {
+    const { getMobileHelperBase } = await import('~/utils/mobileHelperBase');
+    const lanIp = await getMobileHelperBase();
+    wsBase = lanIp ? `ws://${lanIp}:30084` : 'ws://127.0.0.1:30083';
+  }
   return `${wsBase}/ws/terminal?${params.toString()}`;
 }
 
@@ -107,8 +105,23 @@ async function ensureXterm(): Promise<void> {
 
 function connectWs() {
   if (disposed) return;
-  const url = helperWsUrl();
-  if (!url) return;
+  // 옵션 B MVP — 모바일 prod 분기 박혀있어 helper LAN IP async resolve. fire-and-forget
+  // 안에서 ws 연결.
+  void helperWsUrlAsync().then((url) => {
+    if (!url || disposed) return;
+    _doConnect(url);
+  });
+}
+
+function _doConnect(url: string) {
+  // reconnect 시 옛 화면 박은 거 비움 — helper 가 ws connect 마다 tmux capture-pane
+  // -S -3000 dump 박아 *옛 출력 같이 박혀* xterm 안 cumulative append 사고. 옛
+  // shuttle agent 박은 zsh plain text 박혀 *prompt line 누적* 사고 — alt-screen 박혀
+  // 있는 claude TUI 박은 거 와 차이. WebTerminal 박은 거 같은 패턴 (옛 dot 누적 사고
+  // f02732f 박은 거 와 정합).
+  if (term) {
+    try { term.reset(); } catch { /* ignore */ }
+  }
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (ev) => {
