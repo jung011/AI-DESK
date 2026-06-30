@@ -30,10 +30,48 @@ function persist(event: string, detail?: unknown): void {
   } catch { /* quota / SecurityError 무시 */ }
 }
 
+// critical event = pod replace 박혀도 절대 손실 안 되어야 하는 event.
+// DB 영구 저장 (POST /api/logs/client-event). sendBeacon 사용 → page unload 도중도 도달.
+const CRITICAL_EVENTS = new Set([
+  'location:reload',
+  'location:href-set',
+  'location:assign',
+  'location:replace',
+  'location:reload-hook-failed',
+  'location:href-hook-failed',
+  'location:assign-hook-failed',
+  'keydown:refresh',
+  'beforeunload:snapshot',
+  'window:beforeunload',
+  'window:pagehide',
+  'plugin:init',
+  'router:onError',
+  'sw:controllerchange',
+  'window:error',
+]);
+
+function sendCriticalEvent(event: string, detail?: unknown): void {
+  if (typeof window === 'undefined' || !window.navigator?.sendBeacon) return;
+  try {
+    const body = JSON.stringify({
+      event,
+      route: window.location.pathname + window.location.search,
+      data: detail,
+    });
+    // sendBeacon = browser 가 *page unload 도중도 보장* 전송. fetch keepalive 의 강건 버전.
+    const blob = new Blob([body], { type: 'application/json' });
+    window.navigator.sendBeacon('/api/logs/client-event', blob);
+  } catch { /* 무시 — best-effort */ }
+}
+
 function trace(event: string, detail?: unknown): void {
   persist(event, detail);
   // backend 도 적재 (best-effort). clientLog 는 keepalive: true 라 navigation 도중도 살림.
   clientLog('log', `nav-debug:${event}`, detail);
+  // critical event = DB 영구 저장 (pod replace 무관). sendBeacon 박혀 unload 도중도 전송.
+  if (CRITICAL_EVENTS.has(event)) {
+    sendCriticalEvent(event, detail);
+  }
 }
 
 export default defineNuxtPlugin((nuxtApp) => {

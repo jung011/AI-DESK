@@ -11,6 +11,7 @@ from app.auth.deps import current_user, optional_user
 from app.auth.schemas import AuthenticatedUser
 from app.common.response import ApiEnvelope, ok
 from app.core.database import get_db
+from app.logs.models import ClientEvent  # noqa: F401 — alembic create_all 시 model 등록
 from app.logs.schemas import ActionLogCreateRq, ClientLogRq, LogFeedItem
 from app.logs.service import LogService
 
@@ -69,4 +70,58 @@ async def record_client_log(
         (request.headers.get("user-agent") or "-")[:200],
         body.data,
     )
+    return ok("ok")
+
+
+@router.post("/logs/client-event", response_model=ApiEnvelope[str])
+async def record_client_event(
+    request: Request,
+    user: AuthenticatedUser | None = Depends(optional_user),
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[str]:
+    """frontend critical 진단 event → DB 영구 저장. pod replace 무관.
+
+    저장 대상 = nav-debug 의 location.* / keydown:refresh / beforeunload:snapshot /
+    window:error 같은 *원인 모를 reload / logout* 사고 추적 event. K8s stdout log
+    pod replace 시 손실 사고 회피용.
+
+    사용자 frontend 가 navigator.sendBeacon() 로 호출 — page unload 도중도 살림.
+    body = {"event": "location:reload", "route": "/dashboard", "data": {...}}
+    """
+    import json
+    import uuid as _uuid
+
+    from app.logs.models import ClientEvent
+
+    try:
+        raw = await request.body()
+        payload = json.loads(raw.decode("utf-8")) if raw else {}
+    except (ValueError, UnicodeDecodeError):
+        payload = {}
+
+    event_type = str(payload.get("event") or "")[:50]
+    if not event_type:
+        return ok("skipped")  # event_type 없으면 무시
+
+    route = (payload.get("route") or "")[:500]
+    data_obj = payload.get("data")
+    data_json = json.dumps(data_obj, ensure_ascii=False, default=str)[:5000] if data_obj is not None else None
+    ua = (request.headers.get("user-agent") or "")[:500]
+
+    try:
+        row = ClientEvent(
+            event_id=str(_uuid.uuid4()),
+            account_sn=user.account_sn if user else None,
+            event_type=event_type,
+            route=route or None,
+            data=data_json,
+            user_agent=ua or None,
+        )
+        db.add(row)
+        db.commit()
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        client_log.warning("[client-event] DB insert failed: %s event=%s", e, event_type)
+        return ok("db-error")
+
     return ok("ok")
