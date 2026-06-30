@@ -73,6 +73,55 @@ async def record_client_log(
     return ok("ok")
 
 
+@router.get("/logs/client-events", response_model=ApiEnvelope[list[dict]])
+async def list_client_events(
+    event_type: str | None = Query(default=None, description="event_type LIKE filter (예: 'location:%')"),
+    since: str | None = Query(default=None, description="ISO datetime (예: '2026-06-30T02:40:00')"),
+    limit: int = Query(default=50, ge=1, le=500),
+    _user: AuthenticatedUser = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> ApiEnvelope[list[dict]]:
+    """t_ai_client_event 조회 — frontend critical 진단 event 확인용.
+
+    필터:
+    - event_type: LIKE 매칭 (예: 'location:%' 또는 'keydown:refresh')
+    - since: ISO datetime 이후 event 만
+    - limit: 1-500 (default 50)
+
+    사용자 본인 admin 진단 path — 사고 분석. SQL 쿼리 패턴:
+      GET /api/logs/client-events?event_type=location:%&since=2026-06-30T02:40:00
+    """
+    from datetime import datetime as _dt
+    from sqlalchemy import desc, select
+
+    from app.logs.models import ClientEvent
+
+    stmt = select(ClientEvent).order_by(desc(ClientEvent.created_at)).limit(limit)
+    if event_type:
+        stmt = stmt.where(ClientEvent.event_type.like(event_type))
+    if since:
+        try:
+            ts = _dt.fromisoformat(since.replace("Z", "+00:00"))
+            stmt = stmt.where(ClientEvent.created_at >= ts)
+        except ValueError:
+            pass
+
+    rows = list(db.execute(stmt).scalars())
+    items = [
+        {
+            "eventId": r.event_id,
+            "accountSn": r.account_sn,
+            "eventType": r.event_type,
+            "route": r.route,
+            "data": r.data,
+            "userAgent": r.user_agent,
+            "createdAt": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+    return ok(items)
+
+
 @router.post("/logs/client-event", response_model=ApiEnvelope[str])
 async def record_client_event(
     request: Request,
