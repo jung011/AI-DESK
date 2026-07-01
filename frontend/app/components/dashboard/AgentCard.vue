@@ -463,24 +463,25 @@ function formatTime(iso: string, status: string): string {
 .card-menu-dropdown {
   position: absolute; top: 36px; right: 0;
   width: 180px;
-  background: var(--bg-card); border: 1px solid #D4DCE4; border-radius: 6px;
-  box-shadow: 0 6px 18px 0 rgba(67, 87, 103, .18);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 6px 18px 0 rgba(0, 0, 0, .35);
   padding: 4px 0; z-index: 50;
   display: flex; flex-direction: column;
 }
 .card-menu-item {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px;
-  font-size: 13px; color: #333;
+  font-size: 13px; color: var(--text);
   text-align: left; background: none; border: none; cursor: pointer;
 }
-.card-menu-item:hover:not(:disabled) { background: #F8FAFC; }
-.card-menu-item:disabled { color: #94A3B8; cursor: not-allowed; }
-.card-menu-item.danger { color: #E83667; }
+.card-menu-item:hover:not(:disabled) { background: rgba(107, 182, 255, .1); }
+.card-menu-item:disabled { color: var(--text-dim); cursor: not-allowed; }
+.card-menu-item.danger { color: #F87171; }
+.card-menu-item.danger:hover:not(:disabled) { background: rgba(248, 113, 113, .12); }
 .card-menu-item .menu-ico {
   width: 14px; height: 14px; flex-shrink: 0; opacity: .7;
 }
-.card-menu-divider { height: 1px; background: #F0F2F5; margin: 4px 0; }
+.card-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
 
 .ico_badge.small {
   display: inline-flex; align-items: center; gap: 5px;
