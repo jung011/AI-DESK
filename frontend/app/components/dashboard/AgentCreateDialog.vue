@@ -151,60 +151,61 @@ function onSubmit(): void {
 }
 .popup-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; border-bottom: 1px solid #F0F2F5;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
 }
-.popup-head h3 { font-size: 15px; font-weight: 700; color: #101010; margin: 0; }
+.popup-head h3 { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
 .popup-close {
   width: 28px; height: 28px;
   background: none; border: none; font-size: 22px;
-  color: #94A3B8; cursor: pointer; line-height: 1;
+  color: var(--text-dim); cursor: pointer; line-height: 1;
 }
-.popup-close:hover { color: #475569; }
+.popup-close:hover { color: var(--text); }
 .popup-body { padding: 20px; }
 .popup-foot {
   display: flex; justify-content: flex-end; gap: 8px;
-  padding: 14px 20px; border-top: 1px solid #F0F2F5;
+  padding: 14px 20px; border-top: 1px solid var(--border);
 }
 
 .form_field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.form_label { font-size: 13px; font-weight: 600; color: #333; }
-.form_label .required { color: #E53935; }
-.form_help { font-size: 12px; color: #AAB4BE; }
+.form_label { font-size: 13px; font-weight: 600; color: var(--text); }
+.form_label .required { color: #F87171; }
+.form_help { font-size: 12px; color: var(--text-dim); }
 .form_error {
   margin: 0; padding: 8px 12px; border-radius: 6px;
-  background: #FFE5E9; color: #B22B45; font-size: 12px;
+  background: rgba(248, 113, 113, .12); color: #F87171; font-size: 12px;
 }
 .form_field input[type="text"] {
   height: 36px; padding: 0 12px;
-  border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #333; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; color: var(--text); background: var(--bg);
 }
-.form_field input[type="text"]:focus { outline: none; border-color: #0062ff; }
+.form_field input[type="text"]:focus { outline: none; border-color: #6BB6FF; }
 
 .workspace-input-row { display: flex; gap: 8px; align-items: center; }
 .workspace-input-row input { flex: 1; }
 .btn-browse {
   flex-shrink: 0;
   height: 36px; padding: 0 14px;
-  border: 1px solid #D4DCE4; border-radius: 6px;
-  background: var(--bg-card); color: #475569;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-card); color: var(--text);
   font-size: 12px; font-weight: 600; cursor: pointer;
 }
-.btn-browse:hover:not(:disabled) { background: #F8FAFC; border-color: #0062ff; color: #0062ff; }
-.btn-browse:disabled { color: #94A3B8; cursor: not-allowed; }
+.btn-browse:hover:not(:disabled) { background: rgba(107, 182, 255, .1); border-color: #6BB6FF; color: #6BB6FF; }
+.btn-browse:disabled { color: var(--text-dim); cursor: not-allowed; }
 
 .model-select-wrap { position: relative; }
 .model-select-wrap select {
   width: 100%; height: 36px; padding: 0 32px 0 12px;
-  border: 1px solid #D4DCE4; border-radius: 6px;
-  font-size: 13px; color: #333; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 13px; color: var(--text); background: var(--bg);
   appearance: none; cursor: pointer;
 }
+.model-select-wrap select option { background: var(--bg-card); color: var(--text); }
 .model-select-wrap::after {
   content: ''; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
   width: 0; height: 0;
   border-left: 4px solid transparent; border-right: 4px solid transparent;
-  border-top: 5px solid #999; pointer-events: none;
+  border-top: 5px solid var(--text-muted); pointer-events: none;
 }
 
 .btn.normal {
@@ -213,11 +214,13 @@ function onSubmit(): void {
   font-size: 13px; font-weight: 600; cursor: pointer;
   border: 1px solid transparent;
 }
-.btn.normal.type_v1 { background: #0062ff; color: #fff; }
-.btn.normal.type_v1:hover:not(:disabled) { background: #0052d4; }
-.btn.normal.type_v1:disabled { background: #94A3B8; cursor: not-allowed; }
-.btn.normal.type_v2 {
-  background: var(--bg-card); color: #475569; border-color: #D4DCE4;
+.btn.normal.type_v1 {
+  background: linear-gradient(135deg, #6BB6FF, #B89AFF); color: #fff;
 }
-.btn.normal.type_v2:hover:not(:disabled) { background: #F8FAFC; }
+.btn.normal.type_v1:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.normal.type_v1:disabled { background: var(--text-dim); cursor: not-allowed; opacity: .6; }
+.btn.normal.type_v2 {
+  background: var(--bg-card); color: var(--text); border-color: var(--border);
+}
+.btn.normal.type_v2:hover:not(:disabled) { background: rgba(107, 182, 255, .1); }
 </style>
