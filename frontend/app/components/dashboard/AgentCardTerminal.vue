@@ -31,6 +31,7 @@ const hostRef = ref<HTMLElement | null>(null);
 let term: any = null;
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let periodicResetTimer: ReturnType<typeof setInterval> | null = null;
 let disposed = false;
 
 // dev = 30084 / prod = 30083 (WebTerminal.vue 와 동일 패턴)
@@ -76,7 +77,11 @@ async function ensureXterm(): Promise<void> {
     lineHeight: 1.1,
     cols: MINI_COLS,
     rows: MINI_ROWS,
-    scrollback: 200,
+    // 2026-07-01 zsh prompt 누적 사고 임시방편 — scrollback 을 mini viewport (14 rows)
+    // 근처로 낮추면 xterm 이 옛 라인 자동 제거. 사용자가 같은 tab 오래 유지해도 위쪽
+    // 초록 zsh prompt 무한 누적 시각 사고 완화. 옛 fix (rc125) 의 reconnect-only reset
+    // 한계 보완.
+    scrollback: 40,
     disableStdin: true,  // read-only — 키보드 차단
     allowProposedApi: true,
     theme: {
@@ -114,14 +119,24 @@ function connectWs() {
 }
 
 function _doConnect(url: string) {
-  // reconnect 시 옛 화면 박은 거 비움 — helper 가 ws connect 마다 tmux capture-pane
-  // -S -3000 dump 박아 *옛 출력 같이 박혀* xterm 안 cumulative append 사고. 옛
-  // shuttle agent 박은 zsh plain text 박혀 *prompt line 누적* 사고 — alt-screen 박혀
-  // 있는 claude TUI 박은 거 와 차이. WebTerminal 박은 거 같은 패턴 (옛 dot 누적 사고
-  // f02732f 박은 거 와 정합).
+  // reconnect 시 옛 화면 비움 — helper 가 ws connect 마다 tmux capture-pane
+  // -S -3000 dump 하여 *옛 출력 같이 남아* xterm 안 cumulative append 사고. 옛
+  // shuttle agent 의 zsh plain text 의 *prompt line 누적* 사고 — alt-screen 을
+  // 쓰는 claude TUI 와 차이. WebTerminal 과 같은 패턴 (옛 dot 누적 사고 f02732f).
   if (term) {
     try { term.reset(); } catch { /* ignore */ }
   }
+  // 2026-07-01 임시방편 — 사용자가 같은 tab 오래 유지 시 zsh 지속 append 로 화면
+  // 위쪽에 초록 prompt 누적. 60초 주기 term.reset() 로 최신 화면만 유지. 옛 fix
+  // (rc125) 의 reconnect-only reset 한계 보완. flicker 는 60s 주기라 UX 저하 낮음.
+  if (periodicResetTimer) {
+    clearInterval(periodicResetTimer);
+    periodicResetTimer = null;
+  }
+  periodicResetTimer = setInterval(() => {
+    if (!term || disposed) return;
+    try { term.reset(); } catch { /* ignore */ }
+  }, 60_000);
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (ev) => {
@@ -166,6 +181,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (periodicResetTimer) { clearInterval(periodicResetTimer); periodicResetTimer = null; }
   if (ws) { try { ws.close(); } catch { /* ignore */ } ws = null; }
   if (term) { try { term.dispose(); } catch { /* ignore */ } term = null; }
 });
