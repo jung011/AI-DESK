@@ -528,6 +528,66 @@ async def check_tmux_handler(request: web.Request) -> web.Response:
         return web.json_response({"alive": False, "reason": f"tmux check error: {e}"})
 
 
+async def kill_tmux_handler(request: web.Request) -> web.Response:
+    """대시보드의 "터미널 종료" 버튼 — 지정 tmux 세션만 kill (agent / mcp entry / jsonl 유지).
+
+    cleanup_agent_handler 의 5-layer cleanup 은 agent 삭제 목적이라 과함. 이 endpoint 는
+    *tmux 만* kill — 사용자가 활성 프로세스 정리 후 mini preview 안정화 목적 (2026-07-01
+    셔틀 vs 리본 API 사고 진단 후 도입). 다음 대시보드 접근 시 새 tmux + claude 부팅.
+
+    body: {tmuxSession: "aidesk-xxx"}
+    response: {rc: 0 or non-zero, message: string, alive_before: bool, alive_after: bool}
+    """
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    tmux_session = (body.get("tmuxSession") or "").strip() if isinstance(body, dict) else ""
+    if not tmux_session:
+        return web.json_response({"rc": 2, "message": "tmuxSession empty"}, status=400)
+    import subprocess
+    # 사전 상태
+    try:
+        has = subprocess.run(
+            ["tmux", "has-session", "-t", tmux_session],
+            capture_output=True, timeout=2.0,
+        )
+        alive_before = has.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        alive_before = False
+    if not alive_before:
+        return web.json_response({
+            "rc": 0, "message": "session already gone",
+            "alive_before": False, "alive_after": False,
+        })
+    # kill
+    try:
+        subprocess.run(
+            ["tmux", "kill-session", "-t", tmux_session],
+            capture_output=True, timeout=3.0, check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return web.json_response({
+            "rc": 1, "message": f"kill-session error: {e}",
+            "alive_before": True, "alive_after": True,
+        })
+    # 사후 확인
+    try:
+        after = subprocess.run(
+            ["tmux", "has-session", "-t", tmux_session],
+            capture_output=True, timeout=2.0,
+        )
+        alive_after = after.returncode == 0
+    except (subprocess.TimeoutExpired, OSError):
+        alive_after = False
+    return web.json_response({
+        "rc": 0 if not alive_after else 1,
+        "message": "killed" if not alive_after else "kill-session ran but session still alive",
+        "alive_before": True,
+        "alive_after": alive_after,
+    })
+
+
 async def usage_local_handler(_: web.Request) -> web.Response:
     """프론트 LocalUsageBar 가 사용 — 호스트의 ~/.claude/aidesk-usage/ 에서 최신 사용량 노출."""
     return web.json_response(get_local_usage())
@@ -727,6 +787,8 @@ def build_app() -> web.Application:
     app.router.add_get("/api/has-past-session", has_past_session_handler)
     app.router.add_post("/api/agents/bootstrap", agent_bootstrap_handler)
     # app.router.add_post("/api/check-tmux", check_tmux_handler)
+    # 2026-07-01 대시보드 "터미널 종료" 버튼 — tmux session 만 kill (agent 유지).
+    app.router.add_post("/api/tmux/kill", kill_tmux_handler)
     app.router.add_post("/api/setup", setup_handler)
     app.router.add_get("/api/code-server", code_server_status_handler)
     app.router.add_get("/api/system/status", system_status_handler)
