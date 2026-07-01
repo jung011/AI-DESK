@@ -40,12 +40,24 @@ export default defineNuxtPlugin(() => {
       lastRefreshAt = Date.now();
       clientLog('log', 'silent-refresh:done', { ok, reason, elapsedMs: Date.now() - started });
     } catch (e) {
-      // 401 등으로 refresh 자체 fail — api.ts 의 ET / NA handler 가 다음 호출에서 처리.
+      // 2026-07-01 cookie 삭제 사고 fix — 옛에는 log 만 남기고 무동작 → 사용자 화면
+      // dashboard 그대로 두고 유령 로그인 상태 발생. refresh throw = refresh cookie
+      // 도 없거나 만료 → 세션 완전 종료 상태 → clearUser + /login redirect.
       clientLog('warn', 'silent-refresh:throw', {
         reason,
         message: String((e as Error)?.message ?? e),
         elapsedMs: Date.now() - started,
       });
+      try {
+        auth.clearUser();
+      } catch { /* store 접근 불가 시 silent */ }
+      try {
+        const router = useRouter();
+        const route = useRoute();
+        if (route.path !== '/login') {
+          router.replace({ path: '/login', query: { redirect: route.fullPath } });
+        }
+      } catch { /* router 접근 불가 시 silent */ }
     }
   }
 

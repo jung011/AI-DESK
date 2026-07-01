@@ -1,6 +1,7 @@
 import { defineNuxtRouteMiddleware, navigateTo } from '#app';
 import { useAuthStore } from '~/stores/auth';
 import { useHelperVersionStore } from '~/stores/helperVersion';
+import { clientLog } from '~/utils/clientLogger';
 
 /**
  * 글로벌 인증 가드 (sample 패턴 동일).
@@ -42,6 +43,36 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   const auth = useAuthStore();
   const isPublic = PUBLIC_PATHS.has(to.path);
+
+  // 2026-07-01 cookie 삭제 사고 fix — sessionStorage 만 검사하던 옛 로직이 cookie 삭제
+  // 상태 (DevTools "Clear site data" / 다른 host cookie store / 만료) 를 감지 못 해
+  // 사용자 화면은 dashboard 이지만 API 는 다 실패하는 유령 로그인 상태 발생. cookie
+  // presence 확인 + 없으면 refresh 강제 시도 → 실패 시 clearUser + /login.
+  if (auth.isAuthenticated && !isPublic) {
+    const cookieRaw = (typeof document !== 'undefined' ? document.cookie : '') || '';
+    const hasAccessCookie = /(?:^|;\s*)accessToken=/.test(cookieRaw);
+    if (!hasAccessCookie) {
+      const config = useRuntimeConfig();
+      const baseURL = config.public.apiBase as string;
+      let refreshOk = false;
+      try {
+        const res = await $fetch<{ result: number }>('/api/auth/refresh', {
+          baseURL,
+          method: 'POST',
+          credentials: 'include',
+        });
+        refreshOk = res?.result === 0;
+        clientLog('log', 'middleware:cookie-missing-refresh', { ok: refreshOk, path: to.fullPath });
+      } catch (e) {
+        clientLog('warn', 'middleware:cookie-missing-refresh:throw', { message: String((e as Error)?.message ?? e), path: to.fullPath });
+      }
+      if (!refreshOk) {
+        auth.clearUser();
+        return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
+      }
+      // refresh 성공 → 아래 정상 path 로 통과 (cookie 재발급 완료).
+    }
+  }
 
   if (!auth.isAuthenticated && !isPublic) {
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
