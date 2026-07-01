@@ -58,6 +58,10 @@
             브라우저 검증
           </button>
           -->
+          <button type="button" class="card-menu-item" @click="onKillTmux">
+            <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.11 0 2-.9 2-2V6c0-1.1-.89-2-2-2zm0 14H4V8h16v10zM7 12l2.5 2.5L15 9l-1.4-1.4-4.1 4.1L8.4 10.6 7 12z"/></svg>
+            터미널 종료
+          </button>
           <div class="card-menu-divider" />
           <button type="button" class="card-menu-item danger" @click="onDelete">
             <svg class="menu-ico" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -248,6 +252,42 @@ function onModeCancel(): void {
 function onDelete(): void {
   menuOpen.value = false;
   emit('delete', props.agent);
+}
+
+// 2026-07-01 tmux session 만 kill — mini preview 안 zsh 지속 append (dev server /
+// log tail 등 활성 프로세스) 로 화면 누적 시 사용자가 수동 정리. agent / mcp entry
+// / jsonl 은 유지 (cleanup-agent 의 5-layer 삭제 와 다름). 다음 대시보드 접근 시
+// 새 tmux + claude 부팅.
+async function onKillTmux(): Promise<void> {
+  menuOpen.value = false;
+  const t = props.agent.tmuxSession;
+  if (!t) {
+    // eslint-disable-next-line no-alert
+    alert('터미널 세션 정보가 없어요.');
+    return;
+  }
+  // eslint-disable-next-line no-alert
+  const ok = window.confirm(
+    `${props.agent.agentName} 의 터미널 세션을 종료할까요?\n\n실행 중 프로세스가 있으면 함께 종료됩니다.`,
+  );
+  if (!ok) return;
+  try {
+    const { $helper } = useNuxtApp();
+    const env = await $helper<{ rc: number; message: string; alive_before: boolean; alive_after: boolean }>(
+      '/api/tmux/kill',
+      { method: 'POST', body: { tmuxSession: t } },
+    );
+    if (env.rc === 0) {
+      // eslint-disable-next-line no-alert
+      alert(env.alive_before ? '터미널 종료 완료' : '이미 종료된 상태였어요.');
+    } else {
+      // eslint-disable-next-line no-alert
+      alert(env.message || '종료 실패');
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-alert
+    alert(`helper 호출 실패 (헬퍼 가동 확인): ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 // 3 layer 통합 — 온라인은 단일 색 (working). compacting = waiting (별도 톤 유지).
