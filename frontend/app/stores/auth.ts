@@ -62,12 +62,26 @@ export const useAuthStore = defineStore('auth', {
     },
     hydrate() {
       if (!import.meta.client) return;
-      const raw = localStorage.getItem(STORAGE_KEY);
+      let raw = localStorage.getItem(STORAGE_KEY);
+      // 2026-07-02 rc138 — 옛 sessionStorage 잔재 자동 migration.
+      // rc137 (sessionStorage→localStorage 전환) 시 옛 로그인 세션의 sessionStorage
+      // 값을 localStorage 로 옮기는 migration 없어 옛 사용자가 새 chunk 로드 시 auth
+      // store 못 복원 → header 에 "게스트" 표시 → 로그아웃 인식 사고 재발. hydrate() 가
+      // localStorage 비어있으면 sessionStorage fallback 검사 + 발견 시 자동 이관.
+      if (!raw) {
+        const legacy = sessionStorage.getItem(STORAGE_KEY);
+        if (legacy) {
+          raw = legacy;
+          try { localStorage.setItem(STORAGE_KEY, legacy); } catch { /* quota 등 */ }
+          try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+        }
+      }
       if (!raw) return;
       try {
         this.user = JSON.parse(raw) as AuthUser;
       } catch {
         localStorage.removeItem(STORAGE_KEY);
+        try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
       }
     },
   },
