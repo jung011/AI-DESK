@@ -48,6 +48,18 @@ async def lifespan(app: FastAPI):
     - shutdown 시 uptime + SIGTERM 수신 시각 logging
     이 신호 = K8s stdout 의 app log 에 박혀 사고 시 *언제 swap 박혔는지* 명확.
     """
+    # 2026-07-02 rc111 — module top-level 의 root handler 등록 (rc110) 이 uvicorn 의
+    # worker fork / dictConfig 초기화로 clear 되던 사고 (리키2 확인: root.handlers=[])
+    # fix. lifespan startup 은 uvicorn init 이 완전히 끝난 후 실행 = handler 안전
+    # 등록. idempotent guard 로 중복 등록 방지.
+    _root_l = logging.getLogger()
+    _root_l.setLevel(logging.INFO)
+    if not _root_l.handlers:
+        _h = logging.StreamHandler(sys.stdout)
+        _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        _root_l.addHandler(_h)
+        logging.getLogger(__name__).info("rc111: root logger handler re-applied in lifespan")
+
     import time as _time
     global _STARTUP_EPOCH
     startup_epoch = _time.time()
