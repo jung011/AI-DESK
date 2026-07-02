@@ -15,6 +15,7 @@
 import type { ApiEnvelope } from '~/vo/agents/AgentVo';
 import type { AgentItem, AgentListResponse } from '~/vo/agents/AgentVo';
 import type { AttachmentUploadResponse, MessageItem, MessageCreateRequest } from '~/vo/messages/MessageVo';
+import { clientLog } from '~/utils/clientLogger';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -101,11 +102,30 @@ export function useChat() {
         content: trimmed || ' ',
       };
       if (attachmentIds.length > 0) body.attachmentIds = attachmentIds;
+      // rc139 진단 강화 — 옛 사고 (msg=386988b8, chip UI 붙였는데 body 에 attachmentIds 안 실림)
+      // 재발 시 backend K8s stdout 에서 실제 body 값 확인 가능. app.client channel.
+      clientLog('info', 'chat.send.body', {
+        partnerId: partnerId.value,
+        attachmentIds,
+        attachmentCount: attachmentIds.length,
+        textLen: trimmed.length,
+      });
       const env = await $api<ApiEnvelope<MessageItem>>('/api/messages', {
         method: 'POST',
         body,
       });
       if (env.result === 0 && env.data) {
+        // rc139 진단 — backend 응답의 attachments 개수와 요청 attachmentIds 개수 비교.
+        // mismatch = backend link 실패. immediate 감지.
+        const respAttCount = env.data.attachments?.length ?? 0;
+        if (respAttCount !== attachmentIds.length) {
+          clientLog('warn', 'chat.send.attachment.mismatch', {
+            messageId: env.data.messageId,
+            requested: attachmentIds.length,
+            responded: respAttCount,
+            requestedIds: attachmentIds,
+          });
+        }
         // 옵티미스틱: 즉시 화면에 추가. 다음 polling 시 status 갱신.
         messages.value = [...messages.value, env.data];
         return true;
@@ -131,10 +151,28 @@ export function useChat() {
         method: 'POST',
         body: fd,
       });
-      if (env.result === 0 && env.data) return env.data;
+      if (env.result === 0 && env.data) {
+        // rc139 진단 — upload 성공 시 attachmentId + size 명시 log. 옛 사고 재발 시
+        // "chip 은 표시됐는데 실제 upload row 없음" 케이스 (b1) 감지 가능.
+        clientLog('info', 'chat.attachment.upload', {
+          attachmentId: env.data.attachmentId,
+          filename: env.data.originalFilename,
+          sizeBytes: env.data.sizeBytes,
+        });
+        return env.data;
+      }
+      clientLog('warn', 'chat.attachment.upload.fail', {
+        filename: file.name,
+        result: env.result,
+        message: env.message,
+      });
       error.value = env.message ?? '첨부 업로드 실패';
       return null;
     } catch (e) {
+      clientLog('warn', 'chat.attachment.upload.exception', {
+        filename: file.name,
+        error: e instanceof Error ? e.message : String(e),
+      });
       error.value = `첨부 업로드 실패: ${e instanceof Error ? e.message : String(e)}`;
       return null;
     }
