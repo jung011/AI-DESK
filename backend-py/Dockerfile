@@ -35,6 +35,11 @@ COPY static /app/static
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app"
+# 2026-07-02 진단 인프라 복구 — K8s pod 안 python stdout 이 fully buffered (line_buffering=False,
+# isatty=False) 라 log.info(...) 결과가 buffer 안 쌓인 채 kubectl logs 에 안 잡히던 사고.
+# 옛 rc132/135/137 patch 의 log 도 다 buffer 안 갇힘 = 옛 진단 사이클 무의미 데이터로
+# 회귀. PYTHONUNBUFFERED=1 = python stdout / stderr 즉시 flush → kubectl logs 실시간 출력.
+ENV PYTHONUNBUFFERED=1
 
 # helm chart 의 backend.port = 30081 (Spring 시절 그대로). containerPort + readinessProbe
 # tcpSocket: port http → service.targetPort 까지 다 30081 매핑. FastAPI 도 같은 port 사용.
