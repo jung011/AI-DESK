@@ -117,10 +117,21 @@ class MessageService:
         )
         self.repo.insert(msg)
         # 첨부 link — owner=sender 검증. ID mismatch / 이미 link 된 attachment 는 무시.
+        # rc113 진단 강화 — rowcount 명시 log. 옛 사고 (msg=386988b8) 재발 시 mismatch 즉시 감지.
         if body.attachment_ids:
-            self.attachment_repo.link_to_message(
+            linked = self.attachment_repo.link_to_message(
                 body.attachment_ids, msg.message_id, sender.agent_id
             )
+            if linked != len(body.attachment_ids):
+                log.warning(
+                    "attachment link mismatch: message_id=%s owner=%s requested=%d linked=%d attachment_ids=%s",
+                    msg.message_id, sender.agent_id, len(body.attachment_ids), linked, body.attachment_ids,
+                )
+            else:
+                log.info(
+                    "attachment link ok: message_id=%s linked=%d attachment_ids=%s",
+                    msg.message_id, linked, body.attachment_ids,
+                )
         self.db.commit()
         self.db.refresh(msg)
         item = self._enrich(msg, sender_name=sender.agent_name, receiver_name=receiver.agent_name)
