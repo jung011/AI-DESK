@@ -28,7 +28,11 @@ backend:
     retryBatchLimit: "50"
     policyRateLimitPerMinute: "30"
     policyHopLimit: "20"
-    policyContextLimitPct: "90"
+    # 2026-07-02 context guard 실질 무효화 — 카랑이 (context 85%) 사례에서 사용자
+    # 결정: AI 간 통신에 context 한도 사전 차단 정책 제거. 999 = 사실상 도달 불가.
+    # 정책 코드 (backend-py/app/messages/policy.py:96-101) 는 유지 → 향후 재활성 시
+    # 이 값 90 으로 복구만.
+    policyContextLimitPct: "999"
     retryRecipientOfflineSec: "180"
   jwt:
     accessExpirationSeconds: "3600"
