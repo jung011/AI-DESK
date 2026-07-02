@@ -5,6 +5,7 @@ AI Desk backend (FastAPI 마이그). Spring Boot 의 대체.
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -23,11 +24,18 @@ from app.messages.router import router as messages_router
 from app.settings.router import router as settings_router
 from app.tasks.router import router as tasks_router
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    force=True,  # uvicorn 의 default handler override — app.* logger 가 stdout 으로 propagate 보장 (rc12).
-)
+# 2026-07-02 진단 인프라 복구 — 옛 logging.basicConfig(force=True) 가 K8s pod 안에서
+# root handler 설치 실패한 상태 (리키2 확인: root.handlers = [] 빈 리스트). uvicorn
+# 이 자체 logger 로 startup log 는 남기지만 app 코드의 log.info(...) 는 handler 없어
+# 어디에도 안 감. 명시적 StreamHandler(stdout) 설치 + idempotent guard 로 강제 등록.
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+if not _root.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    _root.addHandler(_handler)
 log = logging.getLogger(__name__)
 
 

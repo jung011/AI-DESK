@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import current_user, optional_user
 from app.auth.schemas import AuthenticatedUser
-from app.common.response import ApiEnvelope, ok
+from app.common.response import ApiEnvelope, fail, ok
 from app.core.database import get_db
 from app.logs.models import ClientEvent  # noqa: F401 — alembic create_all 시 model 등록
 from app.logs.schemas import ActionLogCreateRq, ClientLogRq, LogFeedItem
@@ -78,25 +78,43 @@ async def list_client_events(
     event_type: str | None = Query(default=None, description="event_type LIKE filter (예: 'location:%')"),
     since: str | None = Query(default=None, description="ISO datetime (예: '2026-06-30T02:40:00')"),
     limit: int = Query(default=50, ge=1, le=500),
-    _user: AuthenticatedUser = Depends(current_user),
+    callerAgentId: str | None = Query(default=None),  # noqa: N803 — mcp / 대시보드 agent 조회 path
+    user: AuthenticatedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ) -> ApiEnvelope[list[dict]]:
     """t_ai_client_event 조회 — frontend critical 진단 event 확인용.
+
+    2026-07-02 callerAgentId fallback 추가 — cookie 없는 mcp / 대시보드 agent 도
+    자기 owner (account_sn) 의 이벤트 조회 가능. sameUser 격리: caller 의 own
+    account_sn 이벤트만 반환. 옛 [[feedback-same-user-isolation-audit-checklist]]
+    룰 정합.
 
     필터:
     - event_type: LIKE 매칭 (예: 'location:%' 또는 'keydown:refresh')
     - since: ISO datetime 이후 event 만
     - limit: 1-500 (default 50)
 
-    사용자 본인 admin 진단 path — 사고 분석. SQL 쿼리 패턴:
-      GET /api/logs/client-events?event_type=location:%&since=2026-06-30T02:40:00
+    인증 경로:
+      1. cookie user (frontend dashboard) — user.account_sn 사용
+      2. callerAgentId query (mcp / bot agent) — agent 의 owner_account_sn 조회
+      3. 둘 다 없음 → 401
     """
     from datetime import datetime as _dt
     from sqlalchemy import desc, select
 
     from app.logs.models import ClientEvent
+    from app.messages.caller import resolve_caller_account_sn
 
-    stmt = select(ClientEvent).order_by(desc(ClientEvent.created_at)).limit(limit)
+    caller_sn = resolve_caller_account_sn(db, user, callerAgentId)
+    if caller_sn is None:
+        return fail(401, "unauthorized")  # type: ignore[return-value]
+
+    stmt = (
+        select(ClientEvent)
+        .where(ClientEvent.account_sn == caller_sn)
+        .order_by(desc(ClientEvent.created_at))
+        .limit(limit)
+    )
     if event_type:
         stmt = stmt.where(ClientEvent.event_type.like(event_type))
     if since:
