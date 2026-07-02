@@ -19,13 +19,19 @@ interface AuthState {
  * 토큰 자체는 HttpOnly 쿠키 (accessToken / refreshToken) 에 보관 → JS 접근 불가.
  * 본 store 는 식별 정보만 보관.
  *
+ * 2026-07-02 sessionStorage → localStorage 전환 — 옛 sessionStorage 는 tab-scoped 라
+ * 브라우저 tab 종료 / Chrome tab discard (메모리 부족 시) / 컴퓨터 재부팅 후 재개 시
+ * clear 되어 middleware 가 사용자를 /login 로 강제 redirect 하는 밤새 로그아웃 사고
+ * 유발. cookie (30일 Max-Age) 는 유지되어 실제 인증은 유효한데도. localStorage 는
+ * 브라우저 재시작 후에도 persist → cookie 와 lifecycle 정합.
+ *
  * 만료 정책 :
  *  - access 만료 시각은 store 가 보관하지 않는다. 만료 검증 책임은 BE 의 JwtAuthenticationFilter
  *    (401 ET 응답) 에 있고, FE 는 $api 인터셉터의 ET 분기에서 자동 refresh → 원 요청 재시도로 처리.
- *  - 따라서 hydrate 도 sessionStorage 의 user 를 그대로 복원. stale user 라도 첫 $api 호출이
+ *  - 따라서 hydrate 도 localStorage 의 user 를 그대로 복원. stale user 라도 첫 $api 호출이
  *    refresh 를 트리거해 갱신되거나, refresh 도 만료됐다면 인터셉터가 clearUser + /login 으로 정리.
  *
- * 보안 메모 : sessionStorage 의 role 은 클라가 변조 가능 → UI 인지 부조화 가능. 실제 권한 검증은
+ * 보안 메모 : localStorage 의 role 은 클라가 변조 가능 → UI 인지 부조화 가능. 실제 권한 검증은
  *  BE 의 SecurityFilterChain.hasRole() 이 책임이라 ADMIN 액션은 403 NP 로 차단됨.
  */
 export const useAuthStore = defineStore('auth', {
@@ -45,23 +51,23 @@ export const useAuthStore = defineStore('auth', {
     setUser(user: AuthUser) {
       this.user = user;
       if (import.meta.client) {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
       }
     },
     clearUser() {
       this.user = null;
       if (import.meta.client) {
-        sessionStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY);
       }
     },
     hydrate() {
       if (!import.meta.client) return;
-      const raw = sessionStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       try {
         this.user = JSON.parse(raw) as AuthUser;
       } catch {
-        sessionStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY);
       }
     },
   },

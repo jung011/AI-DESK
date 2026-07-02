@@ -75,6 +75,20 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   if (!auth.isAuthenticated && !isPublic) {
+    // 2026-07-02 진단 gap fix — 옛에는 이 case (sessionStorage 없어 middleware 가 즉시
+    // /login redirect) 에 clientLog 호출 없어서 backend stdout / DB 어디에도 흔적 안
+    // 남는 사고. rc132 의 cookie-missing-refresh log 는 isAuthenticated=true case 만
+    // 다뤘음. 사용자 밤새 로그아웃 사고의 진단 blindspot 이었음. hasCookie 는 HttpOnly
+    // 라 값 자체는 안 보이지만 accessToken/refreshToken 라는 name 이 노출되지도 않으니
+    // length 만 기록 (0 = 완전 삭제 / >0 = 어떤 cookie 존재).
+    try {
+      const cookieRaw = (typeof document !== 'undefined' ? document.cookie : '') || '';
+      clientLog('warn', 'middleware:no-session-redirect', {
+        path: to.fullPath,
+        cookieLen: cookieRaw.length,
+        hasNonHttpOnlyCookie: cookieRaw.length > 0,
+      });
+    } catch { /* clientLog fail — silent */ }
     return navigateTo({ path: '/login', query: { redirect: to.fullPath } });
   }
   if (auth.isAuthenticated && isPublic) {

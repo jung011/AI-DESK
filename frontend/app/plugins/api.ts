@@ -65,7 +65,7 @@ export default defineNuxtPlugin(() => {
     clientLog('error', 'redirectToLogin', {
       reason: reason ?? 'unknown',
       currentRoute: route.fullPath,
-      hasSession: !!window.sessionStorage.getItem('aidesk.auth'),
+      hasSession: !!window.localStorage.getItem('aidesk.auth'),
       visibilityState: typeof document !== 'undefined' ? document.visibilityState : '?',
       referrer: typeof document !== 'undefined' ? (document.referrer || '').slice(0, 120) : '?',
       cookieLength: cookieRaw.length,
