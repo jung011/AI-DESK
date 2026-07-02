@@ -24,19 +24,36 @@ from app.messages.router import router as messages_router
 from app.settings.router import router as settings_router
 from app.tasks.router import router as tasks_router
 
-# 2026-07-02 진단 인프라 복구 — 옛 logging.basicConfig(force=True) 가 K8s pod 안에서
-# root handler 설치 실패한 상태 (리키2 확인: root.handlers = [] 빈 리스트). uvicorn
-# 이 자체 logger 로 startup log 는 남기지만 app 코드의 log.info(...) 는 handler 없어
-# 어디에도 안 감. 명시적 StreamHandler(stdout) 설치 + idempotent guard 로 강제 등록.
+# 2026-07-02 진단 인프라 복구 — 3 시도 후 최종 fix (rc112 옵션 3).
+#
+# rc110 = module top-level 에서 root logger addHandler → uvicorn worker fork 시 clear. 실패.
+# rc111 = lifespan startup 에서 root logger addHandler → uvicorn 이 그 이후에도 clear. 실패.
+# rc112 = *root 우회* — `app` named logger 에 직접 handler + propagate=False.
+#   uvicorn 은 root / uvicorn.* 만 조작하고 named custom logger 는 안 건드림.
+#   `app.messages.service` / `app.core.middleware` 등 옛 코드의 모든 __name__ (=app.xxx)
+#   가 hierarchy 로 `app` 을 부모 로 사용 → app handler 로 stdout 도달.
+#   pre-verification 완료 (리키2 sanity test): logger('app.test.child').info → stdout 출력 확인.
+_app_log = logging.getLogger("app")
+_app_log.setLevel(logging.INFO)
+_app_log.propagate = False  # root 우회 (uvicorn 조작 밖)
+if not _app_log.handlers:
+    _app_handler = logging.StreamHandler(sys.stdout)
+    _app_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    _app_log.addHandler(_app_handler)
+
+# root handler 도 함께 등록 (옛 rc110 유지, 무해) — root 사용하는 3rd-party lib 도 잡음.
 _root = logging.getLogger()
 _root.setLevel(logging.INFO)
 if not _root.handlers:
-    _handler = logging.StreamHandler(sys.stdout)
-    _handler.setFormatter(
+    _root_handler = logging.StreamHandler(sys.stdout)
+    _root_handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
     )
-    _root.addHandler(_handler)
-log = logging.getLogger(__name__)
+    _root.addHandler(_root_handler)
+
+log = logging.getLogger(__name__)  # 'app.main' — 새 app handler 통해 출력
 
 
 @asynccontextmanager
@@ -48,10 +65,19 @@ async def lifespan(app: FastAPI):
     - shutdown 시 uptime + SIGTERM 수신 시각 logging
     이 신호 = K8s stdout 의 app log 에 박혀 사고 시 *언제 swap 박혔는지* 명확.
     """
-    # 2026-07-02 rc111 — module top-level 의 root handler 등록 (rc110) 이 uvicorn 의
-    # worker fork / dictConfig 초기화로 clear 되던 사고 (리키2 확인: root.handlers=[])
-    # fix. lifespan startup 은 uvicorn init 이 완전히 끝난 후 실행 = handler 안전
-    # 등록. idempotent guard 로 중복 등록 방지.
+    # 2026-07-02 rc112 — lifespan 안에서도 `app` named logger + root 둘 다 재확인.
+    # rc111 은 root 만 재등록 → uvicorn 이 이후에도 clear 로 실패. rc112 는 `app`
+    # 우회 + lifespan 안에서 둘 다 idempotent 재확인 (uvicorn 이 lifespan 이후 무엇을
+    # 하든 named logger 는 안 건드림 = 안전 net).
+    _app_l = logging.getLogger("app")
+    _app_l.setLevel(logging.INFO)
+    _app_l.propagate = False
+    if not _app_l.handlers:
+        _app_h = logging.StreamHandler(sys.stdout)
+        _app_h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        _app_l.addHandler(_app_h)
+        logging.getLogger("app.main").info("rc112: app logger handler re-applied in lifespan")
+
     _root_l = logging.getLogger()
     _root_l.setLevel(logging.INFO)
     if not _root_l.handlers:
